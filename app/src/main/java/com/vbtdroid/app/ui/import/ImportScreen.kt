@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.video.VideoMeta
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -63,7 +64,9 @@ fun ImportScreen() {
         failed = false
         try {
             fileName = queryDisplayName(context, uri)
-            videoMeta = decoder.readMeta(uri)
+            videoMeta = withContext(Dispatchers.IO) { decoder.readMeta(uri) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             failed = true
         } finally {

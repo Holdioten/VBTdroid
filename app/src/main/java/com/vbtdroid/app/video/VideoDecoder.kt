@@ -9,11 +9,12 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class VideoDecoder(context: Context) {
     private val appContext = context.applicationContext
@@ -93,9 +94,9 @@ class VideoDecoder(context: Context) {
             }
         }
         awaitClose { job.cancel() }
-    }
+    }.buffer(Channel.RENDEZVOUS)
 
-    suspend fun readMeta(uri: Uri): VideoMeta = withContext(Dispatchers.IO) {
+    fun readMeta(uri: Uri): VideoMeta {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(appContext, uri)
@@ -117,7 +118,7 @@ class VideoDecoder(context: Context) {
                 0.0
             }
             val swapsDimensions = rotation == 90 || rotation == 270
-            VideoMeta(
+            return VideoMeta(
                 durationSec = durationSec,
                 width = if (swapsDimensions) rawHeight else rawWidth,
                 height = if (swapsDimensions) rawWidth else rawHeight,
@@ -186,7 +187,11 @@ class VideoDecoder(context: Context) {
         val crop = image.cropRect
         val width = crop.width()
         val height = crop.height()
-        val pixels = IntArray(width * height)
+        val scale = minOf(1.0, maxLongSide.toDouble() / maxOf(width, height))
+        val targetWidth = (width * scale).toInt().coerceAtLeast(1)
+        val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+        val rowPixels = IntArray(targetWidth)
         val yPlane = image.planes[0]
         val uPlane = image.planes[1]
         val vPlane = image.planes[2]
@@ -198,10 +203,10 @@ class VideoDecoder(context: Context) {
         val uvRowStride = uPlane.rowStride
         val uvPixelStride = uPlane.pixelStride
 
-        for (y in 0 until height) {
-            val sourceY = y + crop.top
-            for (x in 0 until width) {
-                val sourceX = x + crop.left
+        for (y in 0 until targetHeight) {
+            val sourceY = crop.top + ((y + 0.5) * height / targetHeight).toInt().coerceAtMost(height - 1)
+            for (x in 0 until targetWidth) {
+                val sourceX = crop.left + ((x + 0.5) * width / targetWidth).toInt().coerceAtMost(width - 1)
                 val yValue = yBuffer.get(sourceY * yRowStride + sourceX * yPixelStride).toInt() and 0xff
                 val uvX = sourceX / 2
                 val uvY = sourceY / 2
@@ -211,24 +216,15 @@ class VideoDecoder(context: Context) {
                 val red = (1.164f * yAdjusted + 1.596f * v).toInt().coerceIn(0, 255)
                 val green = (1.164f * yAdjusted - 0.813f * v - 0.391f * u).toInt().coerceIn(0, 255)
                 val blue = (1.164f * yAdjusted + 2.018f * u).toInt().coerceIn(0, 255)
-                pixels[y * width + x] = (0xff shl 24) or (red shl 16) or (green shl 8) or blue
+                rowPixels[x] = (0xff shl 24) or (red shl 16) or (green shl 8) or blue
             }
+            bitmap.setPixels(rowPixels, 0, targetWidth, 0, y, targetWidth, 1)
         }
-        val raw = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-        val matrix = Matrix().apply { if (rotation != 0) postRotate(rotation.toFloat()) }
-        val rotated = if (rotation != 0) Bitmap.createBitmap(raw, 0, 0, width, height, matrix, true) else raw
-        if (rotated !== raw) raw.recycle()
-        val longestSide = maxOf(rotated.width, rotated.height)
-        if (longestSide <= maxLongSide) return rotated
-        val scale = maxLongSide.toFloat() / longestSide
-        val scaled = Bitmap.createScaledBitmap(
-            rotated,
-            (rotated.width * scale).toInt().coerceAtLeast(1),
-            (rotated.height * scale).toInt().coerceAtLeast(1),
-            true
-        )
-        if (scaled !== rotated) rotated.recycle()
-        return scaled
+        if (rotation == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, targetWidth, targetHeight, matrix, true).also {
+            if (it !== bitmap) bitmap.recycle()
+        }
     }
 
     private companion object {
