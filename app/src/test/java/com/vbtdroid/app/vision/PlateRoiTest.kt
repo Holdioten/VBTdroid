@@ -19,4 +19,13 @@ class PlateRoiTest {
         assertFalse(PlateRoi.isValidMajorAxis(90f, expectedPx = 180f))
         assertTrue(PlateRoi.isValidMajorAxis(180f, expectedPx = 180f))
     }
+
+    @Test
+    fun `accepted observations never move the initialization diameter reference`() {
+        val reference = PlateAxisReference(180f)
+
+        assertTrue(reference.accepts(220f))
+        assertFalse(reference.accepts(230f))
+        assertEquals(180f, reference.majorAxisPx)
+    }
 }

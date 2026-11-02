@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """准备单类别 YOLO 数据集，并可选微调、导出检测器。
 
-推荐发布方案：使用上游 Apache-2.0 代码训练 YOLOX-Nano 或 NanoDet-Plus，
-并自行确认导出张量符合应用适配器要求。下方个人试验备选使用 Ultralytics
-YOLOv8n，许可为 AGPL-3.0；未完成许可审查前，不得随应用商业分发。
+当前仅实现 Ultralytics YOLOv8n 的个人自用 AGPL-3.0 训练路径，必须显式传入
+``--license personal-agpl``。其他许可模式尚未实现；发布准备阶段另行决策。
+YOLOv8n/Ultralytics 为 AGPL-3.0，未完成许可审查前不得随应用分发。
 
 数据集目录：images/{train,val} 与 labels/{train,val}；仅包含类别 0（杠铃片），
 标注为标准 YOLO txt 格式的归一化坐标。
@@ -48,10 +48,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", type=Path, help="Dataset root with images/ and labels/")
     parser.add_argument("--output", type=Path, default=Path("ml/generated/plate-data.yaml"))
-    parser.add_argument("--train", action="store_true", help="Run personal-only YOLOv8n train and TFLite export")
+    parser.add_argument("--train", action="store_true", help="Run YOLOv8n fine-tuning and TFLite export")
+    parser.add_argument("--license", help="Training license mode; required value: personal-agpl")
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--imgsz", type=int, choices=(384, 640), default=640)
+    parser.add_argument("--imgsz", type=int, choices=(640,), default=640,
+                        help="YOLOv8 export/input size; runtime accepts 640x640")
     args = parser.parse_args()
+
+    if args.train and args.license != "personal-agpl":
+        if args.license is None:
+            message = "Training requires explicit --license personal-agpl for the implemented YOLOv8n path."
+        else:
+            message = (
+                f"License mode '{args.license}' is not implemented; see docs/spec.md section 10 "
+                "and the release-preparation note in ml/README.md."
+            )
+        raise SystemExit(message)
 
     root = args.dataset.resolve()
     counts = {split: validate_split(root, split) for split in ("train", "val")}
@@ -63,10 +75,10 @@ def main() -> None:
     print(f"Validated dataset: {counts['train']} train, {counts['val']} val images")
     print(f"Wrote {args.output}")
     if not args.train:
-        print("Dataset preparation only. Use Apache-2.0 YOLOX-Nano/NanoDet-Plus for distributable model work.")
+        print("Dataset preparation only; model training path is not run.")
         return
 
-    print("WARNING: Ultralytics YOLOv8 is AGPL-3.0; personal-MVP fallback only, not a default shipping license.")
+    print("警告：当前只实现个人自用 AGPL-3.0 YOLOv8n 训练；不得未经许可审查后分发模型或应用。")
     subprocess.run(
         ["yolo", "detect", "train", "model=yolov8n.pt", f"data={args.output}",
          f"epochs={args.epochs}", f"imgsz={args.imgsz}", "single_cls=True"],

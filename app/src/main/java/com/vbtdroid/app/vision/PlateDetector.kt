@@ -28,7 +28,7 @@ interface PlateDetector {
 /** 适配输出形状为 [1, 5, N] 的 YOLOv8 TFLite 模型。 */
 class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
     private val interpreter: Interpreter
-    private var gpuDelegate: GpuDelegate?
+    private val gpuDelegate: GpuDelegate?
     private val inputWidth: Int
     private val inputHeight: Int
     private val outputCount: Int
@@ -54,44 +54,58 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
 
         val options = Interpreter.Options().setNumThreads(4)
         var delegate: GpuDelegate? = null
+        val compatibility = CompatibilityList()
         try {
-            if (CompatibilityList().isDelegateSupportedOnThisDevice) {
+            if (compatibility.isDelegateSupportedOnThisDevice) {
                 delegate = GpuDelegate()
                 options.addDelegate(delegate)
             }
         } catch (_: Exception) {
             delegate?.close()
             delegate = null
+        } finally {
+            compatibility.close()
         }
-        gpuDelegate = delegate
-        interpreter = try {
+        val createdInterpreter = try {
             Interpreter(model, options)
         } catch (gpuError: Exception) {
-            val failedDelegate = gpuDelegate ?: throw gpuError
+            val failedDelegate = delegate ?: throw gpuError
             failedDelegate.close()
-            gpuDelegate = null
+            delegate = null
             Interpreter(model, Interpreter.Options().setNumThreads(4))
         }
 
-        val inputShape = interpreter.getInputTensor(0).shape()
-        require(inputShape.size == 4 && inputShape[0] == 1 && inputShape[3] == 3) {
-            "Unsupported plate model input tensor: ${inputShape.contentToString()}"
-        }
-        inputHeight = inputShape[1]
-        inputWidth = inputShape[2]
-        require((inputWidth == 384 && inputHeight == 224) || (inputWidth == 640 && inputHeight == 640)) {
-            "Plate model input must be 384x224 or 640x640, got ${inputWidth}x$inputHeight"
-        }
-        inputType = interpreter.getInputTensor(0).dataType()
-        require(inputType == DataType.FLOAT32 || inputType == DataType.UINT8) {
-            "Unsupported plate model input type: $inputType"
-        }
+        try {
+            val inputShape = createdInterpreter.getInputTensor(0).shape()
+            require(inputShape.size == 4 && inputShape[0] == 1 && inputShape[3] == 3) {
+                "Unsupported plate model input tensor: ${inputShape.contentToString()}"
+            }
+            inputHeight = inputShape[1]
+            inputWidth = inputShape[2]
+            require((inputWidth == 384 && inputHeight == 224) || (inputWidth == 640 && inputHeight == 640)) {
+                "Plate model input must be 384x224 or 640x640, got ${inputWidth}x$inputHeight"
+            }
+            inputType = createdInterpreter.getInputTensor(0).dataType()
+            require(inputType == DataType.FLOAT32 || inputType == DataType.UINT8) {
+                "Unsupported plate model input type: $inputType"
+            }
 
-        val outputShape = interpreter.getOutputTensor(0).shape()
-        require(outputShape.size == 3 && outputShape[0] == 1 && outputShape[1] == 5) {
-            "Unsupported plate model output tensor: ${outputShape.contentToString()}; expected [1,5,N]"
+            val outputTensor = createdInterpreter.getOutputTensor(0)
+            val outputShape = outputTensor.shape()
+            require(outputShape.size == 3 && outputShape[0] == 1 && outputShape[1] == 5) {
+                "Unsupported plate model output tensor: ${outputShape.contentToString()}; expected [1,5,N]"
+            }
+            require(outputTensor.dataType() == DataType.FLOAT32) {
+                "Unsupported plate model output type: ${outputTensor.dataType()}; expected FLOAT32"
+            }
+            outputCount = outputShape[2]
+            interpreter = createdInterpreter
+            gpuDelegate = delegate
+        } catch (error: Throwable) {
+            createdInterpreter.close()
+            delegate?.close()
+            throw error
         }
-        outputCount = outputShape[2]
     }
 
     @Synchronized
@@ -103,10 +117,17 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
         val pixels = IntArray(inputWidth * inputHeight)
         resized.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
         pixels.forEach { pixel ->
-            val channels = intArrayOf(pixel shr 16 and 0xff, pixel shr 8 and 0xff, pixel and 0xff)
-            channels.forEach { channel ->
-                if (inputType == DataType.FLOAT32) input.putFloat(channel / 255f)
-                else input.put(channel.toByte())
+            val red = pixel shr 16 and 0xff
+            val green = pixel shr 8 and 0xff
+            val blue = pixel and 0xff
+            if (inputType == DataType.FLOAT32) {
+                input.putFloat(red / 255f)
+                input.putFloat(green / 255f)
+                input.putFloat(blue / 255f)
+            } else {
+                input.put(red.toByte())
+                input.put(green.toByte())
+                input.put(blue.toByte())
             }
         }
         input.rewind()

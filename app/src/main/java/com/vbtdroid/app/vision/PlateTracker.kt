@@ -6,12 +6,15 @@ import com.vbtdroid.core.model.PlateObservation
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Mat
+import org.opencv.core.MatOfByte
+import org.opencv.core.MatOfFloat
 import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Rect
 import org.opencv.core.RotatedRect
 import org.opencv.imgproc.Imgproc
+import org.opencv.video.Video
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
@@ -25,73 +28,113 @@ class PlateTracker(private val detector: PlateDetector? = null) {
     private var velocityX = 0f
     private var velocityY = 0f
     private var lastTimeSec: Double? = null
-    private var expectedMajorAxis = 0f
-    private var lastObservation: PlateObservation? = null
+    private var axisReference: PlateAxisReference? = null
+    private var previousGray: Mat? = null
 
     fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
-        val fitted = findEllipse(bitmap, roi, null, null, null)
-            ?: throw IllegalArgumentException("Could not fit a plate ellipse inside the selected ROI")
-        centerX = fitted.ellipse.center.x.toFloat()
-        centerY = fitted.ellipse.center.y.toFloat()
-        velocityX = 0f
-        velocityY = 0f
-        lastTimeSec = tSec
-        expectedMajorAxis = fitted.majorAxis
-        return observation(tSec, fitted)
+        val gray = toGray(bitmap)
+        try {
+            val fitted = findEllipse(gray, roi, null, null, null)
+                ?: throw IllegalArgumentException("Could not fit a plate ellipse inside the selected ROI")
+            centerX = fitted.ellipse.center.x.toFloat()
+            centerY = fitted.ellipse.center.y.toFloat()
+            velocityX = 0f
+            velocityY = 0f
+            lastTimeSec = tSec
+            axisReference = PlateAxisReference(fitted.majorAxis)
+            replacePreviousGray(gray)
+            return observation(tSec, fitted)
+        } finally {
+            gray.release()
+        }
     }
 
-    /** 根据前序中心和速度预测当前位置，再用轮廓拟合进行逐帧修正。 */
+    /** 使用 PyrLK 光流预测中心，再在局部搜索区拟合椭圆精修。 */
     fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
         ensureOpenCv()
-        if (expectedMajorAxis <= 0f) return null
+        val reference = axisReference ?: return null
+        val currentGray = toGray(bitmap)
+        try {
+            val dt = (tSec - (lastTimeSec ?: tSec)).coerceAtLeast(0.0).toFloat()
+            val velocityPredictionX = centerX + velocityX * dt
+            val velocityPredictionY = centerY + velocityY * dt
+            val opticalPrediction = opticalFlowCenter(currentGray)
+            val predictedX = opticalPrediction?.x?.toFloat() ?: velocityPredictionX
+            val predictedY = opticalPrediction?.y?.toFloat() ?: velocityPredictionY
 
-        // 扩大局部搜索范围以适应杠铃片移动，同时借助轴长限制排除内圈候选。
-        val dt = (tSec - (lastTimeSec ?: tSec)).coerceAtLeast(0.0).toFloat()
-        val predictedX = centerX + velocityX * dt
-        val predictedY = centerY + velocityY * dt
-        val radius = expectedMajorAxis * 0.9f
-        val roi = RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius)
-        val fitted = findEllipse(bitmap, roi, expectedMajorAxis, predictedX, predictedY)
-        if (fitted != null && fitted.confidence >= MIN_TRACK_CONFIDENCE) {
-            updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec)
-            expectedMajorAxis = fitted.majorAxis
-            return observation(tSec, fitted)
-        }
-
-        val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) }
-        if (detection != null) {
-            val diameter = max(detection.widthPx, detection.heightPx)
-            val box = RectF(
-                detection.cxPx - detection.widthPx / 2f,
-                detection.cyPx - detection.heightPx / 2f,
-                detection.cxPx + detection.widthPx / 2f,
-                detection.cyPx + detection.heightPx / 2f,
-            )
-            val recovered = findEllipse(bitmap, box, expectedMajorAxis, detection.cxPx, detection.cyPx)
-            val result = recovered?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
-            if (result != null) {
-                updatePosition(result.ellipse.center.x.toFloat(), result.ellipse.center.y.toFloat(), tSec)
-                expectedMajorAxis = result.majorAxis
-                return observation(tSec, result)
+            val radius = reference.majorAxisPx * 0.9f
+            val roi = RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius)
+            val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, predictedX, predictedY)
+            if (fitted != null && fitted.confidence >= MIN_TRACK_CONFIDENCE) {
+                updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec)
+                return observation(tSec, fitted)
             }
-            if (PlateRoi.isValidMajorAxis(diameter, expectedMajorAxis, MAX_AXIS_DEVIATION)) {
-                updatePosition(detection.cxPx, detection.cyPx, tSec)
-                expectedMajorAxis = diameter
-                val fallback = PlateObservation(
-                    tSec = tSec,
-                    xPx = centerX.toDouble(),
-                    yPx = centerY.toDouble(),
-                    majorAxisPx = expectedMajorAxis.toDouble(),
-                    confidence = detection.confidence.toDouble(),
+
+            // 检测器只在跟踪丢失时调用，用于恢复而非逐帧主信号。
+            val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) }
+            if (detection != null) {
+                val detectedDiameter = max(detection.widthPx, detection.heightPx)
+                val box = RectF(
+                    detection.cxPx - detection.widthPx / 2f,
+                    detection.cyPx - detection.heightPx / 2f,
+                    detection.cxPx + detection.widthPx / 2f,
+                    detection.cyPx + detection.heightPx / 2f,
                 )
-                lastObservation = fallback
-                return fallback
+                val recovered = findEllipse(
+                    currentGray,
+                    box,
+                    reference.majorAxisPx,
+                    detection.cxPx,
+                    detection.cyPx,
+                )?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
+                if (recovered != null) {
+                    updatePosition(recovered.ellipse.center.x.toFloat(), recovered.ellipse.center.y.toFloat(), tSec)
+                    return observation(tSec, recovered)
+                }
+                if (reference.accepts(detectedDiameter)) {
+                    updatePosition(detection.cxPx, detection.cyPx, tSec)
+                    return PlateObservation(
+                        tSec = tSec,
+                        xPx = centerX.toDouble(),
+                        yPx = centerY.toDouble(),
+                        majorAxisPx = reference.majorAxisPx.toDouble(),
+                        confidence = detection.confidence.toDouble(),
+                    )
+                }
             }
+            return null
+        } finally {
+            replacePreviousGray(currentGray)
+            currentGray.release()
         }
-        lastObservation = null
-        return null
+    }
+
+    private fun opticalFlowCenter(currentGray: Mat): Point? {
+        val oldGray = previousGray ?: return null
+        if (oldGray.empty() || oldGray.rows() != currentGray.rows() || oldGray.cols() != currentGray.cols()) return null
+
+        val previousPoint = MatOfPoint2f(Point(centerX.toDouble(), centerY.toDouble()))
+        val nextPoint = MatOfPoint2f()
+        val status = MatOfByte()
+        val error = MatOfFloat()
+        try {
+            Video.calcOpticalFlowPyrLK(oldGray, currentGray, previousPoint, nextPoint, status, error)
+            val tracked = nextPoint.toArray().firstOrNull() ?: return null
+            if (status.toArray().firstOrNull()?.toInt() != 1) return null
+            if (!tracked.x.isFinite() || !tracked.y.isFinite()) return null
+            if (tracked.x !in 0.0..(currentGray.cols() - 1).toDouble()) return null
+            if (tracked.y !in 0.0..(currentGray.rows() - 1).toDouble()) return null
+            return tracked
+        } catch (_: RuntimeException) {
+            return null
+        } finally {
+            previousPoint.release()
+            nextPoint.release()
+            status.release()
+            error.release()
+        }
     }
 
     private fun observation(tSec: Double, fit: EllipseFit): PlateObservation =
@@ -101,7 +144,7 @@ class PlateTracker(private val detector: PlateDetector? = null) {
             yPx = fit.ellipse.center.y,
             majorAxisPx = fit.majorAxis.toDouble(),
             confidence = fit.confidence.toDouble(),
-        ).also { lastObservation = it }
+        )
 
     private fun updatePosition(nextX: Float, nextY: Float, tSec: Double) {
         val previousTime = lastTimeSec
@@ -115,34 +158,49 @@ class PlateTracker(private val detector: PlateDetector? = null) {
         lastTimeSec = tSec
     }
 
+    private fun toGray(bitmap: Bitmap): Mat {
+        val rgba = Mat()
+        val gray = Mat()
+        try {
+            Utils.bitmapToMat(bitmap, rgba)
+            Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
+            return gray
+        } catch (error: Throwable) {
+            gray.release()
+            throw error
+        } finally {
+            rgba.release()
+        }
+    }
+
+    private fun replacePreviousGray(gray: Mat) {
+        previousGray?.release()
+        previousGray = gray.clone()
+    }
+
     private fun findEllipse(
-        bitmap: Bitmap,
+        gray: Mat,
         requestedRoi: RectF,
         expectedAxis: Float?,
         predictedX: Float?,
         predictedY: Float?,
     ): EllipseFit? {
-        val left = requestedRoi.left.toInt().coerceIn(0, bitmap.width - 1)
-        val top = requestedRoi.top.toInt().coerceIn(0, bitmap.height - 1)
-        val right = requestedRoi.right.toInt().coerceIn(left + 1, bitmap.width)
-        val bottom = requestedRoi.bottom.toInt().coerceIn(top + 1, bitmap.height)
+        val left = requestedRoi.left.toInt().coerceIn(0, gray.cols() - 1)
+        val top = requestedRoi.top.toInt().coerceIn(0, gray.rows() - 1)
+        val right = requestedRoi.right.toInt().coerceIn(left + 1, gray.cols())
+        val bottom = requestedRoi.bottom.toInt().coerceIn(top + 1, gray.rows())
         if (right - left < 5 || bottom - top < 5) return null
 
-        val rgba = Mat()
-        val gray = Mat()
         val blurred = Mat()
         val edges = Mat()
-        var crop: Mat? = null
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
+        val crop = gray.submat(Rect(left, top, right - left, bottom - top))
         try {
-            Utils.bitmapToMat(bitmap, rgba)
-            Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
-            crop = gray.submat(Rect(left, top, right - left, bottom - top))
             Imgproc.GaussianBlur(crop, blurred, org.opencv.core.Size(5.0, 5.0), 0.0)
             Imgproc.Canny(blurred, edges, 40.0, 120.0)
-
             Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_NONE)
+
             val candidates = contours.mapNotNull { contour ->
                 val points = contour.toArray()
                 if (points.size < 5) return@mapNotNull null
@@ -179,11 +237,9 @@ class PlateTracker(private val detector: PlateDetector? = null) {
                 compareBy<EllipseFit> { it.area / (1f + it.distance) }.thenBy { it.confidence },
             )
         } finally {
-            crop?.release()
+            crop.release()
             contours.forEach(MatOfPoint::release)
             hierarchy.release()
-            rgba.release()
-            gray.release()
             blurred.release()
             edges.release()
         }

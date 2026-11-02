@@ -51,4 +51,4 @@ docs/       规格、计划、验证记录
 
 ## 许可
 
-待定。注意：Ultralytics YOLOv8/YOLO11 为 AGPL-3.0；发布前需换 Apache-2.0 检测器或整体采用 AGPL-3.0。详见 `docs/spec.md` §10。
+MVP 仅提供个人自用 YOLOv8n（AGPL-3.0）训练路径；Apache-2.0 检测器训练/适配尚未实现，留待发布准备阶段评估。分发前须完成许可审查。详见 `docs/spec.md` §10。

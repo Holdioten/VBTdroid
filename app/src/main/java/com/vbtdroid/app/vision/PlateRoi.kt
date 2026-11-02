@@ -16,3 +16,17 @@ object PlateRoi {
         return abs(majorAxisPx - expectedPx) / expectedPx <= tolerance
     }
 }
+
+/** 初始化后固定的参考直径；接收观测不会改变参考值。 */
+internal class PlateAxisReference(
+    val majorAxisPx: Float,
+    private val tolerance: Float = 0.25f,
+) {
+    init {
+        require(majorAxisPx.isFinite() && majorAxisPx > 0f) { "Reference plate diameter must be positive and finite" }
+        require(tolerance.isFinite() && tolerance >= 0f) { "Axis tolerance must be non-negative and finite" }
+    }
+
+    fun accepts(candidateMajorAxisPx: Float): Boolean =
+        PlateRoi.isValidMajorAxis(candidateMajorAxisPx, majorAxisPx, tolerance)
+}

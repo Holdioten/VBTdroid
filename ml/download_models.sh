@@ -9,22 +9,49 @@ POSE_URL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_l
 
 mkdir -p "$ASSET_DIR"
 
-if ! grep -Eq "[[:space:]]${POSE_PATH//\//\\/}$" "$LOCK_FILE"; then
-    echo "Missing trusted SHA256 entry for $POSE_PATH in ml/models.lock" >&2
-    exit 1
-fi
-curl --fail --location --retry 2 "$POSE_URL" -o "$ROOT/$POSE_PATH"
+declare -a TEMP_FILES=()
+declare -a DESTINATIONS=()
+cleanup() {
+    for temp_file in "${TEMP_FILES[@]}"; do
+        rm -f -- "$temp_file"
+    done
+}
+trap cleanup EXIT
+
+download_and_verify() {
+    local relative_path="$1"
+    local url="$2"
+    local asset_name
+    asset_name="$(basename "$relative_path")"
+    local expected_hash
+    expected_hash="$(awk -v target="$relative_path" '$2 == target { print $1; exit }' "$LOCK_FILE")"
+    if [[ ! "$expected_hash" =~ ^[[:xdigit:]]{64}$ ]]; then
+        echo "Missing trusted SHA256 entry for $relative_path in ml/models.lock" >&2
+        return 1
+    fi
+
+    local temp_file
+    temp_file="$(mktemp "$ASSET_DIR/.${asset_name}.XXXXXX")"
+    TEMP_FILES+=("$temp_file")
+    curl --fail --location --retry 2 "$url" -o "$temp_file"
+    local actual_hash
+    actual_hash="$(sha256sum "$temp_file" | awk '{ print $1 }')"
+    if [[ "$actual_hash" != "$expected_hash" ]]; then
+        echo "SHA256 mismatch for $relative_path: expected $expected_hash, got $actual_hash" >&2
+        return 1
+    fi
+    DESTINATIONS+=("$ROOT/$relative_path")
+}
+
+download_and_verify "$POSE_PATH" "$POSE_URL"
 
 if [[ -n "${PLATE_MODEL_URL:-}" ]]; then
     PLATE_PATH="app/src/main/assets/models/plate.tflite"
-    if ! grep -Eq "[[:space:]]${PLATE_PATH//\//\\/}$" "$LOCK_FILE"; then
-        echo "PLATE_MODEL_URL was set, but no trusted SHA256 entry exists for $PLATE_PATH in ml/models.lock." >&2
-        echo "Add the verified model checksum to the lock file before downloading." >&2
-        exit 1
-    fi
-    curl --fail --location --retry 2 "$PLATE_MODEL_URL" -o "$ROOT/$PLATE_PATH"
+    download_and_verify "$PLATE_PATH" "$PLATE_MODEL_URL"
 else
     echo "No plate detector downloaded. To enable, add a vetted plate.tflite SHA256 to ml/models.lock and set PLATE_MODEL_URL." >&2
 fi
 
-(cd "$ROOT" && sha256sum --check ml/models.lock)
+for index in "${!TEMP_FILES[@]}"; do
+    mv -f -- "${TEMP_FILES[$index]}" "${DESTINATIONS[$index]}"
+done

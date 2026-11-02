@@ -25,7 +25,7 @@
 - 指标定义遵循 `docs/glossary.md` 的同行评议来源与 SI 单位；不绑定商业 Vendor。
 - 代码标识符英文。
 - 模型权重不进 git；`ml/download_models.sh` 下载并校验 SHA256。
-- 检测器发布许可：YOLOX-Nano/NanoDet-Plus（Apache-2.0）优先；YOLOv8n/YOLO11n 仅限个人 AGPL 场景。
+- 检测器 MVP 仅支持 YOLOv8n 个人自用 AGPL-3.0 路径；Apache-2.0 YOLOX/NanoDet 训练和适配推迟到发布准备阶段，当前未实现。
 - 每个任务结束必须能独立运行测试并提交。
 
 ## Review Focus
@@ -907,7 +907,7 @@ Expected: FAIL。
 `PlateTracker.update`：对上一帧圆心做光流预测；在预测点附近提轮廓，`Imgproc.fitEllipse`；长轴作为 `majorAxisPx`；与期望直径偏差 >25% 判为内圈/误检，回退检测器。  
 `PlateRoi.selectLargest`：按框面积最大。  
 `ml/download_models.sh`：下载姿态模型 + 可选的开源检测器权重，`sha256sum -c ml/models.lock`，失败退出非零。  
-`ml/train_detector.py`：用 Roboflow/自采 200–500 帧训练 YOLOX-Nano 或 NanoDet-Plus，导出 TFLite；发布路径用 Apache-2.0 模型，个人 MVP 可先用 YOLOv8n 权重。
+`ml/train_detector.py`：校验单类别数据集并导出 YOLOv8n TFLite；训练必须显式指定 `--license personal-agpl`，仅限个人自用。Apache-2.0 YOLOX/NanoDet 训练未实现，延期到发布准备阶段。
 
 - [ ] **Step 4: 跑测试并手工验证**
 

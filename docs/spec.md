@@ -393,13 +393,13 @@ JSON 导出包含：
 | 图表 | Compose Canvas | 平台 |
 | 数据库 | Room | Apache 2.0 |
 | 序列化 | kotlinx.serialization | Apache 2.0 |
-| 检测模型 | YOLOX-Nano / NanoDet-Plus（发布首选） | Apache 2.0 |
-| 检测模型（个人 MVP） | YOLOv8n / YOLO11n | **AGPL-3.0** |
+| 检测模型（MVP） | YOLOv8n（仅个人自用路径） | **AGPL-3.0** |
+| 检测模型（发布准备） | 待选；Apache-2.0 方案未实现 | 待决 |
 
 许可警告：
 
-- Ultralytics YOLOv8/YOLO11 是 AGPL-3.0。个人使用可以；闭源分发不行。
-- 发布前换 Apache-2.0 检测器，或整个 App 用 AGPL-3.0。
+- MVP 仅提供显式 `--license personal-agpl` 的 YOLOv8n 训练路径；该路径基于 AGPL-3.0，仅限个人自用，分发前须完成许可审查。
+- Apache-2.0 检测器训练/适配不属于 MVP 实现，留待发布准备阶段评估；不得把 YOLOX-Nano/NanoDet-Plus 描述为当前已支持的训练路径。
 - 数据集许可逐个查；Roboflow 数据集许可不统一。
 
 ---
