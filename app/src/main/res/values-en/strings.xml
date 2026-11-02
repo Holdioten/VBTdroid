@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">VBTdroid</string>
+    <string name="import_title">Import video</string>
+    <string name="import_choose_video">Choose video</string>
+    <string name="import_error">Unable to read this video</string>
+    <string name="import_file_name">File: %1$s</string>
+    <string name="import_duration">Duration: %1$.2f s</string>
+    <string name="import_resolution">Resolution: %1$d × %2$d</string>
+    <string name="import_effective_fps">Effective frame rate: %1$.2f fps</string>
 </resources>

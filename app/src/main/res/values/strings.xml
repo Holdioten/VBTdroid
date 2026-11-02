@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">VBTdroid</string>
+    <string name="import_title">导入视频</string>
+    <string name="import_choose_video">选择视频</string>
+    <string name="import_error">无法读取此视频</string>
+    <string name="import_file_name">文件：%1$s</string>
+    <string name="import_duration">时长：%1$.2f 秒</string>
+    <string name="import_resolution">分辨率：%1$d × %2$d</string>
+    <string name="import_effective_fps">有效帧率：%1$.2f fps</string>
 </resources>
