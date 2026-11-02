@@ -30,6 +30,16 @@ data class RepMetrics(
 object RepMetricsCalculator {
     private const val GRAVITY_MPS2 = 9.80665
 
+    /**
+     * Computes kinematic and optional load metrics for one repetition.
+     *
+     * Invalid repetitions are rejected. Analysis pipelines must catch this exception, skip the
+     * invalid repetition, and emit a quality warning; manual phase edits can temporarily create
+     * invalid intervals.
+     *
+     * @throws IllegalArgumentException if the rep has fewer than two samples, no concentric phase,
+     *   fewer than two concentric samples, or non-increasing timestamps within the rep.
+     */
     fun compute(
         rep: RepSlice,
         samples: List<MotionSample>,
@@ -42,6 +52,9 @@ object RepMetricsCalculator {
             .sortedBy { it.tSec }
             .toList()
         require(repSamples.size >= 2) { "rep must contain at least two motion samples" }
+        require(repSamples.zipWithNext().all { (first, second) -> second.tSec > first.tSec }) {
+            "rep timestamps must be strictly increasing"
+        }
 
         val concentricPhases = rep.phases.filter { it.type == PhaseType.CONCENTRIC }
         require(concentricPhases.isNotEmpty()) { "rep must contain a concentric phase" }
@@ -63,7 +76,7 @@ object RepMetricsCalculator {
         val repXs = repSamples.map { it.xM }
         val xOrigin = firstRep.xM
         val mcv = (lastConcentric.yM - firstConcentric.yM) / concentricDuration
-        val peakVelocityIndex = concentricSamples.indices.maxBy { concentricSamples[it].vyMps }
+        val peakVelocityIndex = concentricSamples.indices.maxByOrNull { concentricSamples[it].vyMps }!!
         val peakVelocity = concentricSamples[peakVelocityIndex].vyMps
         val firstNegativeAccelerationIndex = concentricSamples.indexOfFirst { it.ayMps2 < 0.0 }
         val mpv = if (firstNegativeAccelerationIndex > 0) {

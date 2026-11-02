@@ -5,6 +5,7 @@ import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class RepMetricsTest {
@@ -56,6 +57,67 @@ class RepMetricsTest {
         val metrics = RepMetricsCalculator.compute(concentricRep(), samples, null)
 
         assertEquals(metrics.mcvMps, metrics.mpvMps, 1e-6)
+    }
+
+    @Test
+    fun `mpv stops at first negative acceleration`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 0.2, 0.0),
+            motion(0.5, 0.2, 0.8, 0.0),
+            motion(1.0, 0.4, 0.5, -0.2),
+            motion(1.5, 1.0, 0.3, -0.1),
+        )
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(end = 1.5), samples, null)
+
+        assertEquals(2.0 / 3.0, metrics.mcvMps, 1e-6)
+        assertEquals(0.4, metrics.mpvMps, 1e-6)
+        assertEquals(1.0, metrics.romTotalM, 1e-6)
+        assertEquals(2.0 / 3.0, metrics.meanVelocityMps, 1e-6)
+        assertNull(metrics.velocityLossPct)
+    }
+
+    @Test
+    fun `sticking point is first local velocity minimum after peak`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 0.2),
+            motion(0.25, 0.2, 0.8),
+            motion(0.5, 0.3, 0.3),
+            motion(0.75, 0.45, 0.5),
+            motion(1.0, 0.5, 0.2),
+        )
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(), samples, null)
+
+        assertEquals(60.0, metrics.stickingPointPct!!, 1e-6)
+    }
+
+    @Test
+    fun `load integrals use actual unequal sample intervals`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 2.0, 0.0),
+            motion(0.5, 1.0, 2.0, 2.0),
+            motion(2.0, 3.0, 2.0, 0.0),
+        )
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(end = 2.0), samples, loadKg = 2.0)
+
+        assertEquals(43.2266, metrics.impulseNs!!, 1e-4)
+        assertEquals(64.8399, metrics.workJ!!, 1e-4)
+    }
+
+    @Test
+    fun `duplicate timestamps in rep are rejected`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 0.5),
+            motion(0.5, 0.25, 0.5),
+            motion(0.5, 0.3, 0.5),
+            motion(1.0, 0.5, 0.5),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            RepMetricsCalculator.compute(concentricRep(), samples, null)
+        }
     }
 
     @Test
