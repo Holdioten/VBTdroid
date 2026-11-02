@@ -22,7 +22,7 @@ android {
     }
 
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "task")
     }
 
     compileOptions {
@@ -44,5 +44,6 @@ dependencies {
     implementation(libs.opencv)
     implementation(libs.tflite)
     implementation(libs.tflite.gpu)
+    implementation(libs.mediapipe.tasks.vision)
     testImplementation(libs.junit4)
 }
