@@ -38,4 +38,21 @@ class JointAngleExtractorTest {
 
         assertEquals(90.0, angles.hipDeg!!, 1e-6)
     }
+
+    @Test
+    fun `non right hip angle applies azimuth correction`() {
+        val pose = PoseFrame(
+            tSec = 0.0,
+            landmarks = mapOf(
+                11 to Point2(0.0, 1.0),
+                23 to Point2(0.0, 0.0),
+                25 to Point2(0.70710678, 1.0),
+            ),
+            visibility = mapOf(11 to 0.9f, 23 to 0.9f, 25 to 0.9f),
+        )
+
+        val angles = JointAngleExtractor.extract(pose, Lift.SQUAT, 45.0)
+
+        assertEquals(45.0, angles.hipDeg!!, 1e-6)
+    }
 }
