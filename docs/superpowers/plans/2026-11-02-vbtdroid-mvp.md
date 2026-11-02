@@ -54,8 +54,8 @@
 - [ ] **Step 1: 写 Gradle 骨架**
 
 `settings.gradle.kts` 包含 `:app`、`:core`，仓库只开 `google()`、`mavenCentral()`、`gradlePluginPortal()`。  
-`gradle/libs.versions.toml` 固定基线版本：AGP `8.7.3`、Kotlin `2.0.21`、Compose BOM `2024.10.01`、JUnit `5.11.0`、kotlinx.serialization `1.7.3`、Room `2.6.1`、OpenCV `4.10.0`、TFLite `2.16.1`、MediaPipe Tasks Vision `0.10.14`。  
-`core` 用 `kotlin("jvm")` + serialization + JUnit 5。`app` 用 Android application + Compose + KSP。  
+`gradle/libs.versions.toml` 固定基线版本：AGP `8.7.3`、Kotlin `2.0.21`、KSP `2.0.21-1.0.28`、Compose BOM `2024.10.01`、JUnit `5.11.0`、kotlinx.serialization `1.7.3`、kotlinx-coroutines-test `1.9.0`、Robolectric `4.13`、Room `2.6.1`、OpenCV `4.10.0`、TFLite `2.16.1`、MediaPipe Tasks Vision `0.10.14`。  
+`core` 用 `kotlin("jvm")` + serialization + JUnit 5。`app` 用 Android application + Compose + KSP，并应用 `org.jetbrains.kotlin.plugin.compose`。  
 `MainActivity` 只显示 `Text("VBTdroid")`。  
 `.gitignore` 覆盖 `.gradle/`、`build/`、`local.properties`、`.idea/`、`*.iml`、`app/src/main/assets/models/*.tflite`、`*.task`、`prototype/.venv/`、`__pycache__/`、`.pytest_cache/`。
 
@@ -590,6 +590,13 @@ git commit -m "feat(core): add load-velocity profile and 1RM estimate"
   }
 
   @Serializable
+  data class RepExport(
+      val index: Int,
+      val metrics: Map<String, Double?>,
+      val quality: Map<String, Double>
+  )
+
+  @Serializable
   data class SetExport(
       val schemaVersion: Int = 1,
       val lift: String,
@@ -651,7 +658,7 @@ Expected: FAIL。
 - [ ] **Step 3: 实现**
 
 `angle` 用 `acos` 夹紧 `[-1,1]`，退化向量返回 `0.0`。  
-`correctAzimuth`：`atan(tan(image) / sin(camera))`，角度制；`camera=90` 原样返回；`image>=90` 返回 90。  
+`correctAzimuth`：`atan(tan(image) / sin(camera))`，角度制；`camera=90` 原样返回；`image>90` 先按 `180-image` 校正，再取 `180-result`；`image=90` 返回 90。  
 `Quality`：`trackConfidence<0.6` 加 `LOW_TRACK_CONFIDENCE`；`occlusionPct>20` 加 `HIGH_OCCLUSION`；`!cameraLevel` 加 `CAMERA_NOT_LEVEL`；`calibrationConfidence<0.5` 加 `LOW_CALIBRATION`。  
 `JsonExport` 用 `kotlinx.serialization.Json { prettyPrint = true }`。
 
@@ -755,7 +762,7 @@ git commit -m "feat(prototype): add Python reference pipeline and golden vectors
   )
 
   class VideoDecoder {
-      suspend fun decode(uri: Uri, maxLongSide: Int = 1920): Sequence<Frame>
+      fun decode(uri: Uri, maxLongSide: Int = 1920): Flow<Frame>
       fun readMeta(uri: Uri): VideoMeta
   }
 
@@ -817,6 +824,7 @@ git commit -m "feat(app): import and decode video with PTS timeline"
 - Create: `app/src/main/java/com/vbtdroid/app/vision/PlateTracker.kt`
 - Create: `app/src/main/java/com/vbtdroid/app/vision/PlateRoi.kt`
 - Create: `ml/download_models.sh`
+- Create: `ml/train_detector.py`
 - Create: `ml/models.lock`
 - Create: `app/src/main/assets/models/README.md`
 - Test: `app/src/test/java/com/vbtdroid/app/vision/PlateRoiTest.kt`
@@ -875,9 +883,11 @@ Expected: FAIL。
 - [ ] **Step 3: 实现**
 
 `PlateDetector`：TFLite YOLOv8n/YOLOX-Nano，输入 384×224 或 640×640，输出框；NMS；置信度阈值 0.35。模型放 `app/src/main/assets/models/plate.tflite`，gitignored。  
+先固定 YOLOv8n TFLite 输出 `[1,5,N]`（cx,cy,w,h,score），NMS IoU 0.45；换 YOLOX/NanoDet 时只改 adapter。  
 `PlateTracker.update`：对上一帧圆心做光流预测；在预测点附近提轮廓，`Imgproc.fitEllipse`；长轴作为 `majorAxisPx`；与期望直径偏差 >25% 判为内圈/误检，回退检测器。  
 `PlateRoi.selectLargest`：按框面积最大。  
-`ml/download_models.sh`：下载检测器 + 姿态模型，`sha256sum -c ml/models.lock`，失败退出非零。
+`ml/download_models.sh`：下载姿态模型 + 可选的开源检测器权重，`sha256sum -c ml/models.lock`，失败退出非零。  
+`ml/train_detector.py`：用 Roboflow/自采 200–500 帧训练 YOLOX-Nano 或 NanoDet-Plus，导出 TFLite；发布路径用 Apache-2.0 模型，个人 MVP 可先用 YOLOv8n 权重。
 
 - [ ] **Step 4: 跑测试并手工验证**
 
@@ -977,6 +987,7 @@ Expected: FAIL。
 
 `PoseEstimator` 用 MediaPipe `PoseLandmarker`（`pose_landmarker_lite.task`，GPU delegate，失败回退 CPU）。  
 `JointAngleExtractor`：按 §5.7 取三点；`visibility < minVisibility` 或点缺失 → `null`；`JointAngles.correctAzimuth` 校正；置信度取相关点 visibility 最小值。  
+MediaPipe 索引：肩 11/12、肘 13/14、腕 15/16、食指 19/20、髋 23/24、膝 25/26、踝 27/28、脚跟 29/30、脚尖 31/32。  
 单机位只取可见侧（visibility 高的一侧）；左右对称不计算。
 
 - [ ] **Step 4: 跑测试并手工验证**
@@ -1024,6 +1035,15 @@ git commit -m "feat(app): add pose estimation and joint angle extraction"
       val fps: Double
   )
 
+  data class SetSummary(
+      val repCount: Int,
+      val mcvAvgMps: Double,
+      val bestMcvMps: Double,
+      val velocityLossPct: Double?,
+      val totalVolumeKg: Double?,
+      val totalWorkJ: Double?
+  )
+
   class AnalysisPipeline(
       private val decoder: VideoDecoder,
       private val tracker: PlateTracker,
@@ -1036,6 +1056,7 @@ git commit -m "feat(app): add pose estimation and joint angle extraction"
 - [ ] **Step 1: 写失败测试**
 
 ```kotlin
+@RunWith(RobolectricTestRunner::class)
 class AnalysisPipelineTest {
     @Test
     fun `pipeline returns one rep for synthetic frames`() = runTest {
@@ -1060,6 +1081,7 @@ Expected: FAIL。
 管线：解码 → 首帧检测/用户 ROI → 逐帧跟踪 → 标定 → 姿态（每 2–3 帧）→ `Kinematics.derive` → `PhaseSegmenter.segment` → `RepMetricsCalculator.compute`（逐 rep，传入当前最佳 MCV）→ `SetSummary`。  
 进度：`onProgress(decodedFrames / totalFrames)`。  
 报告 UI：rep 表（MCV/MPV/PV/ROM/VL/粘滞点/力/功率）、速度曲线、杠铃轨迹、相位条、质量警告。  
+`PhaseTimeline` 允许拖动相位边界；修改后重算该 rep，并标 `manual=true`。  
 图表用 Compose Canvas，不引入第三方图表库。
 
 - [ ] **Step 4: 跑测试确认通过**
