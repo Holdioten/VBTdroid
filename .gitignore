@@ -43,3 +43,6 @@ Thumbs.db
 # Local validation data
 docs/validation/raw/
 docs/validation/private/
+
+# SDD workspace
+.superpowers/

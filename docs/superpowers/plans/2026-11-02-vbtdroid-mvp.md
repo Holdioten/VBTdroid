@@ -53,7 +53,7 @@
 - Create: `app/src/main/res/values-en/strings.xml`
 - Create: `core/src/main/kotlin/com/vbtdroid/core/model/MetricId.kt`
 - Create: `core/src/test/kotlin/com/vbtdroid/core/MetricIdTest.kt`
-- Create: `docs/glossary.md`
+- Create: `docs/glossary.md`（已存在；本任务校验并保持同步）
 - Create: `core/src/test/kotlin/com/vbtdroid/core/SmokeTest.kt`
 - Create: `.gitignore`
 - Create: `README.md`
@@ -866,7 +866,7 @@ git commit -m "feat(app): import and decode video with PTS timeline"
   }
 
   class PlateTracker(private val detector: PlateDetector) {
-      fun initialize(bitmap: Bitmap, roi: RectF): PlateObservation
+      fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation
       fun update(frame: Bitmap, tSec: Double): PlateObservation?
   }
 
@@ -1183,6 +1183,26 @@ class AgreementTest {
 
 ```kotlin
 class CsvExporterTest {
+    private fun fakeResult(reps: Int): AnalysisResult {
+        val metrics = (1..reps).map { i ->
+            RepMetrics(
+                repIndex = i, durationS = 1.0, romTotalM = 0.5, romConcentricM = 0.5,
+                meanVelocityMps = 0.6, mcvMps = 0.6, mpvMps = 0.6, peakVelocityMps = 0.7,
+                peakAccelerationMps2 = 1.0, peakDecelerationMps2 = -1.0,
+                stickingPointPct = null, velocityLossPct = null,
+                barPathHorizontalRangeM = 0.02, barPathDeviationM = 0.01,
+                meanForceN = null, peakForceN = null, meanPowerW = null,
+                peakPowerW = null, impulseNs = null, workJ = null
+            )
+        }
+        return AnalysisResult(
+            reps = metrics,
+            summary = SetSummary(reps, 0.6, 0.6, null, null, null),
+            quality = QualityFlags(0.9, 0.0, 0.9, 0.9, true, emptyList()),
+            fps = 60.0
+        )
+    }
+
     @Test
     fun `csv has header and one row per rep`() {
         val csv = CsvExporter.export(fakeResult(2))
