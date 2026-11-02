@@ -21,7 +21,16 @@ Android 端离线 VBT（Velocity Based Training）分析工具。
 ## 文档
 
 - 技术规格：`docs/spec.md`
+- 术语与指标对照：`docs/glossary.md`
 - 实施计划：`docs/superpowers/plans/2026-11-02-vbtdroid-mvp.md`
+
+## 语言与标准
+
+- UI 默认中文；英文资源结构预留，后续补翻译。
+- 指标 Canonical ID 用英文 `snake_case`；中文/英文显示名见术语表。
+- 术语表分 Part A 业务术语（输出端）与 Part B 技术术语（拍摄/处理端），禁止混用。
+- 指标定义遵循同行评议共识与 SI 单位，不绑定商业 App 术语。
+- 定义有争议的指标（MPV、粘滞点、RPE）在术语表标注本实现定义与替代定义。
 
 ## 结构（规划）
 

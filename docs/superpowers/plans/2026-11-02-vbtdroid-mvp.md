@@ -18,7 +18,12 @@
 - 所有指标必须允许 `null` 表示不可用；禁止用 0 或假值填充。
 - 所有指标必须带质量标记/不可用原因。
 - App 不申请网络权限。
-- UI 文案中文；代码标识符英文。
+- UI 默认中文（zh-CN）；所有用户可见文案走 `res/values/strings.xml`；英文放 `res/values-en/strings.xml`，后续补，不阻塞 v1。
+- 指标/术语 Canonical ID 用英文 `snake_case`，JSON key、`MetricId`、术语表必须一致；`docs/glossary.md` 是单一来源。
+- 术语表分两层：Part A 业务术语（输出端）与 Part B 技术术语（拍摄/解码/标定/跟踪/验证）；禁止混用。
+- `MetricId` 只枚举 Part A 业务指标；技术字段不进 `MetricId`。
+- 指标定义遵循 `docs/glossary.md` 的同行评议来源与 SI 单位；不绑定商业 Vendor。
+- 代码标识符英文。
 - 模型权重不进 git；`ml/download_models.sh` 下载并校验 SHA256。
 - 检测器发布许可：YOLOX-Nano/NanoDet-Plus（Apache-2.0）优先；YOLOv8n/YOLO11n 仅限个人 AGPL 场景。
 - 每个任务结束必须能独立运行测试并提交。
@@ -30,6 +35,7 @@
 - **卧推底部遮挡**：片被胸/臂遮挡时跟踪器可能跳到内圈，直径骤变导致尺度错误。Task 10 必须测试内圈误检拒绝。
 - **姿态关键点遮挡**：片/杠铃挡髋膝时 MediaPipe 会猜。Task 11/12 必须输出低置信并允许关节角为 `null`。
 - **单组缺负荷/多组缺 LVP**：力/功率/1RM 不能静默变 0。Task 5/6 测试 `loadKg=null` 和 `<3` 负荷点时返回 `null` + 警告。
+- **术语漂移**：同一指标在 UI、JSON、代码里叫法不一致，导致报告与导出对不上。Task 1 建 `MetricId` + 唯一性测试；所有 key 必须来自 `docs/glossary.md`。
 
 ---
 
@@ -43,6 +49,11 @@
 - Create: `app/build.gradle.kts`
 - Create: `app/src/main/AndroidManifest.xml`
 - Create: `app/src/main/java/com/vbtdroid/app/MainActivity.kt`
+- Create: `app/src/main/res/values/strings.xml`
+- Create: `app/src/main/res/values-en/strings.xml`
+- Create: `core/src/main/kotlin/com/vbtdroid/core/model/MetricId.kt`
+- Create: `core/src/test/kotlin/com/vbtdroid/core/MetricIdTest.kt`
+- Create: `docs/glossary.md`
 - Create: `core/src/test/kotlin/com/vbtdroid/core/SmokeTest.kt`
 - Create: `.gitignore`
 - Create: `README.md`
@@ -57,6 +68,13 @@
 `gradle/libs.versions.toml` 固定基线版本：AGP `8.7.3`、Kotlin `2.0.21`、KSP `2.0.21-1.0.28`、Compose BOM `2024.10.01`、JUnit `5.11.0`、kotlinx.serialization `1.7.3`、kotlinx-coroutines-test `1.9.0`、Robolectric `4.13`、Room `2.6.1`、OpenCV `4.10.0`、TFLite `2.16.1`、MediaPipe Tasks Vision `0.10.14`。  
 `core` 用 `kotlin("jvm")` + serialization + JUnit 5。`app` 用 Android application + Compose + KSP，并应用 `org.jetbrains.kotlin.plugin.compose`。  
 `MainActivity` 只显示 `Text("VBTdroid")`。  
+`app/src/main/res/values/strings.xml` 默认中文；`values-en/strings.xml` 放同 key 的英文骨架。所有 UI 文案后续必须走 `stringResource`。
+
+`core/.../model/MetricId.kt` 定义稳定枚举：每个条目含 `id`（snake_case）、`unit`；只放 Part A 业务指标，不放技术字段。至少覆盖 `mean_velocity_mps`、`mcv_mps`、`mpv_mps`、`peak_velocity_mps`、`rom_total_m`、`rom_concentric_m`、`velocity_loss_pct`、`sticking_point_pct`、`mean_force_n`、`peak_force_n`、`mean_power_w`、`peak_power_w`、`impulse_ns`、`work_j`、`estimated_1rm_kg`、`hip_angle_deg`、`knee_angle_deg`、`trunk_angle_deg`、`elbow_angle_deg`、`shoulder_angle_deg`。
+
+`docs/glossary.md` 已存在，作为术语单一来源；本任务只校验 `MetricId` 与术语表一致。
+
+`MetricIdTest` 断言所有 `id` 唯一、非空、snake_case、unit 非空；并断言不含技术字段（`pts`、`fps`、`px_per_m`、`camera_*`、`track_confidence`、`occlusion_pct`）。
 `.gitignore` 覆盖 `.gradle/`、`build/`、`local.properties`、`.idea/`、`*.iml`、`app/src/main/assets/models/*.tflite`、`*.task`、`prototype/.venv/`、`__pycache__/`、`.pytest_cache/`。
 
 - [ ] **Step 2: 生成 wrapper**
@@ -67,7 +85,7 @@ Expected: 生成 `gradlew`、`gradle/wrapper/*`。
 - [ ] **Step 3: 跑 core 测试**
 
 Run: `./gradlew :core:test`  
-Expected: `BUILD SUCCESSFUL`；`SmokeTest` 通过。
+Expected: `BUILD SUCCESSFUL`；`SmokeTest`、`MetricIdTest` 通过。
 
 - [ ] **Step 4: 编 app**
 
@@ -78,7 +96,7 @@ Expected: `BUILD SUCCESSFUL`；产出 `app/build/outputs/apk/debug/app-debug.apk
 
 ```bash
 git add .
-git commit -m "chore: scaffold Gradle multi-module project"
+git commit -m "chore: scaffold Gradle modules, glossary and metric ids"
 ```
 
 ---
@@ -592,17 +610,17 @@ git commit -m "feat(core): add load-velocity profile and 1RM estimate"
   @Serializable
   data class RepExport(
       val index: Int,
-      val metrics: Map<String, Double?>,
+      val metrics: Map<String, Double?>,   // keys = MetricId.id
       val quality: Map<String, Double>
   )
 
   @Serializable
   data class SetExport(
-      val schemaVersion: Int = 1,
+      @SerialName("schema_version") val schemaVersion: Int = 1,
       val lift: String,
-      val loadKg: Double?,
-      val plateDiameterMm: Double,
-      val cameraAngleDeg: Double,
+      @SerialName("load_kg") val loadKg: Double?,
+      @SerialName("plate_diameter_mm") val plateDiameterMm: Double,
+      @SerialName("camera_azimuth_deg") val cameraAngleDeg: Double,
       val reps: List<RepExport>,
       val warnings: List<String>
   )
@@ -646,6 +664,8 @@ class JsonExportTest {
         val json = JsonExport.encode(export)
         val back = Json.decodeFromString<SetExport>(json)
         assertEquals(export, back)
+        assertTrue(json.contains("\"plate_diameter_mm\""))
+        assertTrue(json.contains("\"camera_azimuth_deg\""))
     }
 }
 ```
@@ -1081,6 +1101,8 @@ Expected: FAIL。
 管线：解码 → 首帧检测/用户 ROI → 逐帧跟踪 → 标定 → 姿态（每 2–3 帧）→ `Kinematics.derive` → `PhaseSegmenter.segment` → `RepMetricsCalculator.compute`（逐 rep，传入当前最佳 MCV）→ `SetSummary`。  
 进度：`onProgress(decodedFrames / totalFrames)`。  
 报告 UI：rep 表（MCV/MPV/PV/ROM/VL/粘滞点/力/功率）、速度曲线、杠铃轨迹、相位条、质量警告。  
+所有文案走 `stringResource`；指标显示名通过 `MetricId` + `docs/glossary.md` 映射，禁止硬编码中文/英文。
+
 `PhaseTimeline` 允许拖动相位边界；修改后重算该 rep，并标 `manual=true`。  
 图表用 Compose Canvas，不引入第三方图表库。
 

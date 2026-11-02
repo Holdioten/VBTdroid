@@ -16,6 +16,17 @@ VBTdroid 是 Android 端离线 VBT（Velocity Based Training）分析工具。
 
 目标：个人训练用，单动作分析深度接近 Arcus VBT；指标完整、定义透明、质量可查。
 
+### 1.1 语言与术语
+
+- UI 默认中文（zh-CN）；英文（en）作为后续语言，不阻塞 v1。
+- 所有用户可见文案走 Android `strings.xml`，禁止硬编码。
+- 指标/术语的 Canonical ID 用英文 `snake_case`，稳定不变；中文/英文显示名可本地化。
+- 内部术语表：`docs/glossary.md`。spec、plan、代码、JSON、UI 以它为准。
+- 术语表分两层：**Part A 业务术语（输出端）** 与 **Part B 技术术语（拍摄/解码/标定/跟踪/验证）**。禁止混用。
+- `MetricId` 只枚举 Part A 业务指标；技术字段用独立数据类/字段，不进 `MetricId`。
+- 指标定义遵循同行评议共识与 SI 单位；不绑定 Arcus/Vitruve/GymAware/Enode 等商业体系。
+- 定义有争议的指标（MPV、粘滞点、RPE）必须标注本实现定义与替代定义。
+
 ---
 
 ## 2. 目标
@@ -27,6 +38,7 @@ VBTdroid 是 Android 端离线 VBT（Velocity Based Training）分析工具。
 - 每个指标带定义、单位、依赖、置信度/不可用原因。
 - 保存历史，支持同负荷对比、LVP、1RM 估计。
 - 导出 JSON/CSV，支持报告复核。
+- UI 默认中文；英文资源结构预留，后续补翻译。
 
 ## 3. 非目标
 
@@ -64,6 +76,8 @@ VBTdroid 是 Android 端离线 VBT（Velocity Based Training）分析工具。
 - 世界：`x` 水平前后，`y` 垂直向上，`z` 深度。
 - 杠铃位置单位：米；速度：m/s；角度：度。
 - 时间：视频 PTS，秒。禁止按帧计数推时间。
+
+指标 Canonical ID、中英文名、单位、定义来源见 `docs/glossary.md`。JSON key 使用 Canonical ID；Kotlin 属性可用 camelCase，序列化时映射到 snake_case。
 
 ### 5.1 标定
 
@@ -221,20 +235,37 @@ v1 不支持单机位对称性。仅当正面机位或双机位时输出；否�
 
 | 标记 | 含义 |
 |---|---|
-| `trackConfidence` | 跟踪平均置信度 0–1 |
-| `occlusionPct` | 低置信帧比例 |
-| `repConfidence` | 相位分割置信度 |
-| `calibrationConfidence` | 标定置信度 |
-| `cameraLevel` | 相机是否水平 |
-| `effectiveFps` | 有效帧率 |
+| `track_confidence` | 跟踪平均置信度 0–1 |
+| `occlusion_pct` | 低置信帧比例 |
+| `rep_confidence` | 相位分割置信度 |
+| `calibration_confidence` | 标定置信度 |
+| `camera_level` | 相机是否水平 |
+| `effective_fps` | 有效帧率 |
 | `warnings` | 具体问题列表 |
 
 规则：
 
-- `trackConfidence < 0.6`：速度指标标“低置信”。
-- `occlusionPct > 20%`：关节角不可用。
-- `cameraLevel=false`：垂直速度标“估算”，不参与 PR 判定。
+- `track_confidence < 0.6`：速度指标标“低置信”。
+- `occlusion_pct > 20%`：关节角不可用。
+- `camera_level=false`：垂直速度标“估算”，不参与 PR 判定。
 - Rep 置信度 < 0.8：要求用户复核相位。
+
+### 5.10 标准与术语
+
+没有单一 VBT ISO 标准。采用：
+
+- SI 单位与标准运动学定义。
+- 同行评议共识：Sánchez-Medina / González-Badillo（MCV、MPV、VL）、Banyard（LVP）、Weakley 2021 与 Pueo 2025（设备效度/信度）、Helms 2017 与 Zourdos 2016（RPE/RIR）。
+- 统计：Bland–Altman 1986（bias/LOA）、Koo & Li 2016（ICC）、Weir 2005（SEM）。
+- 关节角：ISB 推荐是 3D 坐标系；本实现是单目 2D 近似，不声称 ISB 合规。
+
+实现规则：
+
+- 指标定义冲突时，`docs/glossary.md` 选定一个操作定义，备注替代定义。
+- 1RM 估计必须标 `estimated_`；没有个体 MVT 校准时不得标“实测”。
+- RPE 用 0–10 力量训练量表，不用 Borg 6–20。
+- 速度区间（velocity zone）只作参考，不作默认处方；个体/动作差异大。
+- 商业 App 术语只作对照，不作标准来源。
 
 ---
 
@@ -259,7 +290,7 @@ VBTdroid/
   → PoseEstimator (MediaPipe Tasks)
   → AnalysisPipeline
       → core: Calibration → Filter → Phase → Metrics → LVP
-  → Report (Compose + Vico)
+  → Report (Compose Canvas)
   → Room / JSON / CSV
 ```
 
@@ -286,19 +317,19 @@ JSON 导出包含：
 
 ```json
 {
-  "schemaVersion": 1,
-  "session": {"date": "...", "lift": "squat", "variant": "high_bar"},
-  "set": {"loadKg": 100, "plateDiameterMm": 450, "cameraAngleDeg": 45},
-  "calibration": {"pxPerM": 500.0, "cameraLevel": true},
+  "schema_version": 1,
+  "session": {"date": "...", "lift": "back_squat", "variant": "high_bar"},
+  "set": {"load_kg": 100, "plate_diameter_mm": 450, "camera_azimuth_deg": 45},
+  "calibration": {"px_per_m": 500.0, "camera_level": true},
   "reps": [
     {
       "index": 1,
-      "phases": [{"type": "eccentric", "startSec": 0.0, "endSec": 1.2}],
-      "metrics": {"romM": 0.52, "mcvMps": 0.61, "mpvMps": 0.68, "pvMps": 0.92},
-      "quality": {"trackConfidence": 0.94, "occlusionPct": 2.0}
+      "phases": [{"type": "eccentric_phase", "start_sec": 0.0, "end_sec": 1.2}],
+      "metrics": {"rom_total_m": 0.52, "mcv_mps": 0.61, "mpv_mps": 0.68, "peak_velocity_mps": 0.92},
+      "quality": {"track_confidence": 0.94, "occlusion_pct": 2.0}
     }
   ],
-  "summary": {"mcvAvg": 0.58, "velocityLossPct": 12.3},
+  "summary": {"mcv_avg_mps": 0.58, "velocity_loss_pct": 12.3},
   "warnings": []
 }
 ```
@@ -336,6 +367,9 @@ JSON 导出包含：
 
 - `minSdk 26`，`targetSdk 35`，`compileSdk 35`，JDK 17。
 - UI：Jetpack Compose + Material 3。
+- 语言：默认 zh-CN，`res/values/strings.xml`；英文 `res/values-en/strings.xml` 后续补，不阻塞 v1。
+- 所有用户可见文案走 `stringResource`；指标显示名通过 `MetricId` + 术语表映射，禁止硬编码。
+- JSON key 用 Canonical ID（`snake_case`），不随 UI 语言变化。
 - 视频：MediaExtractor + MediaCodec；支持 H.264/HEVC、VFR、旋转元数据、慢动作 PTS。
 - 解码分辨率：最长边 ≤ 1920；分析流可降至 1280。
 - 内存：流式解码，不整段载入。
@@ -356,7 +390,7 @@ JSON 导出包含：
 | CV | OpenCV Android 4.x | Apache 2.0 |
 | 推理 | TensorFlow Lite | Apache 2.0 |
 | 姿态 | MediaPipe Tasks Vision | Apache 2.0 |
-| 图表 | Vico | Apache 2.0 |
+| 图表 | Compose Canvas | 平台 |
 | 数据库 | Room | Apache 2.0 |
 | 序列化 | kotlinx.serialization | Apache 2.0 |
 | 检测模型 | YOLOX-Nano / NanoDet-Plus（发布首选） | Apache 2.0 |
@@ -383,6 +417,7 @@ JSON 导出包含：
 | 检测器许可 | 分发风险 | 发布前换 Apache 模型 |
 | 验证成本 | 无 ground truth | 租/借 RepOne；先做核心指标 |
 | 指标膨胀 | 不可信 | 每个指标带依赖与质量标记 |
+| 术语漂移 | UI/JSON/代码同名不同义 | `docs/glossary.md` + `MetricId` + 唯一性测试 |
 
 ---
 
@@ -395,7 +430,7 @@ JSON 导出包含：
 | M2 | Kotlin core + JUnit | 1–2 周 |
 | M3 | Android 导入/解码 + 片跟踪 | 2–3 周 |
 | M4 | 姿态 + 指标 + 报告 UI | 2–3 周 |
-| M5 | 历史/导出/对比 | 1 周 |
+| M5 | 历史/导出/对比 + 英文资源骨架 | 1 周 |
 | M6 | 验证 + 打磨 | 2–4 周 |
 
 总计：2.5–3.5 个月全职。
@@ -410,3 +445,4 @@ JSON 导出包含：
 4. 1RM 默认 `v1rm` 用文献值还是强制个体校准？先文献值 + 标记。
 5. 双机位支持是否进 v1？不进，留接口。
 6. 卧推 ArUco 辅助是否默认开启？默认关闭，作为高精度选项。
+7. 英文翻译排期：v1 只留 `values-en` 骨架，M5 后补完整翻译。
