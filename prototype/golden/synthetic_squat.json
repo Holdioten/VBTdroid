@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "lift": "deadlift",
+  "load_kg": null,
+  "plate_diameter_mm": 450.0,
+  "camera_azimuth_deg": 90,
+  "reps": [
+    {
+      "index": 1,
+      "metrics": {
+        "durationS": 1.1666666666666667,
+        "romTotalM": 0.5045439614584473,
+        "romConcentricM": 0.5045439614584473,
+        "meanVelocityMps": 0.43246625267866906,
+        "mcvMps": 0.4730099638672943,
+        "mpvMps": 0.5297711595313687,
+        "peakVelocityMps": 0.5297711595313712,
+        "peakAccelerationMps2": 0.3243496895090925,
+        "peakDecelerationMps2": -4.432779089956417,
+        "stickingPointPct": 23.99999999999999,
+        "velocityLossPct": null,
+        "barPathHorizontalRangeM": 0.0,
+        "barPathDeviationM": 0.0,
+        "meanForceN": null,
+        "peakForceN": null,
+        "meanPowerW": null,
+        "peakPowerW": null,
+        "impulseNs": null,
+        "workJ": null
+      },
+      "quality": {}
+    }
+  ],
+  "warnings": []
+}
