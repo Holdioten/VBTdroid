@@ -1,32 +1,49 @@
 {
   "schema_version": 1,
-  "lift": "deadlift",
+  "lift": "squat",
   "load_kg": null,
   "plate_diameter_mm": 450.0,
   "camera_azimuth_deg": 90,
   "reps": [
     {
       "index": 1,
+      "phases": [
+        {
+          "type": "ECCENTRIC",
+          "start_sec": 0.0,
+          "end_sec": 1.0
+        },
+        {
+          "type": "CONCENTRIC",
+          "start_sec": 1.0,
+          "end_sec": 1.6666666666666667
+        },
+        {
+          "type": "LOCKOUT",
+          "start_sec": 1.6666666666666667,
+          "end_sec": 1.7666666666666668
+        }
+      ],
       "metrics": {
-        "durationS": 1.1666666666666667,
-        "romTotalM": 0.5045439614584473,
-        "romConcentricM": 0.5045439614584473,
-        "meanVelocityMps": 0.43246625267866906,
-        "mcvMps": 0.4730099638672943,
-        "mpvMps": 0.5297711595313687,
-        "peakVelocityMps": 0.5297711595313712,
-        "peakAccelerationMps2": 0.3243496895090925,
-        "peakDecelerationMps2": -4.432779089956417,
-        "stickingPointPct": 23.99999999999999,
-        "velocityLossPct": null,
-        "barPathHorizontalRangeM": 0.0,
-        "barPathDeviationM": 0.0,
-        "meanForceN": null,
-        "peakForceN": null,
-        "meanPowerW": null,
-        "peakPowerW": null,
-        "impulseNs": null,
-        "workJ": null
+        "duration_s": 1.7666666666666668,
+        "rom_total_m": 0.5043037024291819,
+        "rom_concentric_m": 0.49997903990239534,
+        "mean_velocity_mps": -0.00027199135388660217,
+        "mcv_mps": 0.7456438973268056,
+        "mpv_mps": 0.831296241260108,
+        "peak_velocity_mps": 0.9081791306252046,
+        "peak_acceleration_mps2": 11.568472259154378,
+        "peak_deceleration_mps2": -7.784392548216056,
+        "sticking_point_pct": 75.54060547813557,
+        "velocity_loss_pct": null,
+        "bar_path_horizontal_range_m": 1.9984014443252818e-15,
+        "bar_path_deviation_m": 1.9984014443252818e-15,
+        "mean_force_n": null,
+        "peak_force_n": null,
+        "mean_power_w": null,
+        "peak_power_w": null,
+        "impulse_ns": null,
+        "work_j": null
       },
       "quality": {}
     }

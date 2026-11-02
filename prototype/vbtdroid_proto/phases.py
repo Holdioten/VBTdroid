@@ -66,7 +66,8 @@ def _merge_short_runs(source):
         adjacent = 1
         while adjacent < len(runs):
             if runs[adjacent - 1]["type"] == runs[adjacent]["type"]:
-                runs[adjacent - 1]["end_sec"] = runs.pop(adjacent)["end_sec"]
+                merged_run = runs.pop(adjacent)
+                runs[adjacent - 1]["end_sec"] = merged_run["end_sec"]
             else:
                 adjacent += 1
         index = max(0, first - 1)

@@ -1,5 +1,7 @@
 """通过二值轮廓拟合和逐帧邻近匹配跟踪最大圆形目标。"""
 
+import math
+
 import cv2
 
 
@@ -33,6 +35,7 @@ def track_video(video, fps):
     previous = None
     major_axis_px = None
     frame_index = 0
+    previous_time = None
     while True:
         ok, frame = capture.read()
         if not ok:
@@ -43,16 +46,25 @@ def track_video(video, fps):
                 candidates, key=lambda circle: (circle[0] - previous[0]) ** 2 + (circle[1] - previous[1]) ** 2
             )
             x, y, major_axis, _ = selected
+            position_msec = float(capture.get(cv2.CAP_PROP_POS_MSEC))
+            timestamp = position_msec / 1000.0
+            if not math.isfinite(timestamp) or timestamp < 0 or (
+                previous_time is not None and timestamp <= previous_time
+            ):
+                timestamp = frame_index / fps
+            if previous_time is not None and timestamp <= previous_time:
+                timestamp = previous_time + 1.0 / fps
             if major_axis_px is None:
                 major_axis_px = major_axis
             observations.append({
-                "t_sec": frame_index / fps,
+                "t_sec": timestamp,
                 "x_px": x,
                 "y_px": y,
                 "major_axis_px": major_axis,
                 "confidence": 1.0,
             })
             previous = (x, y)
+            previous_time = timestamp
         else:
             warnings.append(f"第 {frame_index} 帧未检测到目标")
         frame_index += 1

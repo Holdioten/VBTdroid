@@ -21,6 +21,8 @@ def _derive_motion(samples):
         end = min(start + window, len(times))
         scale = float(np.max(np.abs(times[start:end] - time)))
         if scale == 0.0:
+            fitted_x = float(x)
+            fitted_y = float(y)
             vx = vy = ax = ay = 0.0
         else:
             u = (times[start:end] - time) / scale
@@ -28,12 +30,14 @@ def _derive_motion(samples):
             design = np.column_stack([u**power for power in range(degree + 1)])
             cx = np.linalg.lstsq(design, xs[start:end], rcond=None)[0]
             cy = np.linalg.lstsq(design, ys[start:end], rcond=None)[0]
+            fitted_x = float(cx[0])
+            fitted_y = float(cy[0])
             vx = float(cx[1] / scale) if degree >= 1 else 0.0
             vy = float(cy[1] / scale) if degree >= 1 else 0.0
             ax = float(2.0 * cx[2] / scale**2) if degree >= 2 else 0.0
             ay = float(2.0 * cy[2] / scale**2) if degree >= 2 else 0.0
         motion.append({
-            "t_sec": float(time), "x_m": float(x), "y_m": float(y),
+            "t_sec": float(time), "x_m": fitted_x, "y_m": fitted_y,
             "vx_mps": vx, "vy_mps": vy, "ax_mps2": ax, "ay_mps2": ay,
         })
     return motion
@@ -41,6 +45,9 @@ def _derive_motion(samples):
 
 def analyze_video(video, plate_diameter_m, camera_angle_deg, fps, lift="deadlift", load_kg=None):
     """跟踪视频中的最大圆形杠铃片，并返回与 SetExport 同构的字典。"""
+    lift = lift.lower()
+    if lift not in {"squat", "bench", "deadlift"}:
+        raise ValueError("lift must be squat, bench, or deadlift")
     observations, major_axis_px, warnings = track_video(video, fps)
     if not observations:
         return {
@@ -64,7 +71,15 @@ def analyze_video(video, plate_diameter_m, camera_angle_deg, fps, lift="deadlift
         except ValueError as error:
             warnings.append(f"第 {rep_slice['index']} 次重复无效：{error}")
             continue
-        reps.append({"index": rep_slice["index"], "metrics": metrics, "quality": {}})
+        reps.append({
+            "index": rep_slice["index"],
+            "phases": [
+                {"type": phase["type"], "start_sec": phase["start_sec"], "end_sec": phase["end_sec"]}
+                for phase in rep_slice["phases"]
+            ],
+            "metrics": metrics,
+            "quality": {},
+        })
     return {
         "schema_version": 1,
         "lift": lift,

@@ -52,25 +52,25 @@ def calculate_metrics(rep, samples, load_kg=None):
                 break
 
     metrics = {
-        "durationS": rep["end_sec"] - rep["start_sec"],
-        "romTotalM": max(rep_ys) - min(rep_ys),
-        "romConcentricM": rom_concentric,
-        "meanVelocityMps": (last["y_m"] - first["y_m"]) / rep_duration,
-        "mcvMps": mcv,
-        "mpvMps": mpv,
-        "peakVelocityMps": peak_velocity,
-        "peakAccelerationMps2": max(sample["ay_mps2"] for sample in concentric),
-        "peakDecelerationMps2": min(sample["ay_mps2"] for sample in concentric),
-        "stickingPointPct": sticking_point,
-        "velocityLossPct": None,
-        "barPathHorizontalRangeM": max(rep_xs) - min(rep_xs),
-        "barPathDeviationM": max(fabs(x - first["x_m"]) for x in rep_xs),
-        "meanForceN": None,
-        "peakForceN": None,
-        "meanPowerW": None,
-        "peakPowerW": None,
-        "impulseNs": None,
-        "workJ": None,
+        "duration_s": rep["end_sec"] - rep["start_sec"],
+        "rom_total_m": max(rep_ys) - min(rep_ys),
+        "rom_concentric_m": rom_concentric,
+        "mean_velocity_mps": (last["y_m"] - first["y_m"]) / rep_duration,
+        "mcv_mps": mcv,
+        "mpv_mps": mpv,
+        "peak_velocity_mps": peak_velocity,
+        "peak_acceleration_mps2": max(sample["ay_mps2"] for sample in concentric),
+        "peak_deceleration_mps2": min(sample["ay_mps2"] for sample in concentric),
+        "sticking_point_pct": sticking_point,
+        "velocity_loss_pct": None,
+        "bar_path_horizontal_range_m": max(rep_xs) - min(rep_xs),
+        "bar_path_deviation_m": max(fabs(x - first["x_m"]) for x in rep_xs),
+        "mean_force_n": None,
+        "peak_force_n": None,
+        "mean_power_w": None,
+        "peak_power_w": None,
+        "impulse_ns": None,
+        "work_j": None,
     }
     if load_kg is not None and load_kg > 0:
         forces = [load_kg * (GRAVITY_MPS2 + sample["ay_mps2"]) for sample in concentric]
@@ -83,11 +83,11 @@ def calculate_metrics(rep, samples, load_kg=None):
             work += mean_force * (following["y_m"] - current["y_m"])
             power_integral += (powers[index] + powers[index + 1]) / 2.0 * dt
         metrics.update({
-            "meanForceN": impulse / concentric_duration,
-            "peakForceN": max(forces),
-            "meanPowerW": power_integral / concentric_duration,
-            "peakPowerW": max(powers),
-            "impulseNs": impulse,
-            "workJ": work,
+            "mean_force_n": impulse / concentric_duration,
+            "peak_force_n": max(forces),
+            "mean_power_w": power_integral / concentric_duration,
+            "peak_power_w": max(powers),
+            "impulse_ns": impulse,
+            "work_j": work,
         })
     return metrics
