@@ -818,7 +818,7 @@ Expected: FAIL。
 - [ ] **Step 3: 实现**
 
 `Timeline.normalizePts`：校验严格递增，返回 `us / 1_000_000.0`。  
-`VideoDecoder`：`MediaExtractor` 选视频轨；`MediaMetadataRetriever` 读旋转/时长/帧率；`MediaCodec` 异步解码；输出 `Frame(tSec, bitmap)`；按 `maxLongSide` 缩放；旋转元数据用 `Matrix` 应用。  
+`VideoDecoder`：`MediaExtractor` 选视频轨；`MediaMetadataRetriever` 读旋转/时长/帧率；`MediaCodec` 同步解码循环放在 `Dispatchers.IO`（离线批处理，不阻塞 UI；R13）；输出 `Frame(tSec, bitmap)`；按 `maxLongSide` 缩放；旋转元数据用 `Matrix` 应用。  
 `readMeta` 用实际 PTS 计算 `effectiveFps = (frames-1)/(last-first)`，与容器 `nominalFps` 分开报告。  
 `ImportScreen`：`ActivityResultContracts.OpenDocument`，MIME `video/*`，持久化 URI 权限；显示文件名/时长/分辨率/有效帧率。
 
