@@ -52,4 +52,33 @@ class PhaseSegmenterTest {
 
         assertTrue(PhaseSegmenter.segment(samples, Lift.DEADLIFT).isEmpty())
     }
+
+    @Test
+    fun `slow oscillation around eccentric threshold does not split rep`() {
+        val samples = buildList {
+            for (i in 0..10) add(sample(i * 0.05, -0.5))
+            for (i in 11..14) add(sample(i * 0.05, -0.04))
+            for (i in 15..18) add(sample(i * 0.05, -0.02))
+            for (i in 19..22) add(sample(i * 0.05, -0.04))
+            for (i in 23..26) add(sample(i * 0.05, -0.02))
+            for (i in 27..31) add(sample(i * 0.05, 0.0))
+            for (i in 32..62) add(sample(i * 0.05, 0.5))
+            for (i in 63..69) add(sample(i * 0.05, 0.0))
+        }
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(1, reps.size)
+        assertEquals(
+            listOf(PhaseType.ECCENTRIC, PhaseType.PAUSE, PhaseType.CONCENTRIC, PhaseType.LOCKOUT),
+            reps.single().phases.map { it.type },
+        )
+    }
+
+    @Test
+    fun `single run shorter than minimum duration is ignored`() {
+        val samples = listOf(sample(0.0, 0.5), sample(0.05, 0.5))
+
+        assertTrue(PhaseSegmenter.segment(samples, Lift.DEADLIFT).isEmpty())
+    }
 }

@@ -67,11 +67,25 @@ object PhaseSegmenter {
 
     private fun classify(samples: List<MotionSample>, vEps: Double): List<Run> {
         val runs = mutableListOf<Run>()
+        val exitEps = vEps * 0.5
         var type = phaseFor(samples.first().vyMps, vEps)
         var start = samples.first().tSec
 
         for (index in 1 until samples.size) {
-            val nextType = phaseFor(samples[index].vyMps, vEps)
+            val vyMps = samples[index].vyMps
+            val nextType = when (type) {
+                PhaseType.ECCENTRIC -> if (vyMps >= -exitEps) {
+                    phaseFor(vyMps, vEps)
+                } else {
+                    PhaseType.ECCENTRIC
+                }
+                PhaseType.CONCENTRIC -> if (vyMps <= exitEps) {
+                    phaseFor(vyMps, vEps)
+                } else {
+                    PhaseType.CONCENTRIC
+                }
+                PhaseType.PAUSE, PhaseType.LOCKOUT -> phaseFor(vyMps, vEps)
+            }
             if (nextType != type) {
                 runs += Run(type, start, samples[index].tSec)
                 type = nextType
@@ -91,6 +105,7 @@ object PhaseSegmenter {
     /** 用最短持续时间抑制阈值抖动，并丢弃孤立速度尖峰。 */
     private fun mergeShortRuns(source: List<Run>, minPhaseSec: Double): List<Run> {
         val runs = source.toMutableList()
+        if (runs.size == 1 && runs.single().durationSec < minPhaseSec) return emptyList()
         var index = 0
         while (index < runs.size && runs.size > 1) {
             if (runs[index].durationSec >= minPhaseSec) {
@@ -134,7 +149,7 @@ object PhaseSegmenter {
             }
             index = maxOf(0, first - 1)
         }
-        return runs
+        return if (runs.size == 1 && runs.single().durationSec < minPhaseSec) emptyList() else runs
     }
 
     private fun segmentEccentricLifts(runs: List<Run>, lockoutSec: Double): List<RepSlice> {
