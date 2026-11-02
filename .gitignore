@@ -1,0 +1,45 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Android
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Models (not in git)
+app/src/main/assets/models/*.tflite
+app/src/main/assets/models/*.task
+app/src/main/assets/models/*.onnx
+ml/models/
+
+# Python
+prototype/.venv/
+prototype/venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+prototype/golden/*.tmp.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local validation data
+docs/validation/raw/
+docs/validation/private/
