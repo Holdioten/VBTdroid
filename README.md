@@ -6,7 +6,7 @@ Android 端离线 VBT（Velocity Based Training）分析工具。
 
 ## 状态
 
-**M0：规格与计划完成，未开始实现。**
+**M1：Gradle 多模块骨架已创建；算法与应用功能尚未实现。**
 
 ## 范围
 
@@ -32,7 +32,7 @@ Android 端离线 VBT（Velocity Based Training）分析工具。
 - 指标定义遵循同行评议共识与 SI 单位，不绑定商业 App 术语。
 - 定义有争议的指标（MPV、粘滞点、RPE）在术语表标注本实现定义与替代定义。
 
-## 结构（规划）
+## 结构
 
 ```
 app/        Android Kotlin：UI、视频解码、ML 适配、Room

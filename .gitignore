@@ -24,6 +24,7 @@ captures/
 app/src/main/assets/models/*.tflite
 app/src/main/assets/models/*.task
 app/src/main/assets/models/*.onnx
+*.task
 ml/models/
 
 # Python
