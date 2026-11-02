@@ -21,6 +21,10 @@ android {
         compose = true
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -37,4 +41,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.opencv)
+    implementation(libs.tflite)
+    implementation(libs.tflite.gpu)
+    testImplementation(libs.junit4)
 }

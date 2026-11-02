@@ -10,6 +10,8 @@ robolectric = "4.13"
 room = "2.6.1"
 opencv = "4.10.0"
 tflite = "2.16.1"
+tflite-gpu = "2.16.1"
+junit4 = "4.13.2"
 mediapipe-tasks-vision = "0.10.14"
 activity-compose = "1.9.3"
 
@@ -26,6 +28,8 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 opencv = { module = "org.opencv:opencv", version.ref = "opencv" }
 tflite = { module = "org.tensorflow:tensorflow-lite", version.ref = "tflite" }
+tflite-gpu = { module = "org.tensorflow:tensorflow-lite-gpu", version.ref = "tflite-gpu" }
+junit4 = { module = "junit:junit", version.ref = "junit4" }
 mediapipe-tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "mediapipe-tasks-vision" }
 
 [plugins]
