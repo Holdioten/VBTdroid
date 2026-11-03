@@ -14,7 +14,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.DisposableEffect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +90,14 @@ fun ReportScreen(
     var overlaySucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
     var overlayError by remember(result) { mutableStateOf<String?>(null) }
     val exportScope = rememberCoroutineScope()
+    val overlayPreview = remember(context) {
+        OverlayPreviewController(scope = exportScope, cacheRoot = context.cacheDir)
+    }
+    var previewSaving by remember(result) { mutableStateOf(false) }
+    // Leaving the report (or the Activity) always removes the cached preview file.
+    DisposableEffect(overlayPreview) {
+        onDispose { overlayPreview.close() }
+    }
 
     // UI-only state (spec §4.1).
     var selectedPosition by rememberSaveable(result) { mutableStateOf(0) }
@@ -109,6 +121,30 @@ fun ReportScreen(
                     snackbar.currentSnackbarData?.dismiss()
                 }
                 snackbar.showSnackbar(message)
+            }
+        }
+    }
+
+    val previewSaveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("video/mp4"),
+    ) { uri ->
+        val source = overlayPreview.file
+        if (uri != null && source != null) {
+            previewSaving = true
+            exportScope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                            source.inputStream().use { input -> input.copyTo(out) }
+                        } ?: error("Could not open export destination")
+                    }.isSuccess
+                }
+                previewSaving = false
+                flash(
+                    context.getString(
+                        if (ok) R.string.report_export_succeeded else R.string.report_export_failed,
+                    ),
+                )
             }
         }
     }
@@ -240,13 +276,20 @@ fun ReportScreen(
                         onClick = onShowHistory,
                         modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
                     ) {
-                        Text(stringResource(R.string.history_title))
+                        Text(stringResource(R.string.history_title), maxLines = 1)
                     }
-                    FilledTonalButton(
+                    OutlinedButton(
                         onClick = { exportSheetOpen = true },
                         modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
                     ) {
-                        Text(stringResource(R.string.report_export_title))
+                        Text(stringResource(R.string.report_export_title), maxLines = 1)
+                    }
+                    // Primary action: preview first, save from the preview dialog.
+                    Button(
+                        onClick = { overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current) },
+                        modifier = Modifier.weight(1.6f).heightIn(min = MinTouchTarget),
+                    ) {
+                        Text(stringResource(R.string.report_overlay_preview_button), maxLines = 1)
                     }
                 }
             }
@@ -358,6 +401,12 @@ fun ReportScreen(
             }
         }
     }
+
+    OverlayPreviewDialog(
+        controller = overlayPreview,
+        saving = previewSaving,
+        onSave = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
+    )
 
     if (exportSheetOpen) {
         ExportSheet(

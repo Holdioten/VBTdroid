@@ -244,4 +244,12 @@
     <string name="phase_deadlift_eccentric">下放</string>
     <string name="phase_deadlift_pause">起始停顿</string>
     <string name="phase_deadlift_concentric">拉起</string>
+
+    <string name="report_overlay_preview_button">预览叠加视频</string>
+    <string name="report_overlay_preview_title">叠加视频预览</string>
+    <string name="report_overlay_play">播放</string>
+    <string name="report_overlay_pause">暂停</string>
+    <string name="report_overlay_save">保存视频</string>
+    <string name="report_overlay_close">关闭</string>
+    <string name="report_export_overlay_direct">直接导出叠加视频</string>
 </resources>
