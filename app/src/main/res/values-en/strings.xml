@@ -170,4 +170,8 @@
     <string name="import_summary_title">Summary</string>
     <string name="import_summary_line">%1$s · Load %2$s kg · Plate %3$s m · Camera %4$s°</string>
     <string name="import_summary_line_no_load">%1$s · No load · Plate %2$s m · Camera %3$s°</string>
+
+    <string name="import_status_locked">Locked</string>
+    <string name="import_roi_modify">Edit region</string>
+    <string name="import_roi_locked_hint">Region locked; dragging is off. Tap Edit region to adjust, then confirm again.</string>
 </resources>

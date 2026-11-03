@@ -44,6 +44,8 @@ fun RoiSelector(
     roi: RectF?,
     onRoiChanged: (RectF) -> Unit,
     modifier: Modifier = Modifier,
+    /** When false, touch input is ignored entirely; the region is still drawn. */
+    editable: Boolean = true,
 ) {
     val currentRoi by rememberUpdatedState(roi)
     val currentOnRoiChanged by rememberUpdatedState(onRoiChanged)
@@ -61,7 +63,9 @@ fun RoiSelector(
     Box(
         modifier.fillMaxWidth()
             .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
-            .pointerInput(bitmap) {
+            .pointerInput(bitmap, editable) {
+                // Locked: install no gesture detector at all, so touches cannot move or resize the box.
+                if (!editable) return@pointerInput
                 var target: RoiHitTarget? = null
                 var startPoint = Offset.Zero
                 var dragAnchor = Offset.Zero

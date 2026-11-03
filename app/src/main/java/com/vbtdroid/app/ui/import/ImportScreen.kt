@@ -406,6 +406,12 @@ fun ImportScreen(
                                 roi = it
                                 roiConfirmed = false
                             },
+                            editable = RoiEditPolicy.canEdit(roiConfirmed, analyzing),
+                            onModify = { roiConfirmed = false },
+                            onReset = {
+                                roi = null
+                                roiConfirmed = false
+                            },
                             onGoVideo = { goTo(PAGE_VIDEO) },
                             summary = summaryText(lift, variant, loadText, plateDiameterText, cameraAngleText),
                         )
@@ -661,6 +667,9 @@ private fun RoiPage(
     roiConfirmed: Boolean,
     autoRoiUnavailable: Boolean,
     onRoiChanged: (RectF) -> Unit,
+    editable: Boolean,
+    onModify: () -> Unit,
+    onReset: () -> Unit,
     onGoVideo: () -> Unit,
     summary: String,
 ) {
@@ -680,7 +689,7 @@ private fun RoiPage(
     }
     val shape = MaterialTheme.shapes.large
     val (chipText, chipTone) = when {
-        roiConfirmed -> stringResource(R.string.import_status_confirmed) to ChipTone.PRIMARY
+        roiConfirmed -> stringResource(R.string.import_status_locked) to ChipTone.PRIMARY
         autoRoiUnavailable -> stringResource(R.string.import_status_manual) to ChipTone.WARNING
         else -> stringResource(R.string.import_status_suggested) to ChipTone.PRIMARY
     }
@@ -691,7 +700,7 @@ private fun RoiPage(
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
     ) {
-        RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged)
+        RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged, editable = editable)
         StatusChip(
             text = chipText,
             tone = chipTone,
@@ -700,11 +709,35 @@ private fun RoiPage(
     }
     SectionCard(padding = VbtSpacing.m) {
         SectionLabel(stringResource(R.string.import_roi_title))
-        Text(
-            stringResource(R.string.import_roi_edit_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = VbtTheme.colors.onSurfaceVariant,
-        )
+        if (roiConfirmed) {
+            Text(
+                stringResource(R.string.import_roi_locked_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+                OutlinedButton(
+                    onClick = onModify,
+                    modifier = Modifier.heightIn(min = MinTouchTarget),
+                    colors = secondaryOutlinedColors(),
+                ) {
+                    Text(stringResource(R.string.import_roi_modify))
+                }
+                OutlinedButton(
+                    onClick = onReset,
+                    modifier = Modifier.heightIn(min = MinTouchTarget),
+                    colors = secondaryOutlinedColors(),
+                ) {
+                    Text(stringResource(R.string.import_roi_reset))
+                }
+            }
+        } else {
+            Text(
+                stringResource(R.string.import_roi_edit_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+        }
     }
     SectionCard(padding = VbtSpacing.m) {
         SectionLabel(stringResource(R.string.import_summary_title))

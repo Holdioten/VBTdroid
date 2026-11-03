@@ -230,4 +230,8 @@
     <string name="import_summary_title">分析摘要</string>
     <string name="import_summary_line">%1$s · 负荷 %2$s kg · 片径 %3$s m · 机位 %4$s°</string>
     <string name="import_summary_line_no_load">%1$s · 负荷未填 · 片径 %2$s m · 机位 %3$s°</string>
+
+    <string name="import_status_locked">已锁定</string>
+    <string name="import_roi_modify">修改区域</string>
+    <string name="import_roi_locked_hint">区域已锁定，拖动无效。要调整请点“修改区域”，修改后需重新确认。</string>
 </resources>
