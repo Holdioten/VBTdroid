@@ -114,6 +114,8 @@ class VideoOverlayExporter {
         private val yuv = ByteArray(width * height * 3 / 2)
         private var trackIndex = -1
         private var muxerStarted = false
+        private var wroteSample = false
+        private var sawEndOfStream = false
         private var lastPtsUs = 0L
 
         init {
@@ -164,6 +166,8 @@ class VideoOverlayExporter {
         fun finish() {
             feed(EMPTY, 0, lastPtsUs + 1L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             drain(endOfStream = true)
+            check(sawEndOfStream) { "Encoder did not finish the output stream" }
+            check(muxerStarted && wroteSample) { "Encoder produced no video output" }
         }
 
         fun release() {
@@ -219,9 +223,13 @@ class VideoOverlayExporter {
                             buffer.position(bufferInfo.offset)
                             buffer.limit(bufferInfo.offset + bufferInfo.size)
                             muxer.writeSampleData(trackIndex, buffer, bufferInfo)
+                            wroteSample = true
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
-                        if (isEndOfStream) return
+                        if (isEndOfStream) {
+                            sawEndOfStream = true
+                            return
+                        }
                     }
                 }
             }
