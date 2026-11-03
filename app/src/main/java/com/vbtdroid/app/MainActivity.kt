@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.vbtdroid.app.analysis.AnalysisForegroundService
 import com.vbtdroid.app.analysis.AnalysisResult
+import com.vbtdroid.app.analysis.AnalysisStartResult
 import com.vbtdroid.app.data.AnalysisRepository
 import com.vbtdroid.app.data.AppDatabase
 import com.vbtdroid.app.data.HistoryDetail
@@ -61,6 +62,7 @@ private fun AnalysisApp() {
     var history by remember { mutableStateOf<List<SetEntity>>(emptyList()) }
     var historyDetail by remember { mutableStateOf<HistoryDetail?>(null) }
     val serviceUnavailable = stringResource(R.string.analysis_service_unavailable)
+    val analysisAlreadyRunning = stringResource(R.string.analysis_already_running)
 
     val connection = remember(context) {
         object : ServiceConnection {
@@ -133,7 +135,7 @@ private fun AnalysisApp() {
                     analysisError = null
                     progress = 0f
                     context.startForegroundService(Intent(context, AnalysisForegroundService::class.java))
-                    binder.analyze(
+                    val startResult = binder.analyze(
                         request = request,
                         callbacks = object : AnalysisForegroundService.Callbacks {
                             override fun onProgress(value: Float) {
@@ -152,6 +154,10 @@ private fun AnalysisApp() {
                             }
                         },
                     )
+                    if (startResult == AnalysisStartResult.ALREADY_RUNNING) {
+                        analyzing = false
+                        analysisError = analysisAlreadyRunning
+                    }
                 }
             },
             onCancel = {

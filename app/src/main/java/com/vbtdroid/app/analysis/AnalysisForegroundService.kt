@@ -25,12 +25,16 @@ import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.app.vision.TflitePlateDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Result of trying to start an analysis; re-entry is reported, never thrown. */
+enum class AnalysisStartResult { STARTED, ALREADY_RUNNING }
 
 /** Owns long analysis independently of Compose/Activity lifetime. */
 class AnalysisForegroundService : Service() {
@@ -41,15 +45,18 @@ class AnalysisForegroundService : Service() {
     }
 
     inner class AnalysisBinder : Binder() {
-        fun analyze(request: AnalysisRequest, callbacks: Callbacks): Job = startAnalysis(request, callbacks)
+        fun analyze(request: AnalysisRequest, callbacks: Callbacks): AnalysisStartResult =
+            startAnalysis(request, callbacks)
+
         fun cancel() = cancelAnalysis()
+        fun isRunning(): Boolean = runGate.isRunning()
         fun suggestRoi(bitmap: Bitmap): RectF? = PlateTracker(plateDetector).use { it.initialRoi(bitmap) }
     }
 
     private val binder = AnalysisBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var analysisJob: Job? = null
+    private val runGate = AnalysisRunGate()
 
     private val decoder by lazy { VideoDecoder(applicationContext) }
     private val databaseDelegate = lazy { AppDatabase.build(applicationContext) }
@@ -74,39 +81,43 @@ class AnalysisForegroundService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startAnalysis(request: AnalysisRequest, callbacks: Callbacks): Job {
-        check(analysisJob?.isActive != true) { "Analysis is already running" }
+    private fun startAnalysis(request: AnalysisRequest, callbacks: Callbacks): AnalysisStartResult {
+        lateinit var job: Job
+        val started = runGate.tryStart {
+            serviceScope.launch(start = CoroutineStart.LAZY) {
+                try {
+                    val analyzed = pipeline.analyze(request) { progress ->
+                        mainHandler.post { callbacks.onProgress(progress) }
+                    }
+                    val saved = repository.saveAnalysis(analyzed, request)
+                    withContext(Dispatchers.Main.immediate) { callbacks.onResult(saved) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    withContext(Dispatchers.Main.immediate) {
+                        callbacks.onError(error.message ?: error::class.java.simpleName)
+                    }
+                } finally {
+                    runGate.clear(job)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+        } ?: return AnalysisStartResult.ALREADY_RUNNING
+
+        job = started
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, analysisNotification())
-        val job = serviceScope.launch {
-            try {
-                val analyzed = pipeline.analyze(request) { progress ->
-                    mainHandler.post { callbacks.onProgress(progress) }
-                }
-                val saved = repository.saveAnalysis(analyzed, request)
-                withContext(Dispatchers.Main.immediate) { callbacks.onResult(saved) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                withContext(Dispatchers.Main.immediate) {
-                    callbacks.onError(error.message ?: error::class.java.simpleName)
-                }
-            } finally {
-                analysisJob = null
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }
-        analysisJob = job
-        return job
+        job.start()
+        return AnalysisStartResult.STARTED
     }
 
     private fun cancelAnalysis() {
-        analysisJob?.cancel()
+        runGate.cancel()
     }
 
     override fun onDestroy() {
-        analysisJob?.cancel()
+        runGate.cancel()
         serviceScope.cancel()
         if (pipelineDelegate.isInitialized()) plateTracker.close()
         if (plateDetectorDelegate.isInitialized()) plateDetector?.close()

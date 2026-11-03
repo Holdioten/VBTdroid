@@ -73,4 +73,5 @@
     <string name="quality_no_valid_reps">No valid repetitions detected</string>
     <string name="quality_rep_skipped">An invalid repetition was skipped</string>
     <string name="quality_unknown">Unknown quality warning</string>
+    <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
 </resources>
