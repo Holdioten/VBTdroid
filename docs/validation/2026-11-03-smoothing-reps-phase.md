@@ -1,7 +1,7 @@
 # Validation: smoothing, rep counting, phase UI
 
 Date: 2026-11-03
-Status: complete (APK built; device install skipped because the target phone was unreachable)
+Status: complete (APK built and installed on the connected phone)
 
 ## Scope
 
@@ -133,10 +133,16 @@ APK:
 
 ## Install
 
-Target `192.168.57.102:40565` was not connected. `adb connect` returned `Connection refused`; the
-only listed device was `emulator-5562` in `offline` state. Install was therefore skipped.
+The requested serial `192.168.57.102:40565` was not connected initially; `adb connect` returned
+`Connection refused`. The phone later appeared as `192.168.57.102:41729`.
 
-Command to run when the phone returns:
+```bash
+adb -s 192.168.57.102:41729 install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Result: `Success`.
+
+If the phone returns on the original port:
 
 ```bash
 adb -s 192.168.57.102:40565 install -r app/build/outputs/apk/debug/app-debug.apk
