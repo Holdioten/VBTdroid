@@ -1057,8 +1057,8 @@ git commit -m "feat(app): add pose estimation and joint angle extraction"
 
   data class SetSummary(
       val repCount: Int,
-      val mcvAvgMps: Double,
-      val bestMcvMps: Double,
+      val mcvAvgMps: Double?,
+      val bestMcvMps: Double?,
       val velocityLossPct: Double?,
       val totalVolumeKg: Double?,
       val totalWorkJ: Double?
