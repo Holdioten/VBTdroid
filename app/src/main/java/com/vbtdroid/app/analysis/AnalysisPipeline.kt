@@ -6,11 +6,14 @@ import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.core.calibration.Calibration
+import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.Kinematics
+import com.vbtdroid.core.metrics.LvpEstimate
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.metrics.RepMetricsCalculator
 import com.vbtdroid.core.model.Lift
+import com.vbtdroid.core.model.LiftVariant
 import com.vbtdroid.core.model.PlateObservation
 import com.vbtdroid.core.phases.PhaseSegmenter
 import com.vbtdroid.core.phases.RepSlice
@@ -29,6 +32,7 @@ data class AnalysisRequest(
     val loadKg: Double?,
     val roi: RectF? = null,
     val cameraLevel: Boolean = true,
+    val variant: LiftVariant = LiftVariant.DEFAULT,
 )
 
 data class SetSummary(
@@ -49,7 +53,17 @@ data class AnalysisResult(
     val repSlices: List<RepSlice> = emptyList(),
     val frameAnglesByRep: Map<Int, List<FrameAngles>> = emptyMap(),
     val lift: Lift = Lift.SQUAT,
+    val variant: LiftVariant = LiftVariant.DEFAULT,
     val loadKg: Double? = null,
+    val videoUri: String = "",
+    val plateDiameterM: Double = 0.45,
+    val cameraAngleDeg: Double = 90.0,
+    val cameraLevel: Boolean = true,
+    val calibration: Calibration? = null,
+    val filterConfig: FilterConfigExport? = null,
+    val repWarnings: Map<Int, List<String>> = emptyMap(),
+    val lvp: LvpEstimate? = null,
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
 )
 
 /**
@@ -195,7 +209,24 @@ class AnalysisPipeline(
             repSlices = validSlices,
             frameAnglesByRep = anglesByRep,
             lift = request.lift,
+            variant = request.variant,
             loadKg = request.loadKg,
+            videoUri = request.uri.toString(),
+            plateDiameterM = request.plateDiameterM,
+            cameraAngleDeg = request.cameraAngleDeg,
+            cameraLevel = request.cameraLevel,
+            calibration = calibration,
+            repWarnings = reps.associate { rep ->
+                rep.repIndex to buildList {
+                    if (request.loadKg == null) add("LOAD_REQUIRED")
+                    if (!request.cameraLevel) add("CAMERA_NOT_LEVEL_ESTIMATE")
+                    if (trackConfidence < 0.6) add("LOW_TRACK_CONFIDENCE")
+                    if (occlusionPct > 20.0) add("ANGLES_UNAVAILABLE_OCCLUSION")
+                    if (validSlices.firstOrNull { it.index == rep.repIndex }?.phases?.any { it.manual } == true) {
+                        add("MANUAL_PHASES")
+                    }
+                }
+            },
         )
     }
 

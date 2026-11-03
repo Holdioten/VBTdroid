@@ -1,6 +1,8 @@
 package com.vbtdroid.app.ui.import
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.RectF
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -15,15 +17,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,13 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisRequest
 import com.vbtdroid.app.video.VideoDecoder
+import com.vbtdroid.app.video.VideoLimits
 import com.vbtdroid.app.video.VideoMeta
 import com.vbtdroid.core.model.Lift
+import com.vbtdroid.core.model.LiftVariant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,23 +55,36 @@ import kotlinx.coroutines.withContext
 fun ImportScreen(
     analyzing: Boolean = false,
     analysisProgress: Float = 0f,
-    analysisFailed: Boolean = false,
+    analysisError: String? = null,
     onAnalyze: (AnalysisRequest) -> Unit = {},
+    onCancel: () -> Unit = {},
+    onShowHistory: () -> Unit = {},
+    suggestRoi: (Bitmap) -> RectF? = { null },
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var fileName by remember { mutableStateOf<String?>(null) }
     var videoMeta by remember { mutableStateOf<VideoMeta?>(null) }
+    var preview by remember { mutableStateOf<Bitmap?>(null) }
+    var roi by remember { mutableStateOf<RectF?>(null) }
+    var roiConfirmed by remember { mutableStateOf(false) }
+    var autoRoiUnavailable by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
+    var videoError by remember { mutableStateOf<String?>(null) }
     var lift by remember { mutableStateOf(Lift.SQUAT) }
+    var variant by remember { mutableStateOf(LiftVariant.HIGH_BAR) }
     var loadText by remember { mutableStateOf("") }
     val defaultPlateDiameter = stringResource(R.string.import_default_plate_diameter)
     val defaultCameraAngle = stringResource(R.string.import_default_camera_angle)
     var plateDiameterText by remember { mutableStateOf(defaultPlateDiameter) }
     var cameraAngleText by remember { mutableStateOf(defaultCameraAngle) }
     var cameraLevel by remember { mutableStateOf(true) }
+
+    val currentPreview = preview
+    DisposableEffect(currentPreview) {
+        onDispose { currentPreview?.takeIf { !it.isRecycled }?.recycle() }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -78,21 +97,39 @@ fun ImportScreen(
             selectedUri = uri
             fileName = null
             videoMeta = null
-            failed = false
+            roi = null
+            roiConfirmed = false
+            videoError = null
         }
     }
 
     LaunchedEffect(selectedUri) {
         val uri = selectedUri ?: return@LaunchedEffect
         loading = true
-        failed = false
+        videoError = null
+        autoRoiUnavailable = false
         try {
             fileName = queryDisplayName(context, uri)
-            videoMeta = withContext(Dispatchers.IO) { decoder.readMeta(uri) }
+            val loaded = withContext(Dispatchers.IO) {
+                val meta = decoder.readMeta(uri)
+                VideoLimits.requireSupportedDuration(meta.durationSec)
+                val firstFrame = decoder.readFirstFrame(uri)
+                val suggestion = runCatching { suggestRoi(firstFrame) }.getOrNull()
+                Triple(meta, firstFrame, suggestion)
+            }
+            videoMeta = loaded.first
+            preview = loaded.second
+            roi = loaded.third
+            roiConfirmed = false
+            autoRoiUnavailable = loaded.third == null
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
-            failed = true
+        } catch (error: Exception) {
+            videoError = error.message ?: error::class.java.simpleName
+            videoMeta = null
+            preview = null
+            roi = null
+            roiConfirmed = false
         } finally {
             loading = false
         }
@@ -106,6 +143,7 @@ fun ImportScreen(
     val validAngle = cameraAngle != null && cameraAngle.isFinite() &&
         cameraAngle > 0.0 && cameraAngle <= 90.0
     val validSettings = validLoad && validPlate && validAngle
+    val validRoi = roi?.let { !it.isEmpty && it.width() >= 5f && it.height() >= 5f } == true
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -114,12 +152,17 @@ fun ImportScreen(
     ) {
         Text(text = stringResource(R.string.import_title), style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { picker.launch(arrayOf("video/*")) }, enabled = !analyzing) {
-            Text(stringResource(R.string.import_choose_video))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { picker.launch(arrayOf("video/*")) }, enabled = !analyzing) {
+                Text(stringResource(R.string.import_choose_video))
+            }
+            OutlinedButton(onClick = onShowHistory, enabled = !analyzing) {
+                Text(stringResource(R.string.history_title))
+            }
         }
         Spacer(Modifier.height(16.dp))
         if (loading) CircularProgressIndicator()
-        if (failed) Text(stringResource(R.string.import_error))
+        videoError?.let { Text(stringResource(R.string.import_error_reason, it), color = MaterialTheme.colorScheme.error) }
         fileName?.let { Text(stringResource(R.string.import_file_name, it)) }
         videoMeta?.let { meta ->
             Text(stringResource(R.string.import_duration, meta.durationSec))
@@ -133,9 +176,23 @@ fun ImportScreen(
                 Lift.entries.forEach { option ->
                     FilterChip(
                         selected = lift == option,
-                        onClick = { lift = option },
+                        onClick = {
+                            lift = option
+                            variant = defaultVariant(option)
+                        },
                         enabled = !analyzing,
                         label = { Text(liftDisplayName(option)) },
+                    )
+                }
+            }
+            Text(stringResource(R.string.import_variant))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                variantsFor(lift).forEach { option ->
+                    FilterChip(
+                        selected = variant == option,
+                        onClick = { variant = option },
+                        enabled = !analyzing,
+                        label = { Text(variantDisplayName(option)) },
                     )
                 }
             }
@@ -167,6 +224,27 @@ fun ImportScreen(
                 Text(stringResource(R.string.import_camera_level))
                 Switch(checked = cameraLevel, onCheckedChange = { cameraLevel = it }, enabled = !analyzing)
             }
+
+            Spacer(Modifier.height(16.dp))
+            Text(stringResource(R.string.import_roi_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(if (autoRoiUnavailable) R.string.import_roi_manual_required else R.string.import_roi_confirm_hint))
+            preview?.let { frame ->
+                RoiSelector(
+                    bitmap = frame,
+                    roi = roi,
+                    onRoiChanged = {
+                        roi = it
+                        roiConfirmed = false
+                    },
+                )
+            }
+            Button(
+                onClick = { roiConfirmed = true },
+                enabled = !analyzing && validRoi && !roiConfirmed,
+            ) {
+                Text(stringResource(if (roiConfirmed) R.string.import_roi_confirmed else R.string.import_roi_confirm))
+            }
+
             if (!validSettings) Text(stringResource(R.string.import_invalid_settings))
             Button(
                 onClick = {
@@ -175,15 +253,17 @@ fun ImportScreen(
                             AnalysisRequest(
                                 uri = uri,
                                 lift = lift,
+                                variant = variant,
                                 cameraAngleDeg = cameraAngle ?: return@let,
                                 plateDiameterM = plateDiameter ?: return@let,
                                 loadKg = if (loadText.isBlank()) null else loadKg,
                                 cameraLevel = cameraLevel,
+                                roi = RectF(roi ?: return@let),
                             ),
                         )
                     }
                 },
-                enabled = !analyzing && validSettings,
+                enabled = !analyzing && validSettings && validRoi && roiConfirmed,
             ) {
                 Text(stringResource(R.string.import_start_analysis))
             }
@@ -195,11 +275,24 @@ fun ImportScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(stringResource(R.string.import_analysis_progress, (analysisProgress * 100).toInt()))
+            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.import_cancel_analysis)) }
         }
-        if (analysisFailed) {
-            Text(stringResource(R.string.import_analysis_failed), color = MaterialTheme.colorScheme.error)
+        analysisError?.let {
+            Text(stringResource(R.string.import_analysis_failed_reason, it), color = MaterialTheme.colorScheme.error)
         }
     }
+}
+
+private fun defaultVariant(lift: Lift): LiftVariant = when (lift) {
+    Lift.SQUAT -> LiftVariant.HIGH_BAR
+    Lift.BENCH -> LiftVariant.TOUCH_AND_GO
+    Lift.DEADLIFT -> LiftVariant.CONVENTIONAL
+}
+
+private fun variantsFor(lift: Lift): List<LiftVariant> = when (lift) {
+    Lift.SQUAT -> listOf(LiftVariant.HIGH_BAR, LiftVariant.LOW_BAR)
+    Lift.BENCH -> listOf(LiftVariant.PAUSED, LiftVariant.TOUCH_AND_GO)
+    Lift.DEADLIFT -> listOf(LiftVariant.CONVENTIONAL, LiftVariant.SUMO)
 }
 
 @Composable
@@ -208,6 +301,19 @@ private fun liftDisplayName(lift: Lift): String = stringResource(
         Lift.SQUAT -> R.string.lift_squat
         Lift.BENCH -> R.string.lift_bench
         Lift.DEADLIFT -> R.string.lift_deadlift
+    },
+)
+
+@Composable
+private fun variantDisplayName(variant: LiftVariant): String = stringResource(
+    when (variant) {
+        LiftVariant.HIGH_BAR -> R.string.variant_high_bar
+        LiftVariant.LOW_BAR -> R.string.variant_low_bar
+        LiftVariant.CONVENTIONAL -> R.string.variant_conventional
+        LiftVariant.SUMO -> R.string.variant_sumo
+        LiftVariant.PAUSED -> R.string.variant_paused
+        LiftVariant.TOUCH_AND_GO -> R.string.variant_touch_and_go
+        LiftVariant.DEFAULT -> R.string.variant_default
     },
 )
 

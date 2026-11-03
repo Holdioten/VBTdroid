@@ -73,4 +73,49 @@
     <string name="quality_no_valid_reps">未识别到有效重复</string>
     <string name="quality_rep_skipped">已跳过无效重复</string>
     <string name="quality_unknown">存在未知质量警告</string>
+
+    <string name="import_error_reason">无法读取此视频：%1$s</string>
+    <string name="import_analysis_failed_reason">分析失败：%1$s</string>
+    <string name="import_cancel_analysis">取消分析</string>
+    <string name="import_variant">动作变式</string>
+    <string name="variant_high_bar">高杠</string>
+    <string name="variant_low_bar">低杠</string>
+    <string name="variant_conventional">传统</string>
+    <string name="variant_sumo">相扑</string>
+    <string name="variant_paused">停顿</string>
+    <string name="variant_touch_and_go">触胸即起</string>
+    <string name="variant_default">默认</string>
+    <string name="import_roi_title">首帧杠铃片区域</string>
+    <string name="import_roi_confirm_hint">已给出区域建议；可拖动重新框选，然后确认。</string>
+    <string name="import_roi_manual_required">未提供自动区域；请在首帧上拖动框选完整杠铃片，然后确认。</string>
+    <string name="import_roi_confirm">确认杠铃片区域</string>
+    <string name="import_roi_confirmed">杠铃片区域已确认</string>
+    <string name="import_first_frame_preview">视频首帧，拖动以框选杠铃片</string>
+
+    <string name="report_export_json">导出 JSON</string>
+    <string name="report_export_csv">导出 CSV</string>
+    <string name="report_export_succeeded">导出完成</string>
+    <string name="report_export_failed">导出失败，请重新选择保存位置</string>
+    <string name="report_saved_automatically">本组已保存到历史记录</string>
+    <string name="report_lvp_title">同动作同变式负荷-速度剖面</string>
+    <string name="report_lvp_points">不同负荷点：%1$d（至少需要 3 个）</string>
+    <string name="report_v1rm_source">v1rm：%1$.2f m/s；来源：%2$s</string>
+    <string name="report_estimated_1rm">估计 1RM：%1$.1f kg</string>
+    <string name="report_lvp_fit">斜率 %1$.5f；截距 %2$.3f；R² %3$.3f</string>
+    <string name="report_lvp_unavailable">1RM 不可用：%1$s</string>
+
+    <string name="history_title">历史记录</string>
+    <string name="history_empty">暂无已保存的分析</string>
+    <string name="history_set_identity">%1$s / %2$s</string>
+    <string name="history_set_load">负荷：%1$s kg</string>
+    <string name="history_set_mcv">平均 MCV：%1$s m/s</string>
+    <string name="history_open_detail">查看详情</string>
+    <string name="history_close_detail">返回历史列表</string>
+    <string name="history_detail_title">历史组详情</string>
+    <string name="history_video_uri">视频：%1$s</string>
+    <string name="history_camera_geometry">片径：%1$.1f mm；机位：%2$.1f°</string>
+    <string name="history_rep_mcv">MCV：%1$s m/s</string>
+    <string name="history_rep_rom">向心 ROM：%1$s m</string>
+    <string name="history_phase">%1$s：%2$.3f–%3$.3f 秒；手动=%4$b</string>
+    <string name="history_export_unavailable">此历史记录缺少可显示的导出数据</string>
 </resources>

@@ -1,5 +1,7 @@
 package com.vbtdroid.app.ui.report
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,10 +20,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
+import com.vbtdroid.app.export.CsvExporter
+import com.vbtdroid.app.export.ExportMapper
+import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.model.MetricId
 import com.vbtdroid.core.phases.RepSlice
 
@@ -30,9 +36,32 @@ fun ReportScreen(
     result: AnalysisResult,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onShowHistory: () -> Unit = {},
 ) {
     var current by remember(result) { mutableStateOf(result) }
     var manualEditRejected by remember(result) { mutableStateOf(false) }
+    val context = LocalContext.current
+    var exportSucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
+
+    fun writeExport(uri: android.net.Uri?, content: () -> String) {
+        if (uri == null) return
+        exportSucceeded = runCatching {
+            val stream = context.contentResolver.openOutputStream(uri, "wt")
+                ?: error("Could not open export destination")
+            stream.bufferedWriter(Charsets.UTF_8).use { it.write(content()) }
+        }.isSuccess
+    }
+
+    val jsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        writeExport(uri) { JsonExport.encode(ExportMapper.toSetExport(current)) }
+    }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        writeExport(uri) { CsvExporter.export(current) }
+    }
 
     fun updateSlice(updated: RepSlice): Boolean {
         val recomputed = recomputeManualRep(current, updated)
@@ -54,7 +83,27 @@ fun ReportScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(stringResource(R.string.report_title), style = MaterialTheme.typography.headlineSmall)
-                Button(onClick = onBack) { Text(stringResource(R.string.report_back)) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onShowHistory) { Text(stringResource(R.string.history_title)) }
+                    Button(onClick = onBack) { Text(stringResource(R.string.report_back)) }
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { jsonLauncher.launch("vbtdroid-set.json") }) {
+                    Text(stringResource(R.string.report_export_json))
+                }
+                Button(onClick = { csvLauncher.launch("vbtdroid-set.csv") }) {
+                    Text(stringResource(R.string.report_export_csv))
+                }
+            }
+            Text(stringResource(R.string.report_saved_automatically))
+            exportSucceeded?.let { succeeded ->
+                Text(
+                    stringResource(if (succeeded) R.string.report_export_succeeded else R.string.report_export_failed),
+                    color = if (succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
             }
         }
         item {
@@ -104,6 +153,21 @@ fun ReportScreen(
                         stringResource(R.string.report_external_load_assumption),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+        }
+        item {
+            current.lvp?.let { estimate ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(stringResource(R.string.report_lvp_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.report_lvp_points, estimate.pointCount))
+                        Text(stringResource(R.string.report_v1rm_source, estimate.v1rmMps, estimate.v1rmSource))
+                        estimate.model?.let { model ->
+                            Text(stringResource(R.string.report_estimated_1rm, model.estimated1RmKg))
+                            Text(stringResource(R.string.report_lvp_fit, model.slope, model.intercept, model.r2))
+                        } ?: Text(stringResource(R.string.report_lvp_unavailable, estimate.unavailableReason.orEmpty()))
+                    }
                 }
             }
         }

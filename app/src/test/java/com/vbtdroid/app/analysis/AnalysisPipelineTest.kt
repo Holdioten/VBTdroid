@@ -106,6 +106,26 @@ class AnalysisPipelineTest {
     }
 
     @Test
+    fun `manual ROI reaches report without any detector model`() = runTest {
+        val pipeline = AnalysisPipeline(FakeDecoder(), FakeTracker(provideRoi = false), FakePose())
+
+        val result = pipeline.analyze(
+            AnalysisRequest(
+                uri = Uri.EMPTY,
+                lift = Lift.SQUAT,
+                cameraAngleDeg = 90.0,
+                plateDiameterM = 0.45,
+                loadKg = 100.0,
+                roi = RectF(0f, 0f, 32f, 32f),
+            ),
+        )
+
+        assertEquals(1, result.summary.repCount)
+        assertTrue(result.reps.single().mcvMps > 0.0)
+        assertEquals("manual ROI must reach a report", 1, result.reps.size)
+    }
+
+    @Test
     fun `R7 invalid rep is skipped with warning`() {
         val samples = listOf(
             motion(0.0, 0.0),

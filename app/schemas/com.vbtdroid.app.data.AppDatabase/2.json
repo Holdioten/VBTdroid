@@ -1,0 +1,444 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "42b5ac18499804c2b7c5235a5d508ca8",
+    "entities": [
+      {
+        "tableName": "sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `startedAtEpochMs` INTEGER NOT NULL, `title` TEXT, `lift` TEXT NOT NULL, `variant` TEXT NOT NULL, `notes` TEXT, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtEpochMs",
+            "columnName": "startedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lift",
+            "columnName": "lift",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variant",
+            "columnName": "variant",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`setId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `lift` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `metricsJson` TEXT NOT NULL, `qualityJson` TEXT NOT NULL, `variant` TEXT NOT NULL, `loadKg` REAL, `plateDiameterMm` REAL NOT NULL, `cameraAngleDeg` REAL NOT NULL, `cameraLevel` INTEGER NOT NULL, `videoUri` TEXT NOT NULL, `mcvAvgMps` REAL, `exportJson` TEXT NOT NULL, PRIMARY KEY(`setId`), FOREIGN KEY(`sessionId`) REFERENCES `sessions`(`sessionId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "setId",
+            "columnName": "setId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lift",
+            "columnName": "lift",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "createdAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "metricsJson",
+            "columnName": "metricsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qualityJson",
+            "columnName": "qualityJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variant",
+            "columnName": "variant",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loadKg",
+            "columnName": "loadKg",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "plateDiameterMm",
+            "columnName": "plateDiameterMm",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraAngleDeg",
+            "columnName": "cameraAngleDeg",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraLevel",
+            "columnName": "cameraLevel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "videoUri",
+            "columnName": "videoUri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mcvAvgMps",
+            "columnName": "mcvAvgMps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "exportJson",
+            "columnName": "exportJson",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "setId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sets_sessionId",
+            "unique": false,
+            "columnNames": [
+              "sessionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sets_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
+          },
+          {
+            "name": "index_sets_lift_createdAtEpochMs",
+            "unique": false,
+            "columnNames": [
+              "lift",
+              "createdAtEpochMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sets_lift_createdAtEpochMs` ON `${TABLE_NAME}` (`lift`, `createdAtEpochMs`)"
+          },
+          {
+            "name": "index_sets_lift_variant_createdAtEpochMs",
+            "unique": false,
+            "columnNames": [
+              "lift",
+              "variant",
+              "createdAtEpochMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sets_lift_variant_createdAtEpochMs` ON `${TABLE_NAME}` (`lift`, `variant`, `createdAtEpochMs`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionId"
+            ],
+            "referencedColumns": [
+              "sessionId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`repId` TEXT NOT NULL, `setId` TEXT NOT NULL, `repIndex` INTEGER NOT NULL, `metricsJson` TEXT NOT NULL, `qualityJson` TEXT NOT NULL, `startSec` REAL NOT NULL, `endSec` REAL NOT NULL, PRIMARY KEY(`repId`), FOREIGN KEY(`setId`) REFERENCES `sets`(`setId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "repId",
+            "columnName": "repId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "setId",
+            "columnName": "setId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "repIndex",
+            "columnName": "repIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "metricsJson",
+            "columnName": "metricsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qualityJson",
+            "columnName": "qualityJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startSec",
+            "columnName": "startSec",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endSec",
+            "columnName": "endSec",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "repId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reps_setId_repIndex",
+            "unique": true,
+            "columnNames": [
+              "setId",
+              "repIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reps_setId_repIndex` ON `${TABLE_NAME}` (`setId`, `repIndex`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sets",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "setId"
+            ],
+            "referencedColumns": [
+              "setId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "phases",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`phaseId` TEXT NOT NULL, `repId` TEXT NOT NULL, `phaseIndex` INTEGER NOT NULL, `type` TEXT NOT NULL, `startSec` REAL NOT NULL, `endSec` REAL NOT NULL, `manual` INTEGER NOT NULL, PRIMARY KEY(`phaseId`), FOREIGN KEY(`repId`) REFERENCES `reps`(`repId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "phaseId",
+            "columnName": "phaseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "repId",
+            "columnName": "repId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phaseIndex",
+            "columnName": "phaseIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startSec",
+            "columnName": "startSec",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endSec",
+            "columnName": "endSec",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manual",
+            "columnName": "manual",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "phaseId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_phases_repId_phaseIndex",
+            "unique": true,
+            "columnNames": [
+              "repId",
+              "phaseIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_phases_repId_phaseIndex` ON `${TABLE_NAME}` (`repId`, `phaseIndex`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "reps",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "repId"
+            ],
+            "referencedColumns": [
+              "repId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "lift_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`lift` TEXT NOT NULL, `variant` TEXT NOT NULL, `v1rmMps` REAL NOT NULL, `v1rmSource` TEXT NOT NULL, `slope` REAL, `intercept` REAL, `r2` REAL, `estimated1RmKg` REAL, `pointCount` INTEGER NOT NULL, `unavailableReason` TEXT, `updatedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`lift`, `variant`))",
+        "fields": [
+          {
+            "fieldPath": "lift",
+            "columnName": "lift",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "variant",
+            "columnName": "variant",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "v1rmMps",
+            "columnName": "v1rmMps",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "v1rmSource",
+            "columnName": "v1rmSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slope",
+            "columnName": "slope",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "intercept",
+            "columnName": "intercept",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "r2",
+            "columnName": "r2",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estimated1RmKg",
+            "columnName": "estimated1RmKg",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "pointCount",
+            "columnName": "pointCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unavailableReason",
+            "columnName": "unavailableReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAtEpochMs",
+            "columnName": "updatedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "lift",
+            "variant"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '42b5ac18499804c2b7c5235a5d508ca8')"
+    ]
+  }
+}
