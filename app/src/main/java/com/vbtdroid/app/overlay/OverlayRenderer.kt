@@ -1,7 +1,6 @@
 package com.vbtdroid.app.overlay
 
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
@@ -27,37 +26,41 @@ import kotlin.math.max
 class OverlayRenderer(private val result: AnalysisResult) {
     private val skeletonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.WHITE
+        color = OverlayStyle.SKELETON_LINE.toInt()
         strokeCap = Paint.Cap.ROUND
     }
     private val jointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.WHITE
+        color = OverlayStyle.SKELETON.toInt()
     }
     private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = TRAIL_COLOR
+        color = OverlayStyle.TRAIL.toInt()
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
     private val currentPointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = CURRENT_POINT_COLOR
+        color = OverlayStyle.TRAIL.toInt()
     }
     private val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = BUBBLE_COLOR
+        color = OverlayStyle.BUBBLE.toInt()
+    }
+    private val speedBubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = OverlayStyle.SPEED_BUBBLE.toInt()
     }
     private val angleTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = OverlayStyle.SKELETON.toInt()
         textAlign = Paint.Align.LEFT
     }
     private val speedTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = SPEED_COLOR
+        color = OverlayStyle.SPEED.toInt()
         textAlign = Paint.Align.LEFT
     }
     private val hudTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = OverlayStyle.SKELETON.toInt()
         textAlign = Paint.Align.LEFT
     }
     private val path = Path()
@@ -101,7 +104,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
         val current = OverlayTimeline.nearestMotionSample(result.motionSamples, tSec)?.let(::toPixel)
         if (current != null) {
             canvas.drawCircle(current.x, current.y, dotRadius * 1.6f, currentPointPaint)
-            skeletonPaint.color = Color.WHITE
+            skeletonPaint.color = OverlayStyle.SKELETON.toInt()
             canvas.drawCircle(current.x, current.y, dotRadius * 2.4f, skeletonPaint)
         }
     }
@@ -117,7 +120,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
     }
 
     private fun drawPose(canvas: Canvas, pose: PoseFrame, dotRadius: Float, scale: Float, height: Int) {
-        skeletonPaint.color = Color.WHITE
+        skeletonPaint.color = OverlayStyle.SKELETON.toInt()
         BONES.forEach { (from, to) ->
             val a = visiblePoint(pose, from) ?: return@forEach
             val b = visiblePoint(pose, to) ?: return@forEach
@@ -173,6 +176,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
             anchorX = current.x + 16f * scale,
             anchorY = current.y - 24f * scale,
             paint = speedTextPaint,
+            fill = speedBubblePaint,
             maxWidth = width.toFloat(),
             maxHeight = height.toFloat(),
             paddingX = 8f * scale,
@@ -267,13 +271,14 @@ class OverlayRenderer(private val result: AnalysisResult) {
         paddingX: Float,
         paddingY: Float,
         corner: Float,
+        fill: Paint = bubblePaint,
     ) {
         val textWidth = paint.measureText(text)
         val textHeight = paint.textSize
         val left = anchorX.coerceIn(0f, max(0f, maxWidth - textWidth - paddingX * 2f))
         val top = anchorY.coerceIn(0f, max(0f, maxHeight - textHeight - paddingY * 2f))
         bubbleRect.set(left, top, left + textWidth + paddingX * 2f, top + textHeight + paddingY * 2f)
-        canvas.drawRoundRect(bubbleRect, corner, corner, bubblePaint)
+        canvas.drawRoundRect(bubbleRect, corner, corner, fill)
         canvas.drawText(text, left + paddingX, top + paddingY - paint.fontMetrics.ascent, paint)
     }
 
@@ -292,10 +297,6 @@ class OverlayRenderer(private val result: AnalysisResult) {
 
     private companion object {
         const val MIN_VISIBILITY = 0.35f
-        const val TRAIL_COLOR = 0xFF2ECC71.toInt()
-        const val CURRENT_POINT_COLOR = 0xFFA5FFC8.toInt()
-        const val SPEED_COLOR = 0xFFFFC107.toInt()
-        const val BUBBLE_COLOR = 0xB3000000.toInt()
 
         val LEFT_SIDE = intArrayOf(11, 13, 15, 19, 23, 25, 27, 31)
         val RIGHT_SIDE = intArrayOf(12, 14, 16, 20, 24, 26, 28, 32)
