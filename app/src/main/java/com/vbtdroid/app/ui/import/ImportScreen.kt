@@ -209,13 +209,6 @@ fun ImportScreen(
     val liftNames = Lift.entries.associateWith { liftDisplayName(it) }
     val variantNames = LiftVariant.entries.associateWith { variantDisplayName(it) }
 
-    val ctaHint = when {
-        analyzing -> null
-        selectedUri == null -> stringResource(R.string.import_cta_need_video)
-        !roiConfirmed -> stringResource(R.string.import_cta_need_roi)
-        !validSettings -> stringResource(R.string.import_invalid_settings)
-        else -> null
-    }
     val canAnalyze = !analyzing && validSettings && validRoi && roiConfirmed
 
     fun startAnalysis() {
@@ -299,14 +292,13 @@ fun ImportScreen(
                     }
                 }
             }
+        } else if (loading) {
+            PrimaryActionBar(hint = stringResource(R.string.import_loading_frame)) {}
+        } else if (!validSettings) {
+            // Start button only appears once ROI is confirmed AND settings are valid.
+            PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
         } else {
-            val hint = when {
-                selectedUri == null -> stringResource(R.string.import_cta_need_video)
-                preview == null -> stringResource(R.string.import_loading_frame)
-                !validSettings -> stringResource(R.string.import_invalid_settings)
-                else -> null
-            }
-            PrimaryActionBar(hint = hint) {
+            PrimaryActionBar {
                 PrimaryButton(
                     text = stringResource(R.string.import_start_analysis),
                     onClick = ::startAnalysis,
@@ -315,6 +307,8 @@ fun ImportScreen(
             }
         }
     }
+    // Bar is hidden entirely when there is nothing to act on yet (no video, or read failed).
+    val barVisible = analyzing || (selectedUri != null && (loading || preview != null))
 
     val hero: @Composable () -> Unit = {
         Column(
@@ -515,7 +509,7 @@ fun ImportScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { if (!wide) actionBar() },
+        bottomBar = { if (!wide && barVisible) actionBar() },
     ) { inner ->
         if (!wide) {
             Column(
@@ -552,7 +546,7 @@ fun ImportScreen(
                         banners()
                         settings()
                     }
-                    actionBar()
+                    if (barVisible) actionBar()
                 }
             }
         }
