@@ -8,9 +8,11 @@ import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.video.VideoMeta
 import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
+import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.PlateObservation
 import com.vbtdroid.core.metrics.MotionSample
+import com.vbtdroid.core.metrics.Point2
 import com.vbtdroid.core.phases.Phase
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
@@ -23,6 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
@@ -86,16 +89,49 @@ class AnalysisPipelineTest {
     }
 
     @Test
-    fun `high occlusion disables joint angles and missing load has reason`() = runTest {
-        val pipeline = AnalysisPipeline(FakeDecoder(), FakeTracker(confidence = 0.5), FakePose())
+    fun `low confidence and high occlusion keep requested joint angles with warnings`() = runTest {
+        val pipeline = AnalysisPipeline(
+            FakeDecoder(),
+            FakeTracker(confidence = 0.5),
+            FakePose(lowConfidencePose()),
+        )
 
         val result = pipeline.analyze(AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, null))
 
         assertTrue(result.quality.occlusionPct > 20.0)
-        assertTrue(!result.quality.anglesAvailable)
-        assertTrue(result.frameAnglesByRep.isEmpty())
-        assertTrue(result.quality.warnings.contains("ANGLES_UNAVAILABLE_OCCLUSION"))
+        assertTrue(result.quality.anglesAvailable)
+        assertTrue(result.frameAngles.isNotEmpty())
+        assertTrue(result.frameAnglesByRep.isNotEmpty())
+        assertTrue(result.quality.warnings.contains("HIGH_OCCLUSION"))
+        assertTrue(result.quality.warnings.contains("POSE_LOW_CONFIDENCE"))
+        assertFalse(result.quality.warnings.contains("ANGLES_UNAVAILABLE_OCCLUSION"))
         assertTrue(result.quality.warnings.contains("LOAD_REQUIRED"))
+    }
+
+    @Test
+    fun `analyzePose false skips pose estimation and pose warnings`() = runTest {
+        val pose = FakePose(lowConfidencePose())
+        val pipeline = AnalysisPipeline(FakeDecoder(), FakeTracker(confidence = 0.5), pose)
+
+        val result = pipeline.analyze(
+            AnalysisRequest(
+                uri = Uri.EMPTY,
+                lift = Lift.SQUAT,
+                cameraAngleDeg = 90.0,
+                plateDiameterM = 0.45,
+                loadKg = 100.0,
+                analyzePose = false,
+            ),
+        )
+
+        assertEquals(1, result.reps.size)
+        assertEquals(0, pose.calls)
+        assertFalse(result.analyzePose)
+        assertTrue(result.frameAngles.isEmpty())
+        assertTrue(result.frameAnglesByRep.isEmpty())
+        assertFalse(result.quality.anglesAvailable)
+        assertFalse(result.quality.warnings.any { it.startsWith("POSE_") })
+        assertFalse(result.quality.warnings.contains("ANGLES_UNAVAILABLE_OCCLUSION"))
     }
 
     @Test
@@ -282,12 +318,36 @@ class AnalysisPipelineTest {
         }
     }
 
-    private class FakePose : PoseEstimator {
-        override fun estimate(bitmap: Bitmap, tSec: Double) = null
+    private class FakePose(private val frame: PoseFrame? = null) : PoseEstimator {
+        var calls = 0
+            private set
+
+        override fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame? {
+            calls++
+            return frame?.copy(tSec = tSec)
+        }
     }
 
     private companion object {
         const val FPS = 10.0
+
+        fun lowConfidencePose(): PoseFrame {
+            val visible = listOf(11, 13, 15, 19, 23, 25, 27, 31)
+            return PoseFrame(
+                tSec = 0.0,
+                landmarks = mapOf(
+                    11 to Point2(10.0, 10.0),
+                    13 to Point2(20.0, 20.0),
+                    15 to Point2(30.0, 20.0),
+                    19 to Point2(40.0, 20.0),
+                    23 to Point2(10.0, 30.0),
+                    25 to Point2(10.0, 45.0),
+                    27 to Point2(10.0, 55.0),
+                    31 to Point2(20.0, 60.0),
+                ),
+                visibility = visible.associateWith { 0.55f },
+            )
+        }
 
         fun metricsWithoutWork() = com.vbtdroid.core.metrics.RepMetrics(
             repIndex = 1, durationS = 1.0, romTotalM = 0.5, romConcentricM = 0.5,

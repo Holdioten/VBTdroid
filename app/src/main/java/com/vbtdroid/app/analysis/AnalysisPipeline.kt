@@ -36,6 +36,8 @@ data class AnalysisRequest(
     val roi: RectF? = null,
     val cameraLevel: Boolean = true,
     val variant: LiftVariant = LiftVariant.DEFAULT,
+    /** When false, pose estimation is skipped completely and no joint-angle data is produced. */
+    val analyzePose: Boolean = true,
 )
 
 data class SetSummary(
@@ -59,6 +61,7 @@ data class AnalysisResult(
     val observations: List<PlateObservation> = emptyList(),
     val poseFrames: List<PoseFrame> = emptyList(),
     val frameAngles: List<FrameAngles> = emptyList(),
+    val analyzePose: Boolean = true,
     val lift: Lift = Lift.SQUAT,
     val variant: LiftVariant = LiftVariant.DEFAULT,
     val loadKg: Double? = null,
@@ -101,7 +104,7 @@ class AnalysisPipeline(
             "Load must be positive and finite"
         }
         tracker.reset()
-        poseEstimator.reset()
+        if (request.analyzePose) poseEstimator.reset()
 
         val meta = decoder.readMeta(request.uri)
         VideoLimits.requireSupportedDuration(meta.durationSec)
@@ -145,7 +148,7 @@ class AnalysisPipeline(
                 }
 
                 // Pose is deliberately best-effort and never gates plate-derived bar metrics.
-                if ((decodedFrames - 1) % POSE_FRAME_STRIDE == 0) {
+                if (request.analyzePose && (decodedFrames - 1) % POSE_FRAME_STRIDE == 0) {
                     try {
                         val pose = poseEstimator.estimate(frame.bitmap, frame.tSec)
                         if (pose != null) {
@@ -192,8 +195,17 @@ class AnalysisPipeline(
         val validSlices = computation.validSlices
         val extraWarnings = (computation.warnings + segmentation.warnings).toMutableList()
 
-        if (!poseProducedAngles) extraWarnings += "POSE_UNAVAILABLE"
-        if (poseFailed && poseProducedAngles) extraWarnings += "POSE_PARTIAL"
+        val poseConfidence = frameAngles.map { it.confidence }.average().takeIf { it.isFinite() } ?: 0.0
+        if (request.analyzePose) {
+            if (!poseProducedAngles) {
+                extraWarnings += POSE_UNAVAILABLE
+            } else {
+                if (poseFailed) extraWarnings += POSE_PARTIAL
+                if (poseConfidence < POSE_LOW_CONFIDENCE_THRESHOLD) {
+                    extraWarnings += POSE_LOW_CONFIDENCE
+                }
+            }
+        }
         if (reps.isEmpty()) extraWarnings += "NO_VALID_REPS"
 
         val measuredFps = firstFrameSec?.let { first ->
@@ -223,11 +235,16 @@ class AnalysisPipeline(
             loadProvided = request.loadKg != null,
         )
         val quality = evaluatedQuality.copy(
-            warnings = (evaluatedQuality.warnings + extraWarnings).distinct(),
+            // Occlusion degrades confidence but no longer hides a requested joint-angle section.
+            warnings = (evaluatedQuality.warnings + extraWarnings)
+                .filterNot { it == ANGLES_UNAVAILABLE_OCCLUSION }
+                .distinct(),
+            anglesAvailable = request.analyzePose && poseProducedAngles,
+            metricReasons = evaluatedQuality.metricReasons - "joint_angles",
         )
         // Smooth the pose series once; both the report and the burned-in overlay use it.
         val smoothedFrameAngles = JointAngleSmoother.smooth(frameAngles)
-        val anglesByRep = if (!quality.anglesAvailable) {
+        val anglesByRep = if (!request.analyzePose) {
             emptyMap()
         } else {
             validSlices.mapNotNull { slice ->
@@ -258,6 +275,7 @@ class AnalysisPipeline(
             observations = observations.toList(),
             poseFrames = poseFrames.toList(),
             frameAngles = smoothedFrameAngles,
+            analyzePose = request.analyzePose,
             lift = request.lift,
             variant = request.variant,
             loadKg = request.loadKg,
@@ -287,6 +305,11 @@ class AnalysisPipeline(
         const val MEAN_FILTER_WINDOW = 9
         const val PEAK_FILTER_WINDOW = 5
         const val FILTER_ORDER = 2
+        const val POSE_LOW_CONFIDENCE_THRESHOLD = 0.6
+        const val POSE_UNAVAILABLE = "POSE_UNAVAILABLE"
+        const val POSE_PARTIAL = "POSE_PARTIAL"
+        const val POSE_LOW_CONFIDENCE = "POSE_LOW_CONFIDENCE"
+        const val ANGLES_UNAVAILABLE_OCCLUSION = "ANGLES_UNAVAILABLE_OCCLUSION"
     }
 }
 
