@@ -15,10 +15,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
+import com.vbtdroid.app.ui.theme.VbtTheme
 import kotlin.math.max
 import kotlin.math.min
 
@@ -50,6 +51,10 @@ fun RoiSelector(
         RoiGeometry.minimumSize(bitmap.width, bitmap.height)
     }
     var activeHandle by remember { mutableStateOf<RoiHitTarget?>(null) }
+    val roiColor = MaterialTheme.colorScheme.primary
+    val handleColor = MaterialTheme.colorScheme.primary
+    val activeHandleColor = VbtTheme.colors.speed
+    val handleStrokeColor = VbtTheme.colors.skeleton
 
     Box(
         modifier.fillMaxWidth()
@@ -144,7 +149,7 @@ fun RoiSelector(
                 val right = selected.right * scaleX
                 val bottom = selected.bottom * scaleY
                 drawRect(
-                    color = Color.Green,
+                    color = roiColor,
                     topLeft = Offset(left, top),
                     size = Size(right - left, bottom - top),
                     style = Stroke(width = 3.dp.toPx()),
@@ -159,12 +164,12 @@ fun RoiSelector(
                 )
                 corners.forEach { (corner, center) ->
                     drawCircle(
-                        color = if (activeHandle == corner) ACTIVE_HANDLE_COLOR else HANDLE_COLOR,
+                        color = if (activeHandle == corner) activeHandleColor else handleColor,
                         radius = handleRadius,
                         center = center,
                     )
                     drawCircle(
-                        color = Color.White,
+                        color = handleStrokeColor,
                         radius = handleRadius,
                         center = center,
                         style = Stroke(width = 2.dp.toPx()),
@@ -175,8 +180,6 @@ fun RoiSelector(
     }
 }
 
-private val HANDLE_COLOR = Color(0xFF2E7D32)
-private val ACTIVE_HANDLE_COLOR = Color(0xFFFFA000)
 private val HANDLE_TOUCH_RADIUS = 24.dp
 
 private fun Offset.toFramePoint(width: Int, height: Int, bitmap: Bitmap): Offset = Offset(

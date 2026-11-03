@@ -11,11 +11,10 @@ data class VideoMeta(
 
 object VideoLimits {
     const val MAX_DURATION_SEC = 10.0 * 60.0
+    const val TOO_LONG_MESSAGE = "Video exceeds the 10-minute analysis limit"
 
     fun requireSupportedDuration(durationSec: Double) {
         require(durationSec.isFinite() && durationSec > 0.0) { "Video duration is unavailable" }
-        require(durationSec <= MAX_DURATION_SEC) {
-            "Video exceeds the 10-minute analysis limit"
-        }
+        require(durationSec <= MAX_DURATION_SEC) { TOO_LONG_MESSAGE }
     }
 }

@@ -102,4 +102,56 @@
     <string name="quality_no_lockout">This rep has no top lockout; rep count is unaffected</string>
     <string name="quality_unknown">Unknown quality warning</string>
     <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
+
+    <string name="import_load_label">Load (optional)</string>
+    <string name="import_plate_label">Plate diameter</string>
+    <string name="import_camera_label">Camera angle</string>
+    <string name="unit_kg">kg</string>
+    <string name="unit_m">m</string>
+    <string name="unit_deg">°</string>
+    <string name="unit_mps">m/s</string>
+    <string name="import_camera_preset_side">Side 90°</string>
+    <string name="import_camera_preset_diagonal">Front/rear 45°</string>
+    <string name="import_pose_hint">Off: no joint angles or key frames</string>
+    <string name="import_status_suggested">Auto suggested</string>
+    <string name="import_status_manual">Draw manually</string>
+    <string name="import_status_confirmed">Confirmed</string>
+    <string name="import_replace_video">Replace video</string>
+    <string name="import_empty_title">Choose a training video</string>
+    <string name="import_empty_hint">Squat, bench, or deadlift; up to 10 minutes</string>
+    <string name="import_loading_frame">Reading first frame</string>
+    <string name="import_error_too_long">Video exceeds the 10-minute limit</string>
+    <string name="import_cta_need_video">Choose a video first</string>
+    <string name="import_cta_need_roi">Confirm the plate region</string>
+    <string name="analysis_cancelled">Analysis cancelled</string>
+
+    <string name="report_best_of_short">Best MCV</string>
+    <string name="report_trajectory_schematic">Bar path schematic</string>
+    <string name="report_preview_placeholder">First frame unavailable; showing path schematic</string>
+    <string name="report_preview_description">First frame with the bar path of the selected rep</string>
+    <string name="report_mini_best_mcv">Best MCV</string>
+    <string name="report_mini_vl">Velocity loss VL</string>
+    <string name="report_mini_reps">Valid reps</string>
+    <string name="report_per_rep_mcv">Mean velocity per rep</string>
+    <string name="report_rep_bar_description">Rep %1$d mean velocity %2$s metres per second</string>
+    <string name="report_angle_value">%1$.1f°</string>
+    <string name="report_confidence_chip">Conf. %1$.2f</string>
+    <string name="report_concentric_duration">Concentric %1$.2f s</string>
+    <string name="report_peak_velocity_label">Peak %1$s m/s</string>
+    <string name="report_velocity_chart_description">Vertical bar velocity curve</string>
+    <string name="report_bar_path_chart_description">Bar path, horizontal and vertical</string>
+    <string name="report_compare_none">This rep only</string>
+    <string name="report_compare_best">Compare with best</string>
+    <string name="report_quality_summary_warnings">%1$d to review</string>
+    <string name="report_estimated_badge">Estimate</string>
+    <string name="report_quality_meter_track">Tracking confidence</string>
+    <string name="report_quality_meter_occlusion">Occlusion</string>
+    <string name="report_quality_meter_rep">Segmentation confidence</string>
+    <string name="report_quality_meter_calibration">Calibration confidence</string>
+    <string name="report_export_title">Export</string>
+    <string name="report_export_hint">Files are saved to the location you choose</string>
+
+    <string name="history_date_format">MM-dd HH:mm</string>
+    <string name="history_empty_hint">Completed analyses appear here</string>
+    <string name="history_empty_cta">Back to import</string>
 </resources>
