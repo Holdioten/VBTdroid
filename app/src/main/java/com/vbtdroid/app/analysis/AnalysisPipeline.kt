@@ -33,8 +33,8 @@ data class AnalysisRequest(
 
 data class SetSummary(
     val repCount: Int,
-    val mcvAvgMps: Double,
-    val bestMcvMps: Double,
+    val mcvAvgMps: Double?,
+    val bestMcvMps: Double?,
     val velocityLossPct: Double?,
     val totalVolumeKg: Double?,
     val totalWorkJ: Double?,
@@ -151,26 +151,10 @@ class AnalysisPipeline(
         val barSamples = observations.map(calibration::toMeters)
         val motionSamples = Kinematics.derive(barSamples)
         val segmentedReps = PhaseSegmenter.segment(motionSamples, request.lift)
-        val reps = mutableListOf<RepMetrics>()
-        val validSlices = mutableListOf<RepSlice>()
-        val extraWarnings = mutableListOf<String>()
-        var bestMcvSoFar: Double? = null
-
-        for (slice in segmentedReps) {
-            try {
-                val metrics = RepMetricsCalculator.compute(
-                    rep = slice,
-                    samples = motionSamples,
-                    loadKg = request.loadKg,
-                    bestMcvMps = bestMcvSoFar,
-                )
-                reps += metrics
-                validSlices += slice
-                bestMcvSoFar = maxOf(bestMcvSoFar ?: 0.0, metrics.mcvMps)
-            } catch (_: IllegalArgumentException) {
-                extraWarnings += "REP_SKIPPED_${slice.index}"
-            }
-        }
+        val computation = computeValidReps(segmentedReps, motionSamples, request.loadKg)
+        val reps = computation.reps
+        val validSlices = computation.validSlices
+        val extraWarnings = computation.warnings.toMutableList()
 
         if (!poseProducedAngles) extraWarnings += "POSE_UNAVAILABLE"
         if (poseFailed && poseProducedAngles) extraWarnings += "POSE_PARTIAL"
@@ -220,15 +204,53 @@ class AnalysisPipeline(
     }
 }
 
+internal data class RepComputation(
+    val reps: List<RepMetrics>,
+    val validSlices: List<RepSlice>,
+    val warnings: List<String>,
+)
+
+/** Computes reps in forward order; invalid reps never enter later velocity-loss baselines. */
+internal fun computeValidReps(
+    segmentedReps: List<RepSlice>,
+    motionSamples: List<MotionSample>,
+    loadKg: Double?,
+): RepComputation {
+    val reps = mutableListOf<RepMetrics>()
+    val validSlices = mutableListOf<RepSlice>()
+    val warnings = mutableListOf<String>()
+    var bestMcvSoFar: Double? = null
+    for (slice in segmentedReps) {
+        try {
+            val metrics = RepMetricsCalculator.compute(
+                rep = slice,
+                samples = motionSamples,
+                loadKg = loadKg,
+                bestMcvMps = bestMcvSoFar,
+            )
+            reps += metrics
+            validSlices += slice
+            bestMcvSoFar = maxOf(bestMcvSoFar ?: 0.0, metrics.mcvMps)
+        } catch (_: IllegalArgumentException) {
+            warnings += "REP_SKIPPED_${slice.index}"
+        }
+    }
+    return RepComputation(reps, validSlices, warnings)
+}
+
 internal fun summarize(reps: List<RepMetrics>, loadKg: Double?): SetSummary {
-    val best = reps.maxOfOrNull { it.mcvMps } ?: 0.0
+    val best = reps.maxOfOrNull { it.mcvMps }
     val last = reps.lastOrNull()?.mcvMps
     val positiveLoad = loadKg?.takeIf { it > 0.0 }
     return SetSummary(
         repCount = reps.size,
-        mcvAvgMps = reps.takeIf { it.isNotEmpty() }?.map { it.mcvMps }?.average() ?: 0.0,
+        mcvAvgMps = reps.takeIf { it.isNotEmpty() }?.map { it.mcvMps }?.average(),
         bestMcvMps = best,
-        velocityLossPct = if (best > 0.0 && last != null) (best - last) / best * 100.0 else null,
+        velocityLossPct = if (best != null && best > 0.0 && last != null) {
+            (best - last) / best * 100.0
+        } else {
+            null
+        },
         totalVolumeKg = positiveLoad?.times(reps.size),
         totalWorkJ = positiveLoad?.let { reps.sumOf { it.workJ ?: 0.0 } },
     )

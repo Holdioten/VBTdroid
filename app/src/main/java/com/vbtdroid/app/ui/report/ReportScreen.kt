@@ -22,8 +22,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
-import com.vbtdroid.app.analysis.summarize
-import com.vbtdroid.core.metrics.RepMetricsCalculator
 import com.vbtdroid.core.model.MetricId
 import com.vbtdroid.core.phases.RepSlice
 
@@ -36,25 +34,15 @@ fun ReportScreen(
     var current by remember(result) { mutableStateOf(result) }
     var manualEditRejected by remember(result) { mutableStateOf(false) }
 
-    fun updateSlice(updated: RepSlice) {
-        try {
-            val bestOther = current.reps.filter { it.repIndex != updated.index }
-                .maxOfOrNull { it.mcvMps }
-            val recomputed = RepMetricsCalculator.compute(
-                rep = updated,
-                samples = current.motionSamples,
-                loadKg = current.loadKg,
-                bestMcvMps = bestOther,
-            )
-            val reps = current.reps.map { if (it.repIndex == updated.index) recomputed else it }
-            current = current.copy(
-                reps = reps,
-                summary = summarize(reps, current.loadKg),
-                repSlices = current.repSlices.map { if (it.index == updated.index) updated else it },
-            )
-            manualEditRejected = false
-        } catch (_: IllegalArgumentException) {
+    fun updateSlice(updated: RepSlice): Boolean {
+        val recomputed = recomputeManualRep(current, updated)
+        return if (recomputed == null) {
             manualEditRejected = true
+            false
+        } else {
+            current = recomputed
+            manualEditRejected = false
+            true
         }
     }
 

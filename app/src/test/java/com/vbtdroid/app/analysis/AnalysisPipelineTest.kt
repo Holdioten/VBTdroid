@@ -10,10 +10,15 @@ import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.PlateObservation
+import com.vbtdroid.core.metrics.MotionSample
+import com.vbtdroid.core.phases.Phase
+import com.vbtdroid.core.phases.PhaseType
+import com.vbtdroid.core.phases.RepSlice
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +80,61 @@ class AnalysisPipelineTest {
         assertTrue(decoder.bitmaps.all(Bitmap::isRecycled))
     }
 
+    @Test
+    fun `empty summary uses null velocity averages instead of zero`() {
+        val summary = summarize(emptyList(), 100.0)
+
+        assertNull(summary.mcvAvgMps)
+        assertNull(summary.bestMcvMps)
+    }
+
+    @Test
+    fun `explicit ROI wins over detector and progress finishes at one`() = runTest {
+        val tracker = FakeTracker()
+        val progress = mutableListOf<Float>()
+        val explicitRoi = RectF(1f, 2f, 21f, 22f)
+        val pipeline = AnalysisPipeline(FakeDecoder(), tracker, FakePose())
+
+        pipeline.analyze(
+            AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, 100.0, roi = explicitRoi),
+            onProgress = progress::add,
+        )
+
+        assertEquals(0, tracker.initialRoiCalls)
+        assertEquals(explicitRoi, tracker.initializedRoi)
+        assertEquals(1f, progress.last())
+    }
+
+    @Test
+    fun `R7 invalid rep is skipped with warning`() {
+        val samples = listOf(
+            motion(0.0, 0.0),
+            motion(1.0, 0.5),
+            motion(2.0, 1.5),
+            motion(3.0, 2.0),
+            motion(4.0, 3.0),
+            motion(5.0, 4.0),
+        )
+        val valid = RepSlice(
+            index = 1,
+            startSec = 0.0,
+            endSec = 2.0,
+            phases = listOf(Phase(PhaseType.CONCENTRIC, 0.0, 2.0)),
+        )
+        val invalid = RepSlice(
+            index = 2,
+            startSec = 3.0,
+            endSec = 5.0,
+            phases = listOf(Phase(PhaseType.CONCENTRIC, 3.0, 3.5)),
+        )
+
+        val computation = computeValidReps(listOf(valid, invalid), samples, null)
+
+        assertEquals(listOf(1), computation.reps.map { it.repIndex })
+        assertEquals(listOf(1), computation.validSlices.map { it.index })
+        assertEquals(listOf("REP_SKIPPED_2"), computation.warnings)
+    }
+
     private class FakeDecoder(frameCount: Int = syntheticY.size) : VideoDecoder(
         RuntimeEnvironment.getApplication(),
     ) {
@@ -98,11 +158,20 @@ class AnalysisPipelineTest {
     }
 
     private class FakeTracker(private val provideRoi: Boolean = true) : PlateTracker() {
-        override fun initialRoi(bitmap: Bitmap): RectF? =
-            if (provideRoi) RectF(0f, 0f, 32f, 32f) else null
+        var initialRoiCalls = 0
+            private set
+        var initializedRoi: RectF? = null
+            private set
 
-        override fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation =
-            observationAt(tSec)
+        override fun initialRoi(bitmap: Bitmap): RectF? {
+            initialRoiCalls++
+            return if (provideRoi) RectF(0f, 0f, 32f, 32f) else null
+        }
+
+        override fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
+            initializedRoi = RectF(roi)
+            return observationAt(tSec)
+        }
 
         override fun update(bitmap: Bitmap, tSec: Double): PlateObservation = observationAt(tSec)
 
@@ -124,6 +193,16 @@ class AnalysisPipelineTest {
 
     private companion object {
         const val FPS = 10.0
+
+        fun motion(tSec: Double, yM: Double) = MotionSample(
+            tSec = tSec,
+            xM = 0.0,
+            yM = yM,
+            vxMps = 0.0,
+            vyMps = 0.5,
+            axMps2 = 0.0,
+            ayMps2 = 0.0,
+        )
 
         // Image y grows downwards: descend, pause, ascend, then lock out.
         val syntheticY = listOf(

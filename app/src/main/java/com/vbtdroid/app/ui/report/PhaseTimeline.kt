@@ -31,11 +31,12 @@ import kotlin.math.abs
 @Composable
 fun PhaseTimeline(
     rep: RepSlice,
-    onRepChange: (RepSlice) -> Unit,
+    onRepChange: (RepSlice) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     var workingRep by remember(rep) { mutableStateOf(rep) }
     val latestRep by rememberUpdatedState(workingRep)
+    val latestValidRep by rememberUpdatedState(rep)
     val latestCallback by rememberUpdatedState(onRepChange)
     var widthPx by remember { mutableStateOf(1) }
     var activeBoundary by remember { mutableStateOf<Int?>(null) }
@@ -85,8 +86,7 @@ fun PhaseTimeline(
                             }
                         }
                         val updated = current.copy(phases = phases)
-                        workingRep = updated
-                        latestCallback(updated)
+                        workingRep = resolveManualRepEdit(updated, latestValidRep, latestCallback)
                     },
                 )
             },
