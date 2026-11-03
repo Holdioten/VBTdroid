@@ -47,3 +47,6 @@ docs/validation/private/
 
 # SDD workspace
 .superpowers/
+
+# example
+example/
