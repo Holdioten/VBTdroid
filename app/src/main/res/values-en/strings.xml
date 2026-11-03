@@ -154,4 +154,12 @@
     <string name="history_date_format">MM-dd HH:mm</string>
     <string name="history_empty_hint">Completed analyses appear here</string>
     <string name="history_empty_cta">Back to import</string>
+
+    <string name="import_action_confirm_roi">Confirm region</string>
+    <string name="import_cta_confirm_roi_hint">Confirm the plate region to enable analysis</string>
+    <string name="import_guide_title">Steps</string>
+    <string name="import_guide_step_frame">Frame the plate region</string>
+    <string name="import_guide_format">Squat, bench, or deadlift videos up to 10 minutes. Analysed on this device only; nothing is uploaded.</string>
+
+    <string name="import_cta_draw_roi_hint">Drag on the frame to frame the plate first</string>
 </resources>

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -300,6 +301,25 @@ fun PrimaryActionBar(
     }
 }
 
+/**
+ * Primary button colours. Disabled state keeps readable text (onSurfaceVariant on surface2) instead of
+ * the Material default 38% grey-on-grey.
+ */
+@Composable
+fun primaryButtonColors() = ButtonDefaults.buttonColors(
+    containerColor = MaterialTheme.colorScheme.primary,
+    contentColor = MaterialTheme.colorScheme.onPrimary,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContentColor = VbtTheme.colors.onSurfaceVariant,
+)
+
+/** Secondary outlined colours with a readable disabled state. */
+@Composable
+fun secondaryOutlinedColors() = ButtonDefaults.outlinedButtonColors(
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    disabledContentColor = VbtTheme.colors.onSurfaceVariant,
+)
+
 /** Primary full-width CTA (52dp). */
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
@@ -308,6 +328,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean, modifier:
         enabled = enabled,
         modifier = modifier.fillMaxWidth().height(52.dp),
         shape = MaterialTheme.shapes.small,
+        colors = primaryButtonColors(),
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
     }

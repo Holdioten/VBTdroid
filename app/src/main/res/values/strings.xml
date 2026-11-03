@@ -214,4 +214,12 @@
     <string name="history_date_format">MM-dd HH:mm</string>
     <string name="history_empty_hint">完成一次分析后会出现在这里</string>
     <string name="history_empty_cta">返回导入</string>
+
+    <string name="import_action_confirm_roi">确认区域</string>
+    <string name="import_cta_confirm_roi_hint">确认杠铃片区域后可开始分析</string>
+    <string name="import_guide_title">操作步骤</string>
+    <string name="import_guide_step_frame">框选杠铃片区域</string>
+    <string name="import_guide_format">支持深蹲、卧推、硬拉视频，最长 10 分钟。视频只在本机分析，不上传。</string>
+
+    <string name="import_cta_draw_roi_hint">先在首帧上拖动框选杠铃片</string>
 </resources>

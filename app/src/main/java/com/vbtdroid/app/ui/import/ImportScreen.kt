@@ -81,6 +81,9 @@ import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.MessageBanner
 import com.vbtdroid.app.ui.components.PrimaryActionBar
 import com.vbtdroid.app.ui.components.PrimaryButton
+import com.vbtdroid.app.ui.components.primaryButtonColors
+import com.vbtdroid.app.ui.components.secondaryOutlinedColors
+import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
 import com.vbtdroid.app.ui.components.SegmentedPicker
@@ -266,8 +269,44 @@ fun ImportScreen(
                     Text(stringResource(R.string.import_cancel_analysis))
                 }
             }
+        } else if (selectedUri != null && preview != null && !roiConfirmed) {
+            // ROI stage: the only forward action is confirming the region (spec: state-aware bar).
+            PrimaryActionBar(
+                hint = stringResource(
+                    if (roi == null) R.string.import_cta_draw_roi_hint else R.string.import_cta_confirm_roi_hint,
+                ),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+                    OutlinedButton(
+                        onClick = {
+                            roi = null
+                            roiConfirmed = false
+                        },
+                        enabled = roi != null,
+                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
+                        colors = secondaryOutlinedColors(),
+                    ) {
+                        Text(stringResource(R.string.import_roi_reset), style = MaterialTheme.typography.labelLarge)
+                    }
+                    Button(
+                        onClick = { roiConfirmed = true },
+                        enabled = validRoi,
+                        modifier = Modifier.weight(1.6f).height(52.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = primaryButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.import_action_confirm_roi), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
         } else {
-            PrimaryActionBar(hint = ctaHint) {
+            val hint = when {
+                selectedUri == null -> stringResource(R.string.import_cta_need_video)
+                preview == null -> stringResource(R.string.import_loading_frame)
+                !validSettings -> stringResource(R.string.import_invalid_settings)
+                else -> null
+            }
+            PrimaryActionBar(hint = hint) {
                 PrimaryButton(
                     text = stringResource(R.string.import_start_analysis),
                     onClick = ::startAnalysis,
@@ -278,7 +317,10 @@ fun ImportScreen(
     }
 
     val hero: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+        Column(
+            modifier = Modifier.padding(bottom = VbtSpacing.xs),
+            verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+        ) {
             VideoHero(
                 preview = preview,
                 roi = roi,
@@ -305,6 +347,9 @@ fun ImportScreen(
                     StatusChip(stringResource(R.string.import_effective_fps, meta.effectiveFps))
                 }
             }
+            if (selectedUri == null && !loading) {
+                ImportGuideCard()
+            }
             if (selectedUri != null && !loading && preview != null) {
                 OutlinedButton(
                     onClick = { picker.launch(arrayOf("video/*")) },
@@ -319,36 +364,13 @@ fun ImportScreen(
 
     val roiCard: @Composable () -> Unit = {
         if (preview != null) {
-            SectionCard {
+            SectionCard(padding = VbtSpacing.m) {
                 SectionLabel(stringResource(R.string.import_roi_title))
                 Text(
-                    stringResource(if (autoRoiUnavailable) R.string.import_roi_manual_required else R.string.import_roi_confirm_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
                     stringResource(R.string.import_roi_edit_hint),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = VbtTheme.colors.onSurfaceVariant,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    OutlinedButton(
-                        onClick = {
-                            roi = null
-                            roiConfirmed = false
-                        },
-                        enabled = !analyzing && roi != null,
-                        modifier = Modifier.heightIn(min = MinTouchTarget),
-                    ) {
-                        Text(stringResource(R.string.import_roi_reset))
-                    }
-                    FilledTonalButton(
-                        onClick = { roiConfirmed = true },
-                        enabled = !analyzing && validRoi && !roiConfirmed,
-                        modifier = Modifier.heightIn(min = MinTouchTarget),
-                    ) {
-                        Text(stringResource(if (roiConfirmed) R.string.import_roi_confirmed else R.string.import_roi_confirm))
-                    }
-                }
             }
         }
     }
@@ -534,6 +556,41 @@ fun ImportScreen(
                 }
             }
         }
+    }
+}
+
+/** Compact three-step guide shown under the empty drop zone (fills dead space, one card). */
+@Composable
+private fun ImportGuideCard() {
+    SectionCard(padding = VbtSpacing.m) {
+        SectionLabel(stringResource(R.string.import_guide_title))
+        listOf(
+            R.string.import_choose_video,
+            R.string.import_guide_step_frame,
+            R.string.import_start_analysis,
+        ).forEachIndexed { index, step ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.m)) {
+                Box(
+                    Modifier
+                        .size(24.dp)
+                        .clip(ShapePill)
+                        .background(VbtTheme.colors.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "${index + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Text(stringResource(step), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        Text(
+            stringResource(R.string.import_guide_format),
+            style = MaterialTheme.typography.bodySmall,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
     }
 }
 

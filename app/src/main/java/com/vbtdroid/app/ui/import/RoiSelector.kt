@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
+import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.VbtTheme
 import kotlin.math.max
 import kotlin.math.min
@@ -55,6 +56,7 @@ fun RoiSelector(
     val handleColor = MaterialTheme.colorScheme.primary
     val activeHandleColor = VbtTheme.colors.speed
     val handleStrokeColor = VbtTheme.colors.skeleton
+    val dimColor = Bg.copy(alpha = 0.45f)
 
     Box(
         modifier.fillMaxWidth()
@@ -148,6 +150,11 @@ fun RoiSelector(
                 val top = selected.top * scaleY
                 val right = selected.right * scaleX
                 val bottom = selected.bottom * scaleY
+                // Dim outside the box so the selected region reads at a glance.
+                drawRect(color = dimColor, topLeft = Offset.Zero, size = Size(size.width, top))
+                drawRect(color = dimColor, topLeft = Offset(0f, bottom), size = Size(size.width, size.height - bottom))
+                drawRect(color = dimColor, topLeft = Offset(0f, top), size = Size(left, bottom - top))
+                drawRect(color = dimColor, topLeft = Offset(right, top), size = Size(size.width - right, bottom - top))
                 drawRect(
                     color = roiColor,
                     topLeft = Offset(left, top),
@@ -155,7 +162,14 @@ fun RoiSelector(
                     style = Stroke(width = 3.dp.toPx()),
                 )
 
-                val handleRadius = 8.dp.toPx()
+                // Centre crosshair: visible "move" affordance for the drag-inside gesture.
+                val centre = Offset((left + right) / 2f, (top + bottom) / 2f)
+                val arm = 10.dp.toPx()
+                drawCircle(color = handleStrokeColor, radius = 12.dp.toPx(), center = centre, style = Stroke(width = 1.5.dp.toPx()))
+                drawLine(handleStrokeColor, Offset(centre.x - arm, centre.y), Offset(centre.x + arm, centre.y), strokeWidth = 1.5.dp.toPx())
+                drawLine(handleStrokeColor, Offset(centre.x, centre.y - arm), Offset(centre.x, centre.y + arm), strokeWidth = 1.5.dp.toPx())
+
+                val handleRadius = 12.dp.toPx()
                 val corners = listOf(
                     RoiHitTarget.TOP_LEFT to Offset(left, top),
                     RoiHitTarget.TOP_RIGHT to Offset(right, top),
