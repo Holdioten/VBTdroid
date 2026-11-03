@@ -178,6 +178,58 @@ class PhaseSegmenterTest {
     }
 
     @Test
+    fun `noisy signal with jitter and velocity bumps keeps the true rep count`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(-0.06, 1, -0.01),
+            Move(0.04, 1, 0.01),
+            Move(-0.07, 1, -0.01),
+            Move(0.03, 1, 0.01),
+            Move(0.5, 6, 0.05),
+            Move(-0.06, 1, -0.01),
+            Move(0.0, 3),
+            Move(-0.5, 6, -0.05),
+            Move(0.07, 1, 0.01),
+            Move(-0.04, 1, -0.01),
+            Move(0.5, 6, 0.05),
+            Move(0.0, 4),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(2, reps.size)
+        assertTrue(reps.all { it.endSec > it.startSec })
+    }
+
+    @Test
+    fun `stationary jitter alone does not create a rep`() {
+        val samples = sequence(
+            Move(0.04, 2, 0.01),
+            Move(-0.07, 1, -0.01),
+            Move(0.06, 1, 0.01),
+            Move(-0.04, 2, -0.005),
+            Move(0.07, 1, 0.01),
+            Move(-0.06, 1, -0.01),
+            Move(0.0, 4),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertTrue(result.reps.isEmpty())
+    }
+
+    @Test
+    fun `monotonic velocity without a turnaround is rejected`() {
+        val moves = (1..12).map { Move(0.06 * it, 1, 0.01) }
+        val samples = sequence(*moves.toTypedArray())
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertTrue(result.reps.isEmpty())
+        assertTrue(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+    }
+
+    @Test
     fun `too short rep is rejected as incomplete`() {
         val samples = sequence(
             Move(-0.5, 4, -0.05),

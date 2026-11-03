@@ -106,11 +106,14 @@ object PhaseSegmenter {
             Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs, samples, config)
             Lift.DEADLIFT -> segmentDeadlifts(runs, samples, config)
         }
+        // A noisy track can split one rep into two adjacent candidates separated by a tiny gap
+        // with no real travel. Merge only those; reps separated by actual displacement stay split.
+        val reps = mergeNoiseFragments(result.reps, samples, config)
         val warnings = buildList {
             if (result.incompleteCount > 0) add(INCOMPLETE_REP)
-            if (result.noLockoutCount > 0) add(NO_LOCKOUT)
+            if (reps.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) add(NO_LOCKOUT)
         }
-        return PhaseSegmentation(result.reps, warnings)
+        return PhaseSegmentation(reps, warnings)
     }
 
     /** Duration-margin confidence for phase review; manual boundaries always require review. */
@@ -381,12 +384,115 @@ object PhaseSegmenter {
         val romM = repSamples.maxOf { it.yM } - repSamples.minOf { it.yM }
         if (romM + 1e-9 < config.minRomM) return null
 
+        if (!hasTurnaround(repSamples, ordered, config)) return null
+
         return RepSlice(
             index = 0,
             startSec = startSec,
             endSec = endSec,
             phases = ordered,
         )
+    }
+
+    /**
+     * A real rep reverses direction: vertical acceleration changes sign around the concentric
+     * velocity peak, or the bar changes direction outright. Synthetic or degraded tracks without
+     * acceleration data fall back to a clear velocity peak followed by deceleration.
+     */
+    private fun hasTurnaround(
+        repSamples: List<MotionSample>,
+        phases: List<Phase>,
+        config: PhaseConfig,
+    ): Boolean {
+        val concentric = phases.filter { it.type == PhaseType.CONCENTRIC }
+        val concentricSamples = repSamples.filter { sample ->
+            concentric.any { sample.tSec >= it.startSec - 1e-9 && sample.tSec <= it.endSec + 1e-9 }
+        }
+        val window = if (concentricSamples.size >= 2) concentricSamples else repSamples
+        val peakIndex = window.indices.maxByOrNull { window[it].vyMps } ?: return false
+
+        if (hasAccelerationSignChange(window, peakIndex)) return true
+        if (hasVelocitySignChange(repSamples)) return true
+
+        val peakVy = window[peakIndex].vyMps
+        if (peakVy + 1e-9 >= config.vEps) {
+            val peakY = window[peakIndex].yM
+            val decelerated = window.drop(peakIndex + 1).any { sample ->
+                sample.vyMps <= peakVy * 0.5 + 1e-9 &&
+                    kotlin.math.abs(sample.yM - peakY) + 1e-9 >= config.minRomM * 0.5
+            }
+            if (decelerated) return true
+        }
+        return false
+    }
+
+    private fun hasAccelerationSignChange(window: List<MotionSample>, peakIndex: Int): Boolean {
+        val from = (peakIndex - 2).coerceAtLeast(0)
+        val to = (peakIndex + 2).coerceAtMost(window.lastIndex)
+        var previous = 0.0
+        var havePrevious = false
+        for (index in from..to) {
+            val ay = window[index].ayMps2?.takeIf { it.isFinite() } ?: continue
+            if (kotlin.math.abs(ay) < 1e-9) continue
+            if (havePrevious && previous * ay < 0.0) return true
+            previous = ay
+            havePrevious = true
+        }
+        return false
+    }
+
+    private fun hasVelocitySignChange(samples: List<MotionSample>): Boolean {
+        var sign = 0.0
+        for (sample in samples) {
+            val vy = sample.vyMps
+            if (kotlin.math.abs(vy) < 1e-9) continue
+            if (sign != 0.0 && sign * vy < 0.0) return true
+            sign = vy
+        }
+        return false
+    }
+
+    /** Merges adjacent candidates only when the gap is short and contains no meaningful travel. */
+    private fun mergeNoiseFragments(
+        reps: List<RepSlice>,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): List<RepSlice> {
+        if (reps.size < 2) return reps.mapIndexed { index, rep -> rep.copy(index = index + 1) }
+        val merged = mutableListOf<RepSlice>()
+        for (rep in reps) {
+            val previous = merged.lastOrNull()
+            val gapSec = if (previous == null) Double.POSITIVE_INFINITY else rep.startSec - previous.endSec
+            if (previous != null &&
+                gapSec > 1e-9 &&
+                gapSec + 1e-9 < config.mergePauseSec &&
+                previous.phases.none { it.type == PhaseType.LOCKOUT } &&
+                gapHasNoDisplacement(previous.endSec, rep.startSec, samples, config)
+            ) {
+                val phases = (previous.phases + rep.phases)
+                    .filter { it.endSec > it.startSec }
+                    .sortedBy { it.startSec }
+                merged[merged.lastIndex] = previous.copy(
+                    endSec = maxOf(previous.endSec, rep.endSec),
+                    phases = phases,
+                )
+            } else {
+                merged += rep
+            }
+        }
+        return merged.mapIndexed { index, rep -> rep.copy(index = index + 1) }
+    }
+
+    private fun gapHasNoDisplacement(
+        gapStartSec: Double,
+        gapEndSec: Double,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): Boolean {
+        val gapSamples = samples.filter { it.tSec >= gapStartSec && it.tSec <= gapEndSec }
+        if (gapSamples.size < 2) return false
+        val travel = gapSamples.maxOf { it.yM } - gapSamples.minOf { it.yM }
+        return travel + 1e-9 < config.minRomM * 0.5
     }
 
     private fun Run.toPhase() = Phase(type, startSec, endSec)
