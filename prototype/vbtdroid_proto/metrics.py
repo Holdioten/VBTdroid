@@ -49,8 +49,16 @@ def calculate_metrics(rep, samples, load_kg=None):
     if rom_concentric > 0:
         for index in range(peak_index + 1, len(concentric) - 1):
             before, current, after = velocities[index - 1:index + 2]
-            if current <= before and current <= after and (current < before or current < after):
-                sticking_point = (concentric[index]["y_m"] - cfirst["y_m"]) / rom_concentric * 100.0
+            if current <= before + 1e-9 and current <= after + 1e-9:
+                plateau = index
+                while (
+                    plateau + 1 < len(concentric) - 1
+                    and abs(velocities[plateau + 1] - velocities[plateau]) <= 1e-9
+                ):
+                    plateau += 1
+                sticking_point = (
+                    concentric[plateau]["y_m"] - cfirst["y_m"]
+                ) / rom_concentric * 100.0
                 break
 
     metrics = {
