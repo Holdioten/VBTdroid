@@ -162,4 +162,12 @@
     <string name="import_guide_format">Squat, bench, or deadlift videos up to 10 minutes. Analysed on this device only; nothing is uploaded.</string>
 
     <string name="import_cta_draw_roi_hint">Drag on the frame to frame the plate first</string>
+
+    <string name="import_next">Next</string>
+    <string name="import_step_video">Video</string>
+    <string name="import_step_params">Settings</string>
+    <string name="import_step_roi">Region</string>
+    <string name="import_summary_title">Summary</string>
+    <string name="import_summary_line">%1$s · Load %2$s kg · Plate %3$s m · Camera %4$s°</string>
+    <string name="import_summary_line_no_load">%1$s · No load · Plate %2$s m · Camera %3$s°</string>
 </resources>

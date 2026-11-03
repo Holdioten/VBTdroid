@@ -8,10 +8,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +37,14 @@ import com.vbtdroid.app.ui.report.ReportScreen
 import com.vbtdroid.app.ui.theme.VbtTheme
 import kotlinx.coroutines.launch
 
+/**
+ * Holds the last analysis result across Activity recreation (rotation, app switch while the
+ * Activity is recreated). Process death clears it; the restored screen then falls back to import.
+ */
+class AnalysisSession : ViewModel() {
+    var result: AnalysisResult? = null
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,9 +52,10 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
         }
+        val session = ViewModelProvider(this)[AnalysisSession::class.java]
         setContent {
             VbtTheme {
-                AnalysisApp()
+                AnalysisApp(session)
             }
         }
     }
@@ -50,14 +64,18 @@ class MainActivity : ComponentActivity() {
 private enum class AppScreen { IMPORT, REPORT, HISTORY }
 
 @Composable
-private fun AnalysisApp() {
+private fun AnalysisApp(session: AnalysisSession) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val database = remember(context) { AppDatabase.build(context) }
     val repository = remember(database) { AnalysisRepository(database) }
     var serviceBinder by remember { mutableStateOf<AnalysisForegroundService.AnalysisBinder?>(null) }
-    var screen by remember { mutableStateOf(AppScreen.IMPORT) }
-    var result by remember { mutableStateOf<AnalysisResult?>(null) }
+    var screen by rememberSaveable { mutableStateOf(AppScreen.IMPORT) }
+    var resultState by remember { mutableStateOf(session.result) }
+    fun publishResult(value: AnalysisResult?) {
+        session.result = value
+        resultState = value
+    }
     var analyzing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var analysisError by remember { mutableStateOf<String?>(null) }
@@ -101,16 +119,32 @@ private fun AnalysisApp() {
         }
     }
 
+    // Restored into HISTORY after recreation: the in-memory list is gone, so reload it.
+    LaunchedEffect(Unit) {
+        if (screen == AppScreen.HISTORY) history = repository.history()
+    }
+
+    fun backFromReport() {
+        publishResult(null)
+        analysisError = null
+        progress = 0f
+        screen = AppScreen.IMPORT
+    }
+
+    // System Back never finishes the app from a sub-screen: REPORT/HISTORY return to IMPORT.
+    BackHandler(enabled = screen != AppScreen.IMPORT) {
+        when (screen) {
+            AppScreen.HISTORY -> screen = if (resultState == null) AppScreen.IMPORT else AppScreen.REPORT
+            AppScreen.REPORT -> backFromReport()
+            AppScreen.IMPORT -> Unit
+        }
+    }
+
     when (screen) {
-        AppScreen.REPORT -> result?.let { report ->
+        AppScreen.REPORT -> resultState?.let { report ->
             ReportScreen(
                 result = report,
-                onBack = {
-                    result = null
-                    analysisError = null
-                    progress = 0f
-                    screen = AppScreen.IMPORT
-                },
+                onBack = ::backFromReport,
                 onShowHistory = ::openHistory,
                 onPersist = { updated -> repository.updateSavedAnalysis(updated) },
             )
@@ -122,7 +156,7 @@ private fun AnalysisApp() {
                 scope.launch { historyDetail = repository.detail(setId) }
             },
             onCloseDetail = { historyDetail = null },
-            onBack = { screen = if (result == null) AppScreen.IMPORT else AppScreen.REPORT },
+            onBack = { screen = if (resultState == null) AppScreen.IMPORT else AppScreen.REPORT },
         )
         AppScreen.IMPORT -> ImportScreen(
             analyzing = analyzing,
@@ -146,7 +180,7 @@ private fun AnalysisApp() {
 
                             override fun onResult(value: AnalysisResult) {
                                 analyzing = false
-                                result = value
+                                publishResult(value)
                                 screen = AppScreen.REPORT
                             }
 

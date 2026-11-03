@@ -2,6 +2,7 @@ package com.vbtdroid.app.ui.history
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -64,6 +65,9 @@ fun HistoryScreen(
     onCloseDetail: () -> Unit,
     onBack: () -> Unit,
 ) {
+    // Back inside a history detail returns to the list, not out of history.
+    BackHandler(enabled = detail != null, onBack = onCloseDetail)
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Bg,

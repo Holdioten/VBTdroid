@@ -4,8 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.provider.Settings
+import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -15,8 +16,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +34,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,9 +44,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -49,12 +57,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +70,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +78,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -77,22 +88,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisRequest
+import com.vbtdroid.app.ui.common.liftDisplayName
+import com.vbtdroid.app.ui.common.variantDisplayName
 import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.MessageBanner
 import com.vbtdroid.app.ui.components.PrimaryActionBar
 import com.vbtdroid.app.ui.components.PrimaryButton
-import com.vbtdroid.app.ui.components.primaryButtonColors
-import com.vbtdroid.app.ui.components.secondaryOutlinedColors
-import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
 import com.vbtdroid.app.ui.components.SegmentedPicker
 import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.components.SwitchRow
+import com.vbtdroid.app.ui.components.primaryButtonColors
+import com.vbtdroid.app.ui.components.secondaryOutlinedColors
 import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
-import com.vbtdroid.app.ui.common.liftDisplayName
-import com.vbtdroid.app.ui.common.variantDisplayName
+import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.app.video.VideoDecoder
@@ -105,7 +116,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private const val PAGE_VIDEO = 0
+private const val PAGE_SETTINGS = 1
+private const val PAGE_ROI = 2
+
+/**
+ * Pre-analysis flow in three horizontal pages: video, settings, ROI. State survives Activity
+ * recreation through rememberSaveable; decoded frame and metadata are reloaded from the saved URI.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun ImportScreen(
     analyzing: Boolean = false,
@@ -118,31 +137,50 @@ fun ImportScreen(
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
-    var selectedUri by remember { mutableStateOf<Uri?>(null) }
-    var fileName by remember { mutableStateOf<String?>(null) }
+    var selectedUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var fileName by rememberSaveable { mutableStateOf<String?>(null) }
     var videoMeta by remember { mutableStateOf<VideoMeta?>(null) }
     var preview by remember { mutableStateOf<Bitmap?>(null) }
-    var roi by remember { mutableStateOf<RectF?>(null) }
-    var roiConfirmed by remember { mutableStateOf(false) }
-    var autoRoiUnavailable by remember { mutableStateOf(false) }
+    var roi by rememberSaveable { mutableStateOf<RectF?>(null) }
+    var roiConfirmed by rememberSaveable { mutableStateOf(false) }
+    var autoRoiUnavailable by rememberSaveable { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var videoError by remember { mutableStateOf<String?>(null) }
-    var lift by remember { mutableStateOf(Lift.SQUAT) }
-    var variant by remember { mutableStateOf(LiftVariant.HIGH_BAR) }
-    var loadText by remember { mutableStateOf("") }
+    var lift by rememberSaveable { mutableStateOf(Lift.SQUAT) }
+    var variant by rememberSaveable { mutableStateOf(LiftVariant.HIGH_BAR) }
+    var loadText by rememberSaveable { mutableStateOf("") }
     val defaultPlateDiameter = stringResource(R.string.import_default_plate_diameter)
     val defaultCameraAngle = stringResource(R.string.import_default_camera_angle)
-    var plateDiameterText by remember { mutableStateOf(defaultPlateDiameter) }
-    var cameraAngleText by remember { mutableStateOf(defaultCameraAngle) }
-    var cameraLevel by remember { mutableStateOf(true) }
-    var analyzePose by remember { mutableStateOf(true) }
+    var plateDiameterText by rememberSaveable { mutableStateOf(defaultPlateDiameter) }
+    var cameraAngleText by rememberSaveable { mutableStateOf(defaultCameraAngle) }
+    var cameraLevel by rememberSaveable { mutableStateOf(true) }
+    var analyzePose by rememberSaveable { mutableStateOf(true) }
 
     val currentPreview = preview
     DisposableEffect(currentPreview) {
         onDispose { currentPreview?.takeIf { !it.isRecycled }?.recycle() }
     }
 
+    val pagerState = rememberPagerState(pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+    fun goTo(page: Int) {
+        scope.launch { pagerState.animateScrollToPage(page) }
+    }
+
+    fun clearVideo() {
+        selectedUri = null
+        fileName = null
+        videoMeta = null
+        preview = null
+        roi = null
+        roiConfirmed = false
+        autoRoiUnavailable = false
+        videoError = null
+        loading = false
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        // A cancelled picker returns null: nothing changes, the user stays where they were.
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -156,14 +194,22 @@ fun ImportScreen(
             roi = null
             roiConfirmed = false
             videoError = null
+            goTo(PAGE_VIDEO)
         }
+    }
+
+    // Back with a video loaded clears it and returns to the empty import state (never exits the app).
+    BackHandler(enabled = selectedUri != null && !analyzing) {
+        clearVideo()
+        goTo(PAGE_VIDEO)
     }
 
     LaunchedEffect(selectedUri) {
         val uri = selectedUri ?: return@LaunchedEffect
+        // ROI present at start means we were restored from saved state: keep the user's region.
+        val restoredRoi = roi
         loading = true
         videoError = null
-        autoRoiUnavailable = false
         try {
             fileName = queryDisplayName(context, uri)
             val loaded = withContext(Dispatchers.IO) {
@@ -175,9 +221,11 @@ fun ImportScreen(
             }
             videoMeta = loaded.first
             preview = loaded.second
-            roi = loaded.third
-            roiConfirmed = false
-            autoRoiUnavailable = loaded.third == null
+            if (restoredRoi == null) {
+                roi = loaded.third
+                roiConfirmed = false
+                autoRoiUnavailable = loaded.third == null
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -202,14 +250,12 @@ fun ImportScreen(
     val minRoiSize = preview?.let { RoiGeometry.minimumSize(it.width, it.height) }
         ?: RoiGeometry.MIN_SIZE_PX
     val validRoi = roi?.let { !it.isEmpty && it.width() >= minRoiSize && it.height() >= minRoiSize } == true
+    val canAnalyze = !analyzing && validSettings && validRoi && roiConfirmed
 
     val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val cancelledMessage = stringResource(R.string.analysis_cancelled)
     val liftNames = Lift.entries.associateWith { liftDisplayName(it) }
     val variantNames = LiftVariant.entries.associateWith { variantDisplayName(it) }
-
-    val canAnalyze = !analyzing && validSettings && validRoi && roiConfirmed
 
     fun startAnalysis() {
         selectedUri?.let { uri ->
@@ -229,261 +275,8 @@ fun ImportScreen(
         }
     }
 
-    val actionBar: @Composable () -> Unit = {
-        if (analyzing) {
-            PrimaryActionBar {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        stringResource(R.string.import_analysis_progress, (analysisProgress * 100).toInt()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                LinearProgressIndicator(
-                    progress = { analysisProgress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                )
-                Text(
-                    stringResource(R.string.analysis_notification_text),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VbtTheme.colors.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    onClick = {
-                        onCancel()
-                        scope.launch { snackbar.showSnackbar(cancelledMessage) }
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
-                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text(stringResource(R.string.import_cancel_analysis))
-                }
-            }
-        } else if (selectedUri != null && preview != null && !roiConfirmed) {
-            // ROI stage: the only forward action is confirming the region (spec: state-aware bar).
-            PrimaryActionBar(
-                hint = stringResource(
-                    if (roi == null) R.string.import_cta_draw_roi_hint else R.string.import_cta_confirm_roi_hint,
-                ),
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    OutlinedButton(
-                        onClick = {
-                            roi = null
-                            roiConfirmed = false
-                        },
-                        enabled = roi != null,
-                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
-                        colors = secondaryOutlinedColors(),
-                    ) {
-                        Text(stringResource(R.string.import_roi_reset), style = MaterialTheme.typography.labelLarge)
-                    }
-                    Button(
-                        onClick = { roiConfirmed = true },
-                        enabled = validRoi,
-                        modifier = Modifier.weight(1.6f).height(52.dp),
-                        shape = MaterialTheme.shapes.small,
-                        colors = primaryButtonColors(),
-                    ) {
-                        Text(stringResource(R.string.import_action_confirm_roi), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
-        } else if (loading) {
-            PrimaryActionBar(hint = stringResource(R.string.import_loading_frame)) {}
-        } else if (!validSettings) {
-            // Start button only appears once ROI is confirmed AND settings are valid.
-            PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
-        } else {
-            PrimaryActionBar {
-                PrimaryButton(
-                    text = stringResource(R.string.import_start_analysis),
-                    onClick = ::startAnalysis,
-                    enabled = canAnalyze,
-                )
-            }
-        }
-    }
-    // Bar is hidden entirely when there is nothing to act on yet (no video, or read failed).
-    val barVisible = analyzing || (selectedUri != null && (loading || preview != null))
-
-    val hero: @Composable () -> Unit = {
-        Column(
-            modifier = Modifier.padding(bottom = VbtSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
-        ) {
-            VideoHero(
-                preview = preview,
-                roi = roi,
-                loading = loading,
-                roiConfirmed = roiConfirmed,
-                autoRoiUnavailable = autoRoiUnavailable,
-                enabled = !analyzing,
-                onChooseVideo = { picker.launch(arrayOf("video/*")) },
-                onRoiChanged = {
-                    roi = it
-                    roiConfirmed = false
-                },
-            )
-            videoMeta?.let { meta ->
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s), verticalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    fileName?.let {
-                        StatusChip(
-                            text = stringResource(R.string.import_file_name, it),
-                            maxWidth = 220.dp,
-                        )
-                    }
-                    StatusChip(stringResource(R.string.import_duration, meta.durationSec))
-                    StatusChip(stringResource(R.string.import_resolution, meta.width, meta.height))
-                    StatusChip(stringResource(R.string.import_effective_fps, meta.effectiveFps))
-                }
-            }
-            if (selectedUri == null && !loading) {
-                ImportGuideCard()
-            }
-            if (selectedUri != null && !loading && preview != null) {
-                OutlinedButton(
-                    onClick = { picker.launch(arrayOf("video/*")) },
-                    enabled = !analyzing,
-                    modifier = Modifier.heightIn(min = MinTouchTarget),
-                ) {
-                    Text(stringResource(R.string.import_replace_video))
-                }
-            }
-        }
-    }
-
-    val roiCard: @Composable () -> Unit = {
-        if (preview != null) {
-            SectionCard(padding = VbtSpacing.m) {
-                SectionLabel(stringResource(R.string.import_roi_title))
-                Text(
-                    stringResource(R.string.import_roi_edit_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VbtTheme.colors.onSurfaceVariant,
-                )
-            }
-        }
-    }
-
-    val settings: @Composable () -> Unit = {
-        videoMeta?.let {
-            SectionLabel(stringResource(R.string.import_lift))
-            SegmentedPicker(
-                options = Lift.entries,
-                selected = lift,
-                label = { liftNames.getValue(it) },
-                onSelect = {
-                    lift = it
-                    variant = defaultVariant(it)
-                },
-                enabled = !analyzing,
-            )
-            SectionLabel(stringResource(R.string.import_variant))
-            SegmentedPicker(
-                options = variantsFor(lift),
-                selected = variant,
-                label = { variantNames.getValue(it) },
-                onSelect = { variant = it },
-                enabled = !analyzing,
-            )
-
-            SectionLabel(stringResource(R.string.import_analysis_settings))
-            SectionCard {
-                Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    OutlinedTextField(
-                        value = loadText,
-                        onValueChange = { loadText = it },
-                        enabled = !analyzing,
-                        label = { Text(stringResource(R.string.import_load_label)) },
-                        suffix = { Text(stringResource(R.string.unit_kg)) },
-                        isError = !validLoad,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = plateDiameterText,
-                        onValueChange = { plateDiameterText = it },
-                        enabled = !analyzing,
-                        label = { Text(stringResource(R.string.import_plate_label)) },
-                        suffix = { Text(stringResource(R.string.unit_m)) },
-                        isError = !validPlate,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                OutlinedTextField(
-                    value = cameraAngleText,
-                    onValueChange = { cameraAngleText = it },
-                    enabled = !analyzing,
-                    label = { Text(stringResource(R.string.import_camera_label)) },
-                    suffix = { Text(stringResource(R.string.unit_deg)) },
-                    isError = !validAngle,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    AssistChip(
-                        onClick = { cameraAngleText = "90" },
-                        enabled = !analyzing,
-                        label = { Text(stringResource(R.string.import_camera_preset_side)) },
-                    )
-                    AssistChip(
-                        onClick = { cameraAngleText = "45" },
-                        enabled = !analyzing,
-                        label = { Text(stringResource(R.string.import_camera_preset_diagonal)) },
-                    )
-                }
-            }
-
-            SectionCard(padding = VbtSpacing.s) {
-                SwitchRow(
-                    title = stringResource(R.string.import_camera_level),
-                    checked = cameraLevel,
-                    onCheckedChange = { cameraLevel = it },
-                    enabled = !analyzing,
-                )
-                HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
-                SwitchRow(
-                    title = stringResource(R.string.import_analyze_pose),
-                    checked = analyzePose,
-                    onCheckedChange = { analyzePose = it },
-                    enabled = !analyzing,
-                    description = stringResource(R.string.import_pose_hint),
-                )
-            }
-            if (!validSettings) {
-                Text(
-                    stringResource(R.string.import_invalid_settings),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VbtTheme.colors.warning,
-                )
-            }
-        }
-    }
-
-    val banners: @Composable () -> Unit = {
-        videoError?.let {
-            val message = if (it == VideoLimits.TOO_LONG_MESSAGE) {
-                stringResource(R.string.import_error_too_long)
-            } else {
-                stringResource(R.string.import_error_reason, it)
-            }
-            MessageBanner(message)
-        }
-        analysisError?.let {
-            MessageBanner(stringResource(R.string.import_analysis_failed_reason, it))
-        }
-    }
-
-    val configuration = LocalConfiguration.current
-    val wide = configuration.screenWidthDp >= 600 || configuration.screenWidthDp > configuration.screenHeightDp
+    // The bar only exists when there is a video or analysis is running (spec: no permanent bar).
+    val barVisible = analyzing || selectedUri != null
 
     Scaffold(
         containerColor = Bg,
@@ -509,45 +302,524 @@ fun ImportScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { if (!wide && barVisible) actionBar() },
-    ) { inner ->
-        if (!wide) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(inner)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.m),
-                verticalArrangement = Arrangement.spacedBy(VbtSpacing.l),
-            ) {
-                banners()
-                hero()
-                roiCard()
-                settings()
-                Spacer(Modifier.height(16.dp))
+        bottomBar = {
+            if (barVisible) {
+                ImportActionBar(
+                    analyzing = analyzing,
+                    analysisProgress = analysisProgress,
+                    page = pagerState.currentPage,
+                    hasVideo = selectedUri != null,
+                    loading = loading,
+                    hasFrame = preview != null,
+                    hasRoi = roi != null,
+                    roiConfirmed = roiConfirmed,
+                    validRoi = validRoi,
+                    validSettings = validSettings,
+                    canAnalyze = canAnalyze,
+                    onCancel = {
+                        onCancel()
+                        scope.launch { snackbar.showSnackbar(cancelledMessage) }
+                    },
+                    onNext = { goTo(pagerState.currentPage + 1) },
+                    onReset = {
+                        roi = null
+                        roiConfirmed = false
+                    },
+                    onConfirm = { roiConfirmed = true },
+                    onAnalyze = ::startAnalysis,
+                )
             }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(inner).padding(horizontal = VbtSpacing.xl, vertical = VbtSpacing.m),
-                horizontalArrangement = Arrangement.spacedBy(VbtSpacing.xl),
+        },
+    ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            StepIndicator(current = pagerState.currentPage, onSelect = ::goTo)
+            Column(
+                modifier = Modifier.padding(horizontal = VbtSpacing.l),
+                verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
             ) {
+                videoError?.let {
+                    val message = if (it == VideoLimits.TOO_LONG_MESSAGE) {
+                        stringResource(R.string.import_error_too_long)
+                    } else {
+                        stringResource(R.string.import_error_reason, it)
+                    }
+                    MessageBanner(message)
+                }
+                analysisError?.let {
+                    MessageBanner(stringResource(R.string.import_analysis_failed_reason, it))
+                }
+            }
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.Top,
+            ) { page ->
                 Column(
-                    modifier = Modifier.weight(0.45f).verticalScroll(rememberScrollState()),
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.m),
                     verticalArrangement = Arrangement.spacedBy(VbtSpacing.l),
                 ) {
-                    hero()
-                    roiCard()
-                }
-                Column(modifier = Modifier.weight(0.55f)) {
-                    Column(
-                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(VbtSpacing.l),
-                    ) {
-                        banners()
-                        settings()
+                    when (page) {
+                        PAGE_VIDEO -> VideoPage(
+                            selectedUri = selectedUri,
+                            preview = preview,
+                            videoMeta = videoMeta,
+                            fileName = fileName,
+                            loading = loading,
+                            enabled = !analyzing,
+                            onChoose = { picker.launch(arrayOf("video/*")) },
+                        )
+                        PAGE_SETTINGS -> SettingsPage(
+                            enabled = !analyzing,
+                            lift = lift,
+                            variant = variant,
+                            liftNames = liftNames,
+                            variantNames = variantNames,
+                            onLift = {
+                                lift = it
+                                variant = defaultVariant(it)
+                            },
+                            onVariant = { variant = it },
+                            loadText = loadText,
+                            onLoad = { loadText = it },
+                            validLoad = validLoad,
+                            plateText = plateDiameterText,
+                            onPlate = { plateDiameterText = it },
+                            validPlate = validPlate,
+                            angleText = cameraAngleText,
+                            onAngle = { cameraAngleText = it },
+                            validAngle = validAngle,
+                            cameraLevel = cameraLevel,
+                            onCameraLevel = { cameraLevel = it },
+                            analyzePose = analyzePose,
+                            onAnalyzePose = { analyzePose = it },
+                            validSettings = validSettings,
+                        )
+                        PAGE_ROI -> RoiPage(
+                            preview = preview,
+                            roi = roi,
+                            roiConfirmed = roiConfirmed,
+                            autoRoiUnavailable = autoRoiUnavailable,
+                            onRoiChanged = {
+                                roi = it
+                                roiConfirmed = false
+                            },
+                            onGoVideo = { goTo(PAGE_VIDEO) },
+                            summary = summaryText(lift, variant, loadText, plateDiameterText, cameraAngleText),
+                        )
                     }
-                    if (barVisible) actionBar()
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun summaryText(
+    lift: Lift,
+    variant: LiftVariant,
+    loadText: String,
+    plateText: String,
+    angleText: String,
+): String {
+    val identity = "${liftDisplayName(lift)} · ${variantDisplayName(variant)}"
+    return if (loadText.isBlank()) {
+        stringResource(R.string.import_summary_line_no_load, identity, plateText, angleText)
+    } else {
+        stringResource(R.string.import_summary_line, identity, loadText, plateText, angleText)
+    }
+}
+
+/** Three-step indicator. Tapping a step jumps to it (pages handle their own empty states). */
+@Composable
+private fun StepIndicator(current: Int, onSelect: (Int) -> Unit) {
+    val labels = listOf(R.string.import_step_video, R.string.import_step_params, R.string.import_step_roi)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.s),
+        horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val active = index == current
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = MinTouchTarget)
+                    .clickable { onSelect(index) },
+                shape = ShapePill,
+                color = if (active) VbtTheme.colors.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = VbtSpacing.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        "${index + 1}  ${stringResource(label)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (active) MaterialTheme.colorScheme.primary else VbtTheme.colors.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VideoPage(
+    selectedUri: Uri?,
+    preview: Bitmap?,
+    videoMeta: VideoMeta?,
+    fileName: String?,
+    loading: Boolean,
+    enabled: Boolean,
+    onChoose: () -> Unit,
+) {
+    if (selectedUri == null) {
+        EmptyDropZone(enabled = enabled, onChooseVideo = onChoose)
+        ImportGuideCard()
+        return
+    }
+    when {
+        loading -> LoadingFrame()
+        preview != null -> FrameHero(preview)
+        else -> Text(
+            stringResource(R.string.import_cta_need_video),
+            style = MaterialTheme.typography.bodyMedium,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
+    }
+    videoMeta?.let { meta ->
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+            verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+        ) {
+            fileName?.let {
+                StatusChip(text = stringResource(R.string.import_file_name, it), maxWidth = 220.dp)
+            }
+            StatusChip(stringResource(R.string.import_duration, meta.durationSec))
+            StatusChip(stringResource(R.string.import_resolution, meta.width, meta.height))
+            StatusChip(stringResource(R.string.import_effective_fps, meta.effectiveFps))
+        }
+    }
+    OutlinedButton(
+        onClick = onChoose,
+        enabled = enabled,
+        modifier = Modifier.heightIn(min = MinTouchTarget),
+        colors = secondaryOutlinedColors(),
+    ) {
+        Text(stringResource(R.string.import_replace_video))
+    }
+}
+
+@Composable
+private fun FrameHero(frame: Bitmap) {
+    val shape = MaterialTheme.shapes.large
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            bitmap = frame.asImageBitmap(),
+            contentDescription = stringResource(R.string.import_first_frame_preview),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SettingsPage(
+    enabled: Boolean,
+    lift: Lift,
+    variant: LiftVariant,
+    liftNames: Map<Lift, String>,
+    variantNames: Map<LiftVariant, String>,
+    onLift: (Lift) -> Unit,
+    onVariant: (LiftVariant) -> Unit,
+    loadText: String,
+    onLoad: (String) -> Unit,
+    validLoad: Boolean,
+    plateText: String,
+    onPlate: (String) -> Unit,
+    validPlate: Boolean,
+    angleText: String,
+    onAngle: (String) -> Unit,
+    validAngle: Boolean,
+    cameraLevel: Boolean,
+    onCameraLevel: (Boolean) -> Unit,
+    analyzePose: Boolean,
+    onAnalyzePose: (Boolean) -> Unit,
+    validSettings: Boolean,
+) {
+    SectionLabel(stringResource(R.string.import_lift))
+    SegmentedPicker(
+        options = Lift.entries,
+        selected = lift,
+        label = { liftNames.getValue(it) },
+        onSelect = onLift,
+        enabled = enabled,
+    )
+    SectionLabel(stringResource(R.string.import_variant))
+    SegmentedPicker(
+        options = variantsFor(lift),
+        selected = variant,
+        label = { variantNames.getValue(it) },
+        onSelect = onVariant,
+        enabled = enabled,
+    )
+
+    SectionLabel(stringResource(R.string.import_analysis_settings))
+    SectionCard {
+        Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            OutlinedTextField(
+                value = loadText,
+                onValueChange = onLoad,
+                enabled = enabled,
+                label = { Text(stringResource(R.string.import_load_label)) },
+                suffix = { Text(stringResource(R.string.unit_kg)) },
+                isError = !validLoad,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = plateText,
+                onValueChange = onPlate,
+                enabled = enabled,
+                label = { Text(stringResource(R.string.import_plate_label)) },
+                suffix = { Text(stringResource(R.string.unit_m)) },
+                isError = !validPlate,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        OutlinedTextField(
+            value = angleText,
+            onValueChange = onAngle,
+            enabled = enabled,
+            label = { Text(stringResource(R.string.import_camera_label)) },
+            suffix = { Text(stringResource(R.string.unit_deg)) },
+            isError = !validAngle,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            AssistChip(
+                onClick = { onAngle("90") },
+                enabled = enabled,
+                label = { Text(stringResource(R.string.import_camera_preset_side)) },
+            )
+            AssistChip(
+                onClick = { onAngle("45") },
+                enabled = enabled,
+                label = { Text(stringResource(R.string.import_camera_preset_diagonal)) },
+            )
+        }
+    }
+
+    SectionCard(padding = VbtSpacing.s) {
+        SwitchRow(
+            title = stringResource(R.string.import_camera_level),
+            checked = cameraLevel,
+            onCheckedChange = onCameraLevel,
+            enabled = enabled,
+        )
+        HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
+        SwitchRow(
+            title = stringResource(R.string.import_analyze_pose),
+            checked = analyzePose,
+            onCheckedChange = onAnalyzePose,
+            enabled = enabled,
+            description = stringResource(R.string.import_pose_hint),
+        )
+    }
+    if (!validSettings) {
+        Text(
+            stringResource(R.string.import_invalid_settings),
+            style = MaterialTheme.typography.bodySmall,
+            color = VbtTheme.colors.warning,
+        )
+    }
+}
+
+@Composable
+private fun RoiPage(
+    preview: Bitmap?,
+    roi: RectF?,
+    roiConfirmed: Boolean,
+    autoRoiUnavailable: Boolean,
+    onRoiChanged: (RectF) -> Unit,
+    onGoVideo: () -> Unit,
+    summary: String,
+) {
+    if (preview == null) {
+        SectionCard {
+            SectionLabel(stringResource(R.string.import_roi_title))
+            Text(
+                stringResource(R.string.import_cta_need_video),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onGoVideo, modifier = Modifier.heightIn(min = MinTouchTarget)) {
+                Text(stringResource(R.string.import_step_video))
+            }
+        }
+        return
+    }
+    val shape = MaterialTheme.shapes.large
+    val (chipText, chipTone) = when {
+        roiConfirmed -> stringResource(R.string.import_status_confirmed) to ChipTone.PRIMARY
+        autoRoiUnavailable -> stringResource(R.string.import_status_manual) to ChipTone.WARNING
+        else -> stringResource(R.string.import_status_suggested) to ChipTone.PRIMARY
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
+    ) {
+        RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged)
+        StatusChip(
+            text = chipText,
+            tone = chipTone,
+            modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
+        )
+    }
+    SectionCard(padding = VbtSpacing.m) {
+        SectionLabel(stringResource(R.string.import_roi_title))
+        Text(
+            stringResource(R.string.import_roi_edit_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
+    }
+    SectionCard(padding = VbtSpacing.m) {
+        SectionLabel(stringResource(R.string.import_summary_title))
+        Text(summary, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/**
+ * Bottom bar, page-aware. Nothing is shown on the empty state (handled by the caller).
+ * - video page: 下一步 once a frame is ready
+ * - settings page: 下一步 once settings are valid
+ * - ROI page: 重置 + 确认区域 until confirmed, then 开始分析 when settings are valid
+ * - analyzing: progress + cancel on any page
+ */
+@Composable
+private fun ImportActionBar(
+    analyzing: Boolean,
+    analysisProgress: Float,
+    page: Int,
+    hasVideo: Boolean,
+    loading: Boolean,
+    hasFrame: Boolean,
+    hasRoi: Boolean,
+    roiConfirmed: Boolean,
+    validRoi: Boolean,
+    validSettings: Boolean,
+    canAnalyze: Boolean,
+    onCancel: () -> Unit,
+    onNext: () -> Unit,
+    onReset: () -> Unit,
+    onConfirm: () -> Unit,
+    onAnalyze: () -> Unit,
+) {
+    if (analyzing) {
+        PrimaryActionBar {
+            Text(
+                stringResource(R.string.import_analysis_progress, (analysisProgress * 100).toInt()),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            LinearProgressIndicator(
+                progress = { analysisProgress },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            )
+            Text(
+                stringResource(R.string.analysis_notification_text),
+                style = MaterialTheme.typography.bodySmall,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text(stringResource(R.string.import_cancel_analysis))
+            }
+        }
+        return
+    }
+    when (page) {
+        PAGE_VIDEO -> PrimaryActionBar(
+            hint = if (loading) stringResource(R.string.import_loading_frame) else null,
+        ) {
+            PrimaryButton(
+                text = stringResource(R.string.import_next),
+                onClick = onNext,
+                enabled = hasFrame && !loading,
+            )
+        }
+        PAGE_SETTINGS -> PrimaryActionBar(
+            hint = if (!validSettings) stringResource(R.string.import_invalid_settings) else null,
+        ) {
+            PrimaryButton(
+                text = stringResource(R.string.import_next),
+                onClick = onNext,
+                enabled = validSettings,
+            )
+        }
+        else -> when {
+            !hasFrame -> PrimaryActionBar(
+                hint = stringResource(if (loading) R.string.import_loading_frame else R.string.import_cta_need_video),
+            ) {}
+            !roiConfirmed -> PrimaryActionBar(
+                hint = stringResource(
+                    if (!hasRoi) R.string.import_cta_draw_roi_hint else R.string.import_cta_confirm_roi_hint,
+                ),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+                    OutlinedButton(
+                        onClick = onReset,
+                        enabled = hasRoi,
+                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
+                        colors = secondaryOutlinedColors(),
+                    ) {
+                        Text(stringResource(R.string.import_roi_reset), style = MaterialTheme.typography.labelLarge)
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        enabled = validRoi,
+                        modifier = Modifier.weight(1.6f).height(52.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = primaryButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.import_action_confirm_roi), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+            !validSettings -> PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
+            else -> PrimaryActionBar {
+                PrimaryButton(
+                    text = stringResource(R.string.import_start_analysis),
+                    onClick = onAnalyze,
+                    enabled = canAnalyze,
+                )
             }
         }
     }
@@ -585,46 +857,6 @@ private fun ImportGuideCard() {
             style = MaterialTheme.typography.bodySmall,
             color = VbtTheme.colors.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun VideoHero(
-    preview: Bitmap?,
-    roi: RectF?,
-    loading: Boolean,
-    roiConfirmed: Boolean,
-    autoRoiUnavailable: Boolean,
-    enabled: Boolean,
-    onChooseVideo: () -> Unit,
-    onRoiChanged: (RectF) -> Unit,
-) {
-    val shape = MaterialTheme.shapes.large
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
-        contentAlignment = Alignment.Center,
-    ) {
-        when {
-            preview != null -> RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged)
-            loading -> LoadingFrame()
-            else -> EmptyDropZone(enabled = enabled, onChooseVideo = onChooseVideo)
-        }
-        if (preview != null) {
-            val (text, tone) = when {
-                roiConfirmed -> stringResource(R.string.import_status_confirmed) to ChipTone.PRIMARY
-                autoRoiUnavailable -> stringResource(R.string.import_status_manual) to ChipTone.WARNING
-                else -> stringResource(R.string.import_status_suggested) to ChipTone.PRIMARY
-            }
-            StatusChip(
-                text = text,
-                tone = tone,
-                modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
-            )
-        }
     }
 }
 

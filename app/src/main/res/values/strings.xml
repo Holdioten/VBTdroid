@@ -222,4 +222,12 @@
     <string name="import_guide_format">支持深蹲、卧推、硬拉视频，最长 10 分钟。视频只在本机分析，不上传。</string>
 
     <string name="import_cta_draw_roi_hint">先在首帧上拖动框选杠铃片</string>
+
+    <string name="import_next">下一步</string>
+    <string name="import_step_video">视频</string>
+    <string name="import_step_params">参数</string>
+    <string name="import_step_roi">框选</string>
+    <string name="import_summary_title">分析摘要</string>
+    <string name="import_summary_line">%1$s · 负荷 %2$s kg · 片径 %3$s m · 机位 %4$s°</string>
+    <string name="import_summary_line_no_load">%1$s · 负荷未填 · 片径 %2$s m · 机位 %3$s°</string>
 </resources>
