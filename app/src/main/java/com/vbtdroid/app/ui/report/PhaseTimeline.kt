@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.ui.theme.VbtTheme
+import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -45,6 +46,7 @@ fun PhaseTimeline(
     onRepChange: (RepSlice) -> Boolean,
     modifier: Modifier = Modifier,
     editable: Boolean = false,
+    lift: Lift = Lift.SQUAT,
 ) {
     var workingRep by remember(rep) { mutableStateOf(rep) }
     val latestRep by rememberUpdatedState(workingRep)
@@ -132,7 +134,7 @@ fun PhaseTimeline(
         workingRep.phases.forEach { phase ->
             val duration = (phase.endSec - phase.startSec).coerceAtLeast(0.001)
             Text(
-                text = phaseDisplayName(phase.type),
+                text = phaseDisplayName(lift, phase.type),
                 modifier = Modifier.weight(duration.toFloat()).padding(horizontal = 2.dp),
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
@@ -142,18 +144,11 @@ fun PhaseTimeline(
 }
 
 @Composable
-private fun phaseDisplayName(type: PhaseType): String = stringResource(
-    when (type) {
-        PhaseType.ECCENTRIC -> R.string.phase_eccentric
-        PhaseType.PAUSE -> R.string.phase_pause
-        PhaseType.CONCENTRIC -> R.string.phase_concentric
-        PhaseType.LOCKOUT -> R.string.phase_lockout
-    },
-)
+private fun phaseDisplayName(lift: Lift, type: PhaseType): String = stringResource(phaseLabelRes(lift, type))
 
 /** Colour key for the four phase types. */
 @Composable
-fun PhaseLegend(modifier: Modifier = Modifier) {
+fun PhaseLegend(modifier: Modifier = Modifier, lift: Lift = Lift.SQUAT) {
     val colors = phaseColors()
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -167,7 +162,7 @@ fun PhaseLegend(modifier: Modifier = Modifier) {
                         .background(colors.getValue(type), RoundedCornerShape(2.dp)),
                 )
                 Text(
-                    text = phaseDisplayName(type),
+                    text = phaseDisplayName(lift, type),
                     style = MaterialTheme.typography.labelSmall,
                 )
             }

@@ -8,6 +8,8 @@ import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.ParcelFileDescriptor
+import java.io.File
 import android.net.Uri
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.video.VideoDecoder
@@ -25,12 +27,39 @@ import kotlin.math.roundToLong
  * plate/pose pixel coordinates line up with the encoded frames.
  */
 class VideoOverlayExporter {
+    /** Writes the overlay MP4 to a SAF destination chosen by the user. */
     suspend fun export(
         context: Context,
         sourceUri: Uri,
         outputUri: Uri,
         result: AnalysisResult,
         onProgress: (Float) -> Unit = {},
+    ): Unit = render(context, sourceUri, result, onProgress) { appContext ->
+        appContext.contentResolver.openFileDescriptor(outputUri, "w")
+            ?: error("Could not open the selected output file")
+    }
+
+    /** Writes the overlay MP4 to an app-private file (used for in-app preview). */
+    suspend fun exportToFile(
+        context: Context,
+        sourceUri: Uri,
+        outputFile: File,
+        result: AnalysisResult,
+        onProgress: (Float) -> Unit = {},
+    ): Unit = render(context, sourceUri, result, onProgress) {
+        outputFile.parentFile?.mkdirs()
+        ParcelFileDescriptor.open(
+            outputFile,
+            ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_TRUNCATE,
+        )
+    }
+
+    private suspend fun render(
+        context: Context,
+        sourceUri: Uri,
+        result: AnalysisResult,
+        onProgress: (Float) -> Unit,
+        openOutput: (Context) -> ParcelFileDescriptor,
     ): Unit = withContext(Dispatchers.IO) {
         require(result.observations.isNotEmpty()) { ERROR_NO_OBSERVATIONS }
 
@@ -43,8 +72,7 @@ class VideoOverlayExporter {
             ?: 30.0
         val estimatedFrames = ((meta?.durationSec ?: 0.0) * fps).roundToInt().coerceAtLeast(1)
 
-        val output = appContext.contentResolver.openFileDescriptor(outputUri, "w")
-            ?: error("Could not open the selected output file")
+        val output = openOutput(appContext)
         var session: EncoderSession? = null
         var target: Bitmap? = null
         var canvas: Canvas? = null

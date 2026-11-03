@@ -242,12 +242,26 @@ class OverlayRenderer(private val result: AnalysisResult) {
         return "Rep ${slice.index}/${result.repSlices.size} \u00B7 ${phaseLabel(phase)}"
     }
 
-    private fun phaseLabel(phase: Phase?): String = when (phase?.type) {
-        PhaseType.ECCENTRIC -> "Eccentric"
-        PhaseType.PAUSE -> "Pause"
-        PhaseType.CONCENTRIC -> "Concentric"
-        PhaseType.LOCKOUT -> "Lockout"
-        null -> "\u2014"
+    /** Lift-specific English stage names, matching the in-app labels (ui/report/PhaseLabels.kt). */
+    private fun phaseLabel(phase: Phase?): String {
+        val type = phase?.type ?: return "\u2014"
+        return when (type) {
+            PhaseType.LOCKOUT -> "Lockout"
+            PhaseType.ECCENTRIC -> when (result.lift) {
+                Lift.SQUAT -> "Descent"
+                Lift.BENCH, Lift.DEADLIFT -> "Lower"
+            }
+            PhaseType.PAUSE -> when (result.lift) {
+                Lift.SQUAT -> "Bottom pause"
+                Lift.BENCH -> "Chest pause"
+                Lift.DEADLIFT -> "Start pause"
+            }
+            PhaseType.CONCENTRIC -> when (result.lift) {
+                Lift.SQUAT -> "Ascent"
+                Lift.BENCH -> "Press"
+                Lift.DEADLIFT -> "Pull"
+            }
+        }
     }
 
     private fun velocityLabel(rep: RepMetrics?): String {

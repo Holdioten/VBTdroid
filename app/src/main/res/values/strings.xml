@@ -35,13 +35,13 @@
     <string name="report_rep_number">第 %1$d 次</string>
     <string name="report_velocity_chart">杠铃垂直速度</string>
     <string name="report_bar_path_chart">杠铃轨迹</string>
-    <string name="report_phase_timeline">相位</string>
-    <string name="report_phase_help">相位 = 离心 → 停顿 → 向心 → 锁定。自动分割，默认只读；需要修正时点手动校正。</string>
+    <string name="report_phase_timeline">阶段</string>
+    <string name="report_phase_help">阶段按动作不同而不同；自动分割，默认只读，需要修正时点手动校正。</string>
     <string name="report_phase_edit">手动校正</string>
     <string name="report_phase_done">完成</string>
-    <string name="report_phase_edit_hint">拖动相位分界线进行修正；完成后点“完成”。</string>
-    <string name="report_manual_phases">手动相位</string>
-    <string name="report_manual_invalid">当前相位有效样本不足，未更新指标</string>
+    <string name="report_phase_edit_hint">拖动阶段分界线进行修正；完成后点“完成”。</string>
+    <string name="report_manual_phases">手动阶段</string>
+    <string name="report_manual_invalid">当前阶段有效样本不足，未更新指标</string>
     <string name="report_quality">质量与警告</string>
     <string name="report_fps">有效帧率：%1$.2f fps</string>
     <string name="report_quality_values">跟踪置信度 %1$.2f；遮挡 %2$.1f%%；分割置信度 %3$.2f；标定置信度 %4$.2f</string>
@@ -234,4 +234,14 @@
     <string name="import_status_locked">已锁定</string>
     <string name="import_roi_modify">修改区域</string>
     <string name="import_roi_locked_hint">区域已锁定，拖动无效。要调整请点“修改区域”，修改后需重新确认。</string>
+
+    <string name="phase_squat_eccentric">下蹲</string>
+    <string name="phase_squat_pause">底部停顿</string>
+    <string name="phase_squat_concentric">站起</string>
+    <string name="phase_bench_eccentric">下放</string>
+    <string name="phase_bench_pause">触胸停顿</string>
+    <string name="phase_bench_concentric">推起</string>
+    <string name="phase_deadlift_eccentric">下放</string>
+    <string name="phase_deadlift_pause">起始停顿</string>
+    <string name="phase_deadlift_concentric">拉起</string>
 </resources>

@@ -125,8 +125,8 @@ fun RepDetailCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )
-            PhaseTimeline(slice, onRepChange, editable = editing)
-            PhaseLegend()
+            PhaseTimeline(slice, onRepChange, editable = editing, lift = lift)
+            PhaseLegend(lift = lift)
             if (editing) {
                 Text(
                     stringResource(R.string.report_phase_edit_hint),

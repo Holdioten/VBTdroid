@@ -43,13 +43,13 @@
     <string name="report_rep_number">Rep %1$d</string>
     <string name="report_velocity_chart">Bar vertical velocity</string>
     <string name="report_bar_path_chart">Bar path</string>
-    <string name="report_phase_timeline">Phases</string>
-    <string name="report_phase_help">Phases = eccentric → pause → concentric → lockout. Split automatically and read-only by default; tap Manual correction to adjust.</string>
+    <string name="report_phase_timeline">Stages</string>
+    <string name="report_phase_help">Stages differ by lift. Split automatically and read-only by default; tap Manual correction to adjust.</string>
     <string name="report_phase_edit">Manual correction</string>
     <string name="report_phase_done">Done</string>
-    <string name="report_phase_edit_hint">Drag phase boundaries to correct them, then tap Done.</string>
-    <string name="report_manual_phases">Manual phases</string>
-    <string name="report_manual_invalid">Not enough valid samples in these phases; metrics were not updated</string>
+    <string name="report_phase_edit_hint">Drag stage boundaries to correct them, then tap Done.</string>
+    <string name="report_manual_phases">Manual stages</string>
+    <string name="report_manual_invalid">Not enough valid samples in these stages; metrics were not updated</string>
     <string name="report_joint_angles_disabled_title">Joint-angle analysis is off</string>
     <string name="report_joint_angles_disabled_hint">Pose estimation did not run. Turn on “Analyze joint angles” when re-analyzing to see joint angles.</string>
     <string name="report_joint_angles_unavailable">No joint-angle data for this rep</string>
@@ -174,4 +174,14 @@
     <string name="import_status_locked">Locked</string>
     <string name="import_roi_modify">Edit region</string>
     <string name="import_roi_locked_hint">Region locked; dragging is off. Tap Edit region to adjust, then confirm again.</string>
+
+    <string name="phase_squat_eccentric">Descent</string>
+    <string name="phase_squat_pause">Bottom pause</string>
+    <string name="phase_squat_concentric">Ascent</string>
+    <string name="phase_bench_eccentric">Lower</string>
+    <string name="phase_bench_pause">Chest pause</string>
+    <string name="phase_bench_concentric">Press</string>
+    <string name="phase_deadlift_eccentric">Lower</string>
+    <string name="phase_deadlift_pause">Start pause</string>
+    <string name="phase_deadlift_concentric">Pull</string>
 </resources>

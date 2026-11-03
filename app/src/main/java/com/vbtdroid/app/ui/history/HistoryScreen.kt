@@ -55,6 +55,8 @@ import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.io.SetExport
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.LiftVariant
+import com.vbtdroid.core.phases.PhaseType
+import com.vbtdroid.app.ui.report.phaseLabelRes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,7 +162,7 @@ private fun HistoryDetailContent(detail: HistoryDetail, modifier: Modifier = Mod
             HistoryHeader(export = export, detail = detail, missing = missing)
         }
         items(export.reps, key = { it.index }) { rep ->
-            RepHistoryRow(rep = rep, maxMcv = maxMcv, missing = missing)
+            RepHistoryRow(rep = rep, lift = liftFromName(export.lift), maxMcv = maxMcv, missing = missing)
         }
     }
 }
@@ -214,7 +216,7 @@ private fun HistoryHeader(export: SetExport, detail: HistoryDetail, missing: Str
 }
 
 @Composable
-private fun RepHistoryRow(rep: com.vbtdroid.core.io.RepExport, maxMcv: Double, missing: String) {
+private fun RepHistoryRow(rep: com.vbtdroid.core.io.RepExport, lift: Lift, maxMcv: Double, missing: String) {
     val mcv = rep.metrics["mcv_mps"]
     val rom = rep.metrics["rom_concentric_m"]
     SectionCard(padding = VbtSpacing.m) {
@@ -255,7 +257,7 @@ private fun RepHistoryRow(rep: com.vbtdroid.core.io.RepExport, maxMcv: Double, m
             StatusChip(
                 stringResource(
                     R.string.history_phase,
-                    phaseLabel(phase.type),
+                    phaseLabel(lift, phase.type),
                     phase.startSec,
                     phase.endSec,
                     phase.manual,
@@ -273,13 +275,12 @@ private fun RepHistoryRow(rep: com.vbtdroid.core.io.RepExport, maxMcv: Double, m
     }
 }
 
+private fun liftFromName(name: String): Lift = runCatching { Lift.valueOf(name) }.getOrDefault(Lift.SQUAT)
+
+/** Stored phase type is the enum name; unknown names fall back to the missing-value dash. */
 @Composable
-private fun phaseLabel(type: String): String = stringResource(
-    when (type) {
-        "ECCENTRIC" -> R.string.phase_eccentric
-        "PAUSE" -> R.string.phase_pause
-        "CONCENTRIC" -> R.string.phase_concentric
-        "LOCKOUT" -> R.string.phase_lockout
-        else -> R.string.report_value_missing
-    },
-)
+private fun phaseLabel(lift: Lift, type: String): String {
+    val phaseType = runCatching { PhaseType.valueOf(type) }.getOrNull()
+    return if (phaseType == null) stringResource(R.string.report_value_missing)
+    else stringResource(phaseLabelRes(lift, phaseType))
+}
