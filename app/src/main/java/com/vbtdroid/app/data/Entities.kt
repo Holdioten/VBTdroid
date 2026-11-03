@@ -43,7 +43,7 @@ data class SetEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("setId")],
+    indices = [Index(value = ["setId", "repIndex"], unique = true)],
 )
 data class RepEntity(
     @androidx.room.PrimaryKey val repId: String = UUID.randomUUID().toString(),

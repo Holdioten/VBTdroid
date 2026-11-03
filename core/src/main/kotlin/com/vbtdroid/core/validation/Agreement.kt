@@ -13,16 +13,12 @@ data class AgreementResult(
 object Agreement {
     /** Computes Bland–Altman limits and two-way random, absolute-agreement ICC(2,1). */
     fun blandAltman(reference: DoubleArray, measured: DoubleArray): AgreementResult {
-        require(reference.isNotEmpty()) { "At least one paired measurement is required" }
+        require(reference.size >= 2) { "At least two paired measurements are required" }
         require(reference.size == measured.size) { "Measurement arrays must have equal lengths" }
 
         val differences = measured.indices.map { measured[it] - reference[it] }
         val bias = differences.average()
-        val sdDiff = if (differences.size > 1) {
-            sqrt(differences.sumOf { (it - bias) * (it - bias) } / (differences.size - 1))
-        } else {
-            0.0
-        }
+        val sdDiff = sqrt(differences.sumOf { (it - bias) * (it - bias) } / (differences.size - 1))
         val margin = 1.96 * sdDiff
 
         return AgreementResult(
@@ -37,8 +33,6 @@ object Agreement {
     private fun iccTwoWayAbsolute(reference: DoubleArray, measured: DoubleArray): Double {
         val n = reference.size
         if (reference.indices.all { reference[it] == measured[it] }) return 1.0
-        if (n < 2) return 0.0
-
         val grandMean = (reference.sum() + measured.sum()) / (2.0 * n)
         val referenceMean = reference.average()
         val measuredMean = measured.average()

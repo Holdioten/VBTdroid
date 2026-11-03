@@ -33,12 +33,29 @@ class AgreementTest {
     }
 
     @Test
+    fun `non-trivial difference has sample limits and partial ICC`() {
+        val result = Agreement.blandAltman(
+            doubleArrayOf(1.0, 2.0, 3.0),
+            doubleArrayOf(1.0, 3.0, 2.0),
+        )
+
+        assertEquals(0.0, result.bias, 1e-9)
+        assertEquals(1.0, result.sdDiff, 1e-9)
+        assertEquals(-1.96, result.lowerLoa, 1e-9)
+        assertEquals(1.96, result.upperLoa, 1e-9)
+        assertEquals(0.6, result.icc, 1e-9)
+    }
+
+    @Test
     fun `requires non-empty equal length inputs`() {
         assertThrows(IllegalArgumentException::class.java) {
             Agreement.blandAltman(doubleArrayOf(), doubleArrayOf())
         }
         assertThrows(IllegalArgumentException::class.java) {
             Agreement.blandAltman(doubleArrayOf(1.0), doubleArrayOf(1.0, 2.0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            Agreement.blandAltman(doubleArrayOf(1.0), doubleArrayOf(1.0))
         }
     }
 }

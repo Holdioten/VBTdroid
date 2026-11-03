@@ -42,3 +42,29 @@
 ## 提交
 
 - `feat: add history, CSV export and agreement validation`
+
+---
+
+# Task 13 复审修复报告
+
+## 修复内容
+
+- 新增 `AgreementCsv.compareCsv(Path, Path, metricColumn)`：读取 CSV 表头，校验 `rep`/指标列，按 rep 配对，忽略任一侧空指标行，拒绝重复 rep 和非法/非有限数值，要求至少两对样本。
+- 新增可运行 CLI：`./gradlew :core:run --args='ground_truth.csv app.csv mcv'`；以六位小数打印五项统计值，参数或输入错误返回非零状态。
+- `SessionDao.insertSet` 改为默认 ABORT；新增独立 `updateSet` 更新接口及 Set/Rep 查询/Session 插入支持。Rep 索引改为唯一 `(setId, repIndex)`。
+- Agreement 拒绝少于两对样本；新增非平凡 Bland–Altman 样本 SD/LOA 与 ICC(2,1)=0.6 测试。
+- 新增临时 CSV 比对测试（含空值行）及 Robolectric Room 回归测试，验证重复 Set 插入失败且 Reps 保留、显式更新不删除 Reps。
+
+## 复审修复验证
+
+- RED `./gradlew :core:test --tests '*Agreement*' --no-daemon`：AgreementCsv 尚未实现，编译失败，符合预期。
+- RED `./gradlew :app:testDebugUnitTest --tests '*Csv*' --no-daemon`：DAO 新契约尚未实现，编译失败，符合预期。
+- GREEN `./gradlew :core:test --tests '*Agreement*' --no-daemon`：通过。
+- GREEN `./gradlew :app:testDebugUnitTest --tests '*Csv*' --no-daemon`：通过。
+- `./gradlew :app:testDebugUnitTest --tests '*SessionDaoTest*' --no-daemon`：首次运行超过 120 秒超时；提高超时重跑通过（Robolectric Room 两项回归均通过）。
+- `./gradlew :core:run --args='/tmp/opencode/ground-truth.csv /tmp/opencode/app-export.csv rom' --no-daemon`：通过；输出 bias=0.000000、sdDiff=0.100000、LOA ±0.196000、ICC=0.900000。
+- `./gradlew :app:assembleDebug --no-daemon`：通过。
+
+## 复审修复提交
+
+- `fix: complete CSV validation and safe set inserts`
