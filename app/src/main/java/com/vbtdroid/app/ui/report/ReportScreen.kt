@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,10 +31,13 @@ import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.analysis.FrameAngles
 import com.vbtdroid.app.export.CsvExporter
 import com.vbtdroid.app.export.ExportMapper
+import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.model.MetricId
 import com.vbtdroid.core.phases.RepSlice
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun ReportScreen(
@@ -50,6 +54,11 @@ fun ReportScreen(
     val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
     var exportSucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
+    var overlayExporting by remember(result) { mutableStateOf(false) }
+    var overlayProgress by remember(result) { mutableStateOf(0f) }
+    var overlaySucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
+    var overlayError by remember(result) { mutableStateOf<String?>(null) }
+    val exportScope = rememberCoroutineScope()
 
     LaunchedEffect(current, persistPending) {
         if (persistPending) {
@@ -77,6 +86,31 @@ fun ReportScreen(
         ActivityResultContracts.CreateDocument("text/csv"),
     ) { uri ->
         writeExport(uri) { CsvExporter.export(current) }
+    }
+    val overlayLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("video/mp4"),
+    ) { uri ->
+        if (uri != null) {
+            overlayExporting = true
+            overlayProgress = 0f
+            overlaySucceeded = null
+            overlayError = null
+            val source = android.net.Uri.parse(current.videoUri)
+            exportScope.launch {
+                val failure = runCatching {
+                    VideoOverlayExporter().export(
+                        context = context,
+                        sourceUri = source,
+                        outputUri = uri,
+                        result = current,
+                        onProgress = { value -> overlayProgress = value },
+                    )
+                }.exceptionOrNull()
+                overlayExporting = false
+                overlaySucceeded = failure == null
+                overlayError = failure?.message
+            }
+        }
     }
 
     fun updateSlice(updated: RepSlice): Boolean {
@@ -113,6 +147,40 @@ fun ReportScreen(
                 }
                 Button(onClick = { csvLauncher.launch("vbtdroid-set.csv") }) {
                     Text(stringResource(R.string.report_export_csv))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { overlayLauncher.launch("vbtdroid-overlay.mp4") },
+                    enabled = !overlayExporting,
+                ) {
+                    Text(stringResource(R.string.report_export_overlay_video))
+                }
+            }
+            if (overlayExporting) {
+                Text(
+                    stringResource(
+                        R.string.report_export_overlay_progress,
+                        (overlayProgress * 100f).roundToInt(),
+                    ),
+                )
+            }
+            overlaySucceeded?.let { succeeded ->
+                if (succeeded) {
+                    Text(
+                        stringResource(R.string.report_export_overlay_succeeded),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    val message = if (overlayError == VideoOverlayExporter.ERROR_NO_OBSERVATIONS) {
+                        stringResource(R.string.report_export_overlay_no_data)
+                    } else {
+                        stringResource(
+                            R.string.report_export_overlay_failed,
+                            overlayError ?: "",
+                        )
+                    }
+                    Text(message, color = MaterialTheme.colorScheme.error)
                 }
             }
             Text(stringResource(R.string.report_saved_automatically))

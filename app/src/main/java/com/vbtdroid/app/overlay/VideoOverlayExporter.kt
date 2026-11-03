@@ -64,8 +64,8 @@ class VideoOverlayExporter {
                         require(expectedWidth > 1 && expectedHeight > 1) {
                             "Source video is too small to export"
                         }
-                        val width = expectedWidth and 1.inv()
-                        val height = expectedHeight and 1.inv()
+                        val width = (expectedWidth / 2) * 2
+                        val height = (expectedHeight / 2) * 2
                         target = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                         canvas = Canvas(target!!)
                         session = EncoderSession(output.fileDescriptor, width, height)
@@ -129,7 +129,7 @@ class VideoOverlayExporter {
                     setInteger(
                         MediaFormat.KEY_BIT_RATE,
                         (BASE_BITRATE * (width.toLong() * height) / (1920L * 1080L))
-                            .roundToInt()
+                            .toInt()
                             .coerceAtLeast(1_000_000),
                     )
                     setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_FPS)

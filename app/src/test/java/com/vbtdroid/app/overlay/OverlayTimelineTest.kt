@@ -44,6 +44,25 @@ class OverlayTimelineTest {
     }
 
     @Test
+    fun `smoothed motion samples drive nearest lookup and trail windows`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 1.0),
+            motion(0.5, 0.1, 1.1),
+            motion(1.0, 0.2, 1.2),
+            motion(1.5, 0.3, 1.3),
+            motion(2.0, 0.4, 1.4),
+        )
+
+        assertEquals(1.2, OverlayTimeline.nearestMotionSample(samples, 0.9)?.yM!!, 1e-9)
+        assertEquals(
+            listOf(0.5, 1.0, 1.5),
+            OverlayTimeline.trailSamples(samples, tSec = 1.5, windowSec = 1.0).map { it.tSec },
+        )
+        assertEquals(emptyList<MotionSample>(), OverlayTimeline.trailSamples(emptyList(), 1.0))
+        assertNull(OverlayTimeline.nearestMotionSample(emptyList(), 1.0))
+    }
+
+    @Test
     fun `trail slices past window and preserves order`() {
         val observations = listOf(
             observation(0.0, 0.0),
@@ -108,5 +127,15 @@ class OverlayTimelineTest {
         vyMps = vy,
         axMps2 = 0.0,
         ayMps2 = 0.0,
+    )
+
+    private fun motion(tSec: Double, xM: Double, yM: Double) = MotionSample(
+        tSec = tSec,
+        xM = xM,
+        yM = yM,
+        vxMps = 0.0,
+        vyMps = 0.0,
+        axMps2 = null,
+        ayMps2 = null,
     )
 }

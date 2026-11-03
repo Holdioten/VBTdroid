@@ -19,10 +19,27 @@ object OverlayTimeline {
     fun nearestPoseFrame(poseFrames: List<PoseFrame>, tSec: Double): PoseFrame? =
         poseFrames.getOrNull(nearestIndex(poseFrames.size, tSec) { poseFrames[it].tSec })
 
+    fun nearestMotionSample(samples: List<MotionSample>, tSec: Double): MotionSample? =
+        samples.getOrNull(nearestIndex(samples.size, tSec) { samples[it].tSec })
+
     fun nearestFrameAngles(frameAngles: List<FrameAngles>, tSec: Double): FrameAngles? =
         frameAngles.getOrNull(nearestIndex(frameAngles.size, tSec) { frameAngles[it].tSec })
 
-    /** Observations inside `[tSec - windowSec, tSec]`, returned as a view without copying. */
+    /** Smoothed bar positions inside `[tSec - windowSec, tSec]`, returned without copying. */
+    fun trailSamples(
+        samples: List<MotionSample>,
+        tSec: Double,
+        windowSec: Double = 2.0,
+    ): List<MotionSample> {
+        if (samples.isEmpty()) return emptyList()
+        val safeWindow = abs(windowSec).coerceAtLeast(0.0)
+        val end = upperBound(samples.size, tSec) { samples[it].tSec }
+        if (end == 0) return emptyList()
+        val start = lowerBound(samples.size, tSec - safeWindow) { samples[it].tSec }
+        return samples.subList(start.coerceAtMost(end), end)
+    }
+
+    /** Observations inside `[tSec - windowSec, tSec]`, kept for calibration/debug tooling. */
     fun trail(
         observations: List<PlateObservation>,
         tSec: Double,

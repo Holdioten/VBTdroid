@@ -4,19 +4,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import com.vbtdroid.app.analysis.AnalysisResult
-import com.vbtdroid.app.analysis.FrameAngles
-import com.vbtdroid.app.analysis.RepMetrics
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.metrics.Point2
+import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.model.Lift
-import com.vbtdroid.core.model.PlateObservation
 import com.vbtdroid.core.phases.Phase
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -90,35 +88,32 @@ class OverlayRenderer(private val result: AnalysisResult) {
     }
 
     private fun drawTrail(canvas: Canvas, tSec: Double, dotRadius: Float) {
-        val trail = OverlayTimeline.trail(result.observations, tSec)
-        if (trail.isNotEmpty()) {
+        val trail = OverlayTimeline.trailSamples(result.motionSamples, tSec)
+        val points = trail.mapNotNull(::toPixel)
+        if (points.isNotEmpty()) {
             path.reset()
-            trail.forEachIndexed { index, observation ->
-                if (index == 0) {
-                    path.moveTo(observation.xPx.toFloat(), observation.yPx.toFloat())
-                } else {
-                    path.lineTo(observation.xPx.toFloat(), observation.yPx.toFloat())
-                }
+            points.forEachIndexed { index, point ->
+                if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }
-            if (trail.size > 1) canvas.drawPath(path, trailPaint)
+            if (points.size > 1) canvas.drawPath(path, trailPaint)
         }
 
-        val current = OverlayTimeline.nearestObservation(result.observations, tSec)
+        val current = OverlayTimeline.nearestMotionSample(result.motionSamples, tSec)?.let(::toPixel)
         if (current != null) {
-            canvas.drawCircle(
-                current.xPx.toFloat(),
-                current.yPx.toFloat(),
-                dotRadius * 1.6f,
-                currentPointPaint,
-            )
+            canvas.drawCircle(current.x, current.y, dotRadius * 1.6f, currentPointPaint)
             skeletonPaint.color = Color.WHITE
-            canvas.drawCircle(
-                current.xPx.toFloat(),
-                current.yPx.toFloat(),
-                dotRadius * 2.4f,
-                skeletonPaint,
-            )
+            canvas.drawCircle(current.x, current.y, dotRadius * 2.4f, skeletonPaint)
         }
+    }
+
+    /** Converts smoothed bar coordinates from metres back into image pixels. */
+    private fun toPixel(sample: com.vbtdroid.core.metrics.MotionSample): PointF? {
+        val calibration = result.calibration ?: return null
+        val azimuth = Math.toRadians(calibration.cameraAngleDeg)
+        return PointF(
+            (sample.xM * calibration.pxPerM * kotlin.math.sin(azimuth)).toFloat(),
+            (-sample.yM * calibration.pxPerM).toFloat(),
+        )
     }
 
     private fun drawPose(canvas: Canvas, pose: PoseFrame, dotRadius: Float, scale: Float, height: Int) {
@@ -170,13 +165,13 @@ class OverlayRenderer(private val result: AnalysisResult) {
 
     private fun drawSpeed(canvas: Canvas, tSec: Double, width: Int, height: Int, scale: Float) {
         val speed = OverlayTimeline.speedMps(result.motionSamples, tSec) ?: return
-        val current = OverlayTimeline.nearestObservation(result.observations, tSec) ?: return
+        val current = OverlayTimeline.nearestMotionSample(result.motionSamples, tSec)?.let(::toPixel) ?: return
         val text = String.format(Locale.US, "%.2f m/s", speed)
         drawBubble(
             canvas = canvas,
             text = text,
-            anchorX = current.xPx.toFloat() + 16f * scale,
-            anchorY = current.yPx.toFloat() - 24f * scale,
+            anchorX = current.x + 16f * scale,
+            anchorY = current.y - 24f * scale,
             paint = speedTextPaint,
             maxWidth = width.toFloat(),
             maxHeight = height.toFloat(),
