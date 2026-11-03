@@ -9,7 +9,7 @@ import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -29,16 +29,18 @@ import com.vbtdroid.app.data.SetEntity
 import com.vbtdroid.app.ui.history.HistoryScreen
 import com.vbtdroid.app.ui.import.ImportScreen
 import com.vbtdroid.app.ui.report.ReportScreen
+import com.vbtdroid.app.ui.theme.VbtTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
         }
         setContent {
-            MaterialTheme {
+            VbtTheme {
                 AnalysisApp()
             }
         }
