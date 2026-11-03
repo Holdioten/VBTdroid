@@ -42,7 +42,11 @@
     <string name="report_rep_number">Rep %1$d</string>
     <string name="report_velocity_chart">Bar vertical velocity</string>
     <string name="report_bar_path_chart">Bar path</string>
-    <string name="report_phase_timeline">Phases (drag boundaries to adjust)</string>
+    <string name="report_phase_timeline">Phases</string>
+    <string name="report_phase_help">Phases = eccentric → pause → concentric → lockout. Split automatically and read-only by default; tap Manual correction to adjust.</string>
+    <string name="report_phase_edit">Manual correction</string>
+    <string name="report_phase_done">Done</string>
+    <string name="report_phase_edit_hint">Drag phase boundaries to correct them, then tap Done.</string>
     <string name="report_manual_phases">Manual phases</string>
     <string name="report_manual_invalid">Not enough valid samples in these phases; metrics were not updated</string>
     <string name="report_quality">Quality and warnings</string>
@@ -89,6 +93,8 @@
     <string name="quality_pose_partial">Pose unavailable on some frames</string>
     <string name="quality_no_valid_reps">No valid repetitions detected</string>
     <string name="quality_rep_skipped">An invalid repetition was skipped</string>
+    <string name="quality_incomplete_rep">A rep missing an eccentric/concentric phase or too short was excluded from formal results</string>
+    <string name="quality_no_lockout">This rep has no top lockout; rep count is unaffected</string>
     <string name="quality_unknown">Unknown quality warning</string>
     <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
 </resources>

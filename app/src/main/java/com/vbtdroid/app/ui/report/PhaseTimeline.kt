@@ -1,10 +1,15 @@
 package com.vbtdroid.app.ui.report
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,12 +32,18 @@ import com.vbtdroid.core.phases.RepSlice
 import androidx.compose.foundation.gestures.detectDragGestures
 import kotlin.math.abs
 
-/** Draggable phase boundaries. Every edit marks the adjacent phases as manual. */
+/**
+ * Phase bar for one rep.
+ *
+ * Read-only by default; boundaries only respond to drags when [editable] is true. Every edit marks
+ * the adjacent phases as manual, which feeds the existing recompute/persist flow.
+ */
 @Composable
 fun PhaseTimeline(
     rep: RepSlice,
     onRepChange: (RepSlice) -> Boolean,
     modifier: Modifier = Modifier,
+    editable: Boolean = false,
 ) {
     var workingRep by remember(rep) { mutableStateOf(rep) }
     val latestRep by rememberUpdatedState(workingRep)
@@ -48,7 +59,8 @@ fun PhaseTimeline(
             .fillMaxWidth()
             .height(44.dp)
             .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
-            .pointerInput(rep.index) {
+            .pointerInput(rep.index, editable) {
+                if (!editable) return@pointerInput
                 detectDragGestures(
                     onDragStart = { offset ->
                         val current = latestRep
@@ -105,6 +117,13 @@ fun PhaseTimeline(
         for (index in 1 until phases.size) {
             val x = ((phases[index].startSec - workingRep.startSec) / duration * size.width).toFloat()
             drawLine(boundaryColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f)
+            if (editable) {
+                drawCircle(
+                    color = boundaryColor,
+                    radius = 7f,
+                    center = Offset(x, size.height / 2f),
+                )
+            }
         }
     }
     Row(Modifier.fillMaxWidth()) {
@@ -137,5 +156,29 @@ private fun phaseDisplayName(type: PhaseType): String = stringResource(
         PhaseType.LOCKOUT -> R.string.phase_lockout
     },
 )
+
+/** Colour key for the four phase types. */
+@Composable
+fun PhaseLegend(modifier: Modifier = Modifier) {
+    val colors = phaseColors()
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PhaseType.entries.forEach { type ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .background(colors.getValue(type), RoundedCornerShape(2.dp)),
+                )
+                Text(
+                    text = phaseDisplayName(type),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
 
 private const val MIN_MANUAL_PHASE_SEC = 0.001

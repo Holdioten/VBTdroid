@@ -34,7 +34,11 @@
     <string name="report_rep_number">第 %1$d 次</string>
     <string name="report_velocity_chart">杠铃垂直速度</string>
     <string name="report_bar_path_chart">杠铃轨迹</string>
-    <string name="report_phase_timeline">相位（拖动分界线调整）</string>
+    <string name="report_phase_timeline">相位</string>
+    <string name="report_phase_help">相位 = 离心 → 停顿 → 向心 → 锁定。自动分割，默认只读；需要修正时点手动校正。</string>
+    <string name="report_phase_edit">手动校正</string>
+    <string name="report_phase_done">完成</string>
+    <string name="report_phase_edit_hint">拖动相位分界线进行修正；完成后点“完成”。</string>
     <string name="report_manual_phases">手动相位</string>
     <string name="report_manual_invalid">当前相位有效样本不足，未更新指标</string>
     <string name="report_quality">质量与警告</string>
@@ -144,7 +148,8 @@
     <string name="quality_angles_unavailable_occlusion">遮挡超过 20%，关节角不可用</string>
     <string name="quality_camera_estimate">相机未水平，垂直速度仅作估算且不参与 PR 判定</string>
     <string name="quality_load_required">缺少负荷，力、功率、功和 1RM 不可用</string>
-    <string name="quality_incomplete_rep">检测到未锁定的不完整重复，已排除出正式结果</string>
+    <string name="quality_incomplete_rep">检测到缺少离心/向心或时长过短的重复，已排除出正式结果</string>
+    <string name="quality_no_lockout">该次缺少顶部锁定；不影响重复计数</string>
     <string name="quality_acceleration_unavailable">有效样本不足，加速度及相关指标不可用</string>
     <string name="quality_non_monotonic">向心轨迹非单调，请复核该重复</string>
     <string name="analysis_notification_channel">离线视频分析</string>

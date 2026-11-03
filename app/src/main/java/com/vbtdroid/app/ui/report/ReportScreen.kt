@@ -49,6 +49,7 @@ fun ReportScreen(
 ) {
     var current by remember(result) { mutableStateOf(result) }
     var manualEditRejected by remember(result) { mutableStateOf(false) }
+    var editingPhases by remember(result) { mutableStateOf(false) }
     var persistPending by remember(result) { mutableStateOf(false) }
     var persistFailed by remember(result) { mutableStateOf(false) }
     val latestPersist by rememberUpdatedState(onPersist)
@@ -272,6 +273,28 @@ fun ReportScreen(
                 }
             }
         }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(R.string.report_phase_help),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                PhaseLegend()
+                Button(onClick = { editingPhases = !editingPhases }) {
+                    Text(
+                        stringResource(
+                            if (editingPhases) R.string.report_phase_done else R.string.report_phase_edit,
+                        ),
+                    )
+                }
+                if (editingPhases) {
+                    Text(
+                        stringResource(R.string.report_phase_edit_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
         itemsIndexed(current.reps) { index, repMetrics ->
             val slice = current.repSlices.getOrNull(index)
             Card(Modifier.fillMaxWidth()) {
@@ -289,7 +312,7 @@ fun ReportScreen(
                     BarPathChart(current.motionSamples, slice)
                     if (slice != null) {
                         Text(stringResource(R.string.report_phase_timeline))
-                        PhaseTimeline(slice, ::updateSlice)
+                        PhaseTimeline(slice, ::updateSlice, editable = editingPhases)
                         if (slice.phases.any { it.manual }) {
                             Text(stringResource(R.string.report_manual_phases))
                         }
@@ -413,6 +436,8 @@ private fun qualityWarningText(warning: String): String = stringResource(
         warning == "CAMERA_NOT_LEVEL_ESTIMATE" -> R.string.quality_camera_estimate
         warning == "ANGLES_UNAVAILABLE_OCCLUSION" -> R.string.quality_angles_unavailable_occlusion
         warning == "INCOMPLETE_REP_NO_LOCKOUT" -> R.string.quality_incomplete_rep
+        warning == "INCOMPLETE_REP" -> R.string.quality_incomplete_rep
+        warning == "NO_LOCKOUT" -> R.string.quality_no_lockout
         warning == "ACCELERATION_UNAVAILABLE" -> R.string.quality_acceleration_unavailable
         warning.contains("NON_MONOTONIC_CONCENTRIC") -> R.string.quality_non_monotonic
         warning.startsWith("REP_SKIPPED_") -> R.string.quality_rep_skipped
