@@ -8,6 +8,8 @@ Status: complete (APK built; device install skipped because the target phone was
 1. Smoother per-frame output without flattening peak metrics.
 2. Accept real sets where reps have no top lockout, while rejecting noise and tiny bumps.
 3. Make phase editing explicit and read-only by default.
+4. Make joint-angle analysis an explicit, default-on import option; never hide angles solely for
+   occlusion.
 
 ## Commits
 
@@ -15,6 +17,8 @@ Status: complete (APK built; device install skipped because the target phone was
 - `9b1a0c0` feat(phases): count lockout-optional reps and merge noise
 - `68aa8fe` feat(report): make phase timeline read-only with manual correction
 - `c7da989` test(phases): cover deadlift rep without lockout
+- `05148d7` feat(analysis): make joint-angle analysis optional and occlusion-tolerant
+- `3e60bda` feat(ui): add analyze-joint-angles switch and disabled state
 
 The bar-path overlay now consumes smoothed `motionSamples`; the overlay files were already in the
 working branch (`e0d0ce6`, `e332cc2`) and were updated in place to use
@@ -72,6 +76,36 @@ Behaviour:
 - Colour legend added for eccentric, pause, concentric and lockout.
 - All new copy is in `values/strings.xml` and `values-en/strings.xml`.
 
+## Joint-angle switch
+
+- `AnalysisRequest.analyzePose` defaults to `true`.
+- Import screen adds `分析关节角` / `Analyze joint angles`, default ON.
+- When OFF:
+  - `poseEstimator.reset()` and every `poseEstimator.estimate()` call are skipped.
+  - `poseFrames` and `frameAngles` stay empty; `frameAnglesByRep` is empty.
+  - No `POSE_*` warnings are emitted.
+  - The pipeline drops `ANGLES_UNAVAILABLE_OCCLUSION` so a disabled analysis cannot look like a
+    failed pose attempt.
+  - Report shows `关节角分析已关闭` / `Joint-angle analysis is off` with a re-analysis hint, and
+    does not render the per-rep joint-angle section.
+- When ON:
+  - Occlusion no longer suppresses angles. `anglesAvailable` follows the pose result, not
+    `occlusionPct`.
+  - `frameAnglesByRep` is built for every rep that has pose samples, regardless of plate occlusion.
+  - Available angles keep their per-joint confidence values.
+  - `HIGH_OCCLUSION` remains; `POSE_LOW_CONFIDENCE` is added when the mean pose confidence is below
+    0.6. `ANGLES_UNAVAILABLE_OCCLUSION` is removed because it no longer describes the section.
+  - `POSE_UNAVAILABLE` / `POSE_PARTIAL` remain as explicit quality warnings.
+  - Only individual angles with missing or low-visibility landmarks are null.
+
+Tests added to `AnalysisPipelineTest`:
+
+- `analyzePose false` never calls the pose estimator, returns no angles, and emits no `POSE_*`
+  warnings even with a low-confidence plate track.
+- Low-confidence pose plus high plate occlusion keeps `frameAnglesByRep` populated, keeps
+  `anglesAvailable`, and emits `HIGH_OCCLUSION` + `POSE_LOW_CONFIDENCE` without
+  `ANGLES_UNAVAILABLE_OCCLUSION`.
+
 ## Validation commands
 
 Environment used because the shell had no default JDK/SDK:
@@ -87,12 +121,12 @@ Result: `BUILD SUCCESSFUL`.
 Test totals from JUnit XML:
 
 - core: 68 tests, 0 failures, 0 errors, 0 skipped
-- app debug unit tests: 56 tests, 0 failures, 0 errors, 0 skipped
+- app debug unit tests: 57 tests, 0 failures, 0 errors, 0 skipped
 
 APK:
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- 224,892,832 bytes
+- 224,895,452 bytes
 
 ## Install
 
@@ -114,3 +148,7 @@ adb -s 192.168.57.102:40565 install -r app/build/outputs/apk/debug/app-debug.apk
   the default 0.10 m matches the requested threshold.
 - Existing metric, null and quality tests were not weakened; phase-specific expectations that
   required a lockout for every rep were updated to the new contract.
+- `POSE_LOW_CONFIDENCE` uses mean per-frame minimum joint visibility < 0.6. Occluded joints often
+  drag that value down, so the warning can appear even when the remaining angles are usable.
+- With joint-angle analysis OFF, `high occlusion` plate warnings (for bar tracking) can still
+  appear; only pose/angle-specific warnings are suppressed.
