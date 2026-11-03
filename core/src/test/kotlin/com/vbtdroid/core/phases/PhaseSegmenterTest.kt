@@ -59,6 +59,21 @@ class PhaseSegmenterTest {
     }
 
     @Test
+    fun `deadlift without lockout is still a valid rep`() {
+        val samples = sequence(
+            Move(0.0, 4),
+            Move(0.5, 10, 0.05),
+            Move(-0.5, 6, -0.05),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertEquals(1, result.reps.size)
+        assertEquals(listOf(PhaseType.CONCENTRIC), result.reps.single().phases.map { it.type })
+        assertTrue(result.warnings.contains(PhaseSegmenter.NO_LOCKOUT))
+    }
+
+    @Test
     fun `short spikes are ignored`() {
         val samples = sequence(
             Move(0.0, 5),
