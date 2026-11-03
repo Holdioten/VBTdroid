@@ -14,6 +14,7 @@ Status: complete (APK built; device install skipped because the target phone was
 - `f011114` feat(analysis): smooth joint angles and raise mean filter window
 - `9b1a0c0` feat(phases): count lockout-optional reps and merge noise
 - `68aa8fe` feat(report): make phase timeline read-only with manual correction
+- `c7da989` test(phases): cover deadlift rep without lockout
 
 The bar-path overlay now consumes smoothed `motionSamples`; the overlay files were already in the
 working branch (`e0d0ce6`, `e332cc2`) and were updated in place to use
@@ -85,7 +86,7 @@ Result: `BUILD SUCCESSFUL`.
 
 Test totals from JUnit XML:
 
-- core: 67 tests, 0 failures, 0 errors, 0 skipped
+- core: 68 tests, 0 failures, 0 errors, 0 skipped
 - app debug unit tests: 56 tests, 0 failures, 0 errors, 0 skipped
 
 APK:
