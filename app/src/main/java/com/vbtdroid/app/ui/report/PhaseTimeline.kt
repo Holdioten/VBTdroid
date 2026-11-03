@@ -27,6 +27,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
+import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -53,6 +54,7 @@ fun PhaseTimeline(
     var activeBoundary by remember { mutableStateOf<Int?>(null) }
     val colors = phaseColors()
     val boundaryColor = MaterialTheme.colorScheme.onSurface
+    val handleColor = MaterialTheme.colorScheme.primary
 
     Canvas(
         modifier
@@ -119,7 +121,7 @@ fun PhaseTimeline(
             drawLine(boundaryColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 4f)
             if (editable) {
                 drawCircle(
-                    color = boundaryColor,
+                    color = handleColor,
                     radius = 7f,
                     center = Offset(x, size.height / 2f),
                 )
@@ -138,14 +140,6 @@ fun PhaseTimeline(
         }
     }
 }
-
-@Composable
-private fun phaseColors(): Map<PhaseType, Color> = mapOf(
-    PhaseType.ECCENTRIC to MaterialTheme.colorScheme.tertiaryContainer,
-    PhaseType.PAUSE to MaterialTheme.colorScheme.surfaceVariant,
-    PhaseType.CONCENTRIC to MaterialTheme.colorScheme.primaryContainer,
-    PhaseType.LOCKOUT to MaterialTheme.colorScheme.secondaryContainer,
-)
 
 @Composable
 private fun phaseDisplayName(type: PhaseType): String = stringResource(
