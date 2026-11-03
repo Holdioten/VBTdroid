@@ -3,21 +3,36 @@ package com.vbtdroid.core.phases
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.model.Lift
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class PhaseSegmenterTest {
-    private fun sample(t: Double, vy: Double) =
-        MotionSample(t, 0.0, 0.0, 0.0, vy, 0.0, 0.0)
+    private data class Move(val vy: Double, val steps: Int, val dy: Double = 0.0)
+
+    private fun sequence(vararg moves: Move, stepSec: Double = 0.05): List<MotionSample> {
+        var t = 0.0
+        var y = 0.0
+        return buildList {
+            moves.forEach { move ->
+                repeat(move.steps) {
+                    add(MotionSample(t, 0.0, y, 0.0, move.vy, 0.0, 0.0))
+                    t += stepSec
+                    y += move.dy
+                }
+            }
+        }
+    }
+
+    private fun eccentricRep(stepSec: Double = 0.05) = arrayOf(
+        Move(-0.5, 6, -0.05),
+        Move(0.0, 4),
+        Move(0.5, 6, 0.05),
+    )
 
     @Test
     fun `squat rep has eccentric pause concentric lockout`() {
-        val samples = buildList {
-            for (i in 0..30) add(sample(i * 0.05, -0.5))
-            for (i in 31..35) add(sample(i * 0.05, 0.0))
-            for (i in 36..66) add(sample(i * 0.05, 0.5))
-            for (i in 67..72) add(sample(i * 0.05, 0.0))
-        }
+        val samples = sequence(*eccentricRep(), Move(0.0, 6))
 
         val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
 
@@ -29,42 +44,43 @@ class PhaseSegmenterTest {
     }
 
     @Test
-    fun `deadlift starts at concentric`() {
-        val samples = buildList {
-            for (i in 0..10) add(sample(i * 0.05, 0.0))
-            for (i in 11..40) add(sample(i * 0.05, 0.5))
-            for (i in 41..46) add(sample(i * 0.05, 0.0))
-        }
+    fun `deadlift starts at concentric and treats descent as separator`() {
+        val samples = sequence(
+            Move(0.0, 4),
+            Move(0.5, 8, 0.05),
+            Move(0.0, 6),
+        )
 
         val reps = PhaseSegmenter.segment(samples, Lift.DEADLIFT)
 
         assertEquals(1, reps.size)
         assertEquals(PhaseType.CONCENTRIC, reps[0].phases.first().type)
+        assertEquals(PhaseType.LOCKOUT, reps[0].phases.last().type)
     }
 
     @Test
     fun `short spikes are ignored`() {
-        val samples = buildList {
-            for (i in 0..10) add(sample(i * 0.05, 0.0))
-            add(sample(0.55, 0.5))
-            for (i in 12..20) add(sample(i * 0.05, 0.0))
-        }
+        val samples = sequence(
+            Move(0.0, 5),
+            Move(0.5, 1, 0.02),
+            Move(0.0, 10),
+        )
 
         assertTrue(PhaseSegmenter.segment(samples, Lift.DEADLIFT).isEmpty())
     }
 
     @Test
     fun `slow oscillation around eccentric threshold does not split rep`() {
-        val samples = buildList {
-            for (i in 0..10) add(sample(i * 0.05, -0.5))
-            for (i in 11..14) add(sample(i * 0.05, -0.04))
-            for (i in 15..18) add(sample(i * 0.05, -0.02))
-            for (i in 19..22) add(sample(i * 0.05, -0.04))
-            for (i in 23..26) add(sample(i * 0.05, -0.02))
-            for (i in 27..31) add(sample(i * 0.05, 0.0))
-            for (i in 32..62) add(sample(i * 0.05, 0.5))
-            for (i in 63..69) add(sample(i * 0.05, 0.0))
-        }
+        val samples = sequence(
+            Move(-0.5, 10, -0.03),
+            Move(-0.04, 4),
+            Move(-0.02, 4),
+            Move(-0.04, 4),
+            Move(-0.02, 4),
+            Move(0.0, 2),
+            Move(0.5, 8, 0.05),
+            Move(0.0, 6),
+        )
 
         val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
 
@@ -77,22 +93,19 @@ class PhaseSegmenterTest {
 
     @Test
     fun `single run shorter than minimum duration is ignored`() {
-        val samples = listOf(sample(0.0, 0.5), sample(0.05, 0.5))
+        val samples = sequence(Move(0.5, 2, 0.02))
 
         assertTrue(PhaseSegmenter.segment(samples, Lift.DEADLIFT).isEmpty())
     }
 
     @Test
     fun `two complete reps are both returned`() {
-        val samples = buildList {
-            var t = 0.0
-            repeat(2) {
-                repeat(4) { add(sample(t, -0.5)); t += 0.05 }
-                repeat(3) { add(sample(t, 0.0)); t += 0.05 }
-                repeat(4) { add(sample(t, 0.5)); t += 0.05 }
-                repeat(3) { add(sample(t, 0.0)); t += 0.05 }
-            }
-        }
+        val samples = sequence(
+            *eccentricRep(),
+            Move(0.0, 6),
+            *eccentricRep(),
+            Move(0.0, 6),
+        )
 
         val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
 
@@ -101,21 +114,118 @@ class PhaseSegmenterTest {
     }
 
     @Test
-    fun `trailing rep without lockout is incomplete and warned`() {
-        val samples = buildList {
-            for (i in 0..4) add(sample(i * 0.05, -0.5))
-            for (i in 5..9) add(sample(i * 0.05, 0.5))
-        }
+    fun `trailing rep without lockout is still valid and only warned`() {
+        val samples = sequence(*eccentricRep())
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertEquals(1, result.reps.size)
+        assertEquals(
+            listOf(PhaseType.ECCENTRIC, PhaseType.PAUSE, PhaseType.CONCENTRIC),
+            result.reps.single().phases.map { it.type },
+        )
+        assertTrue(result.warnings.contains(PhaseSegmenter.NO_LOCKOUT))
+        assertFalse(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+    }
+
+    @Test
+    fun `continuous three reps without top pauses are all counted`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 6, 0.05),
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 6, 0.05),
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 6, 0.05),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(3, reps.size)
+        assertTrue(reps.all { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } })
+    }
+
+    @Test
+    fun `noisy small bumps do not create extra reps`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 4, 0.05),
+            Move(0.0, 2),
+            Move(0.5, 4, 0.05),
+            Move(-0.04, 2),
+            Move(0.5, 4, 0.05),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(1, reps.size)
+        assertTrue(reps.single().phases.none { it.type == PhaseType.LOCKOUT })
+    }
+
+    @Test
+    fun `too short rep is rejected as incomplete`() {
+        val samples = sequence(
+            Move(-0.5, 4, -0.05),
+            Move(0.5, 2, 0.05),
+        )
 
         val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
 
         assertTrue(result.reps.isEmpty())
-        assertEquals(listOf(PhaseSegmenter.INCOMPLETE_REP_NO_LOCKOUT), result.warnings)
+        assertTrue(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+    }
+
+    @Test
+    fun `too little vertical travel is rejected`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.015),
+            Move(0.5, 6, 0.015),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertTrue(result.reps.isEmpty())
+        assertTrue(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+    }
+
+    @Test
+    fun `long pause does not split a rep`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(0.0, 10),
+            Move(0.5, 6, 0.05),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(1, reps.size)
+        assertEquals(
+            listOf(PhaseType.ECCENTRIC, PhaseType.PAUSE, PhaseType.CONCENTRIC),
+            reps.single().phases.map { it.type },
+        )
+    }
+
+    @Test
+    fun `short pause between same direction runs is merged`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(0.0, 2),
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 6, 0.05),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(1, reps.size)
+        assertEquals(
+            listOf(PhaseType.ECCENTRIC, PhaseType.CONCENTRIC),
+            reps.single().phases.map { it.type },
+        )
     }
 
     @Test
     fun `zero point ten second lockout survives generic short run merge`() {
-        val samples = lockoutSamples(lockoutSteps = 3)
+        val samples = sequence(*eccentricRep(), Move(0.0, 3))
 
         val rep = PhaseSegmenter.segment(samples, Lift.SQUAT).single()
 
@@ -124,8 +234,13 @@ class PhaseSegmenterTest {
     }
 
     @Test
-    fun `zero point twelve second lockout remains distinct`() {
-        val samples = lockoutSamples(lockoutSteps = 3, stepSec = 0.06)
+    fun `zero point twelve second lockout remains distinct and capped`() {
+        val samples = sequence(
+            Move(-0.5, 6, -0.05),
+            Move(0.5, 6, 0.05),
+            Move(0.0, 3),
+            stepSec = 0.06,
+        )
 
         val rep = PhaseSegmenter.segment(samples, Lift.SQUAT).single()
 
@@ -133,10 +248,24 @@ class PhaseSegmenterTest {
         assertEquals(0.10, rep.phases.last().endSec - rep.phases.last().startSec, 1e-9)
     }
 
-    private fun lockoutSamples(lockoutSteps: Int, stepSec: Double = 0.05) = buildList {
-        var t = 0.0
-        repeat(4) { add(sample(t, -0.5)); t += stepSec }
-        repeat(4) { add(sample(t, 0.5)); t += stepSec }
-        repeat(lockoutSteps) { add(sample(t, 0.0)); t += stepSec }
+    @Test
+    fun `phase and rep durations are always positive`() {
+        val samples = sequence(
+            *eccentricRep(),
+            Move(0.0, 6),
+            *eccentricRep(),
+            Move(0.0, 6),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertTrue(reps.isNotEmpty())
+        reps.forEach { rep ->
+            assertTrue(rep.endSec > rep.startSec)
+            rep.phases.forEach { phase -> assertTrue(phase.endSec > phase.startSec) }
+            rep.phases.zipWithNext().forEach { (left, right) ->
+                assertTrue(right.startSec >= left.endSec)
+            }
+        }
     }
 }
