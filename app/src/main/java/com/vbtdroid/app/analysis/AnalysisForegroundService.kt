@@ -66,7 +66,9 @@ class AnalysisForegroundService : Service() {
     private val plateDetector by plateDetectorDelegate
     private val mediaPipePoseDelegate = lazy { runCatching { MediaPipePoseEstimator(applicationContext) }.getOrNull() }
     private val mediaPipePose by mediaPipePoseDelegate
-    private val poseEstimator: PoseEstimator by lazy { mediaPipePose ?: NoPoseEstimator }
+    private val poseEstimator: PoseEstimator by lazy {
+        DeferredPoseEstimator { mediaPipePose ?: NoPoseEstimator }
+    }
     private val plateTracker by lazy { PlateTracker(plateDetector) }
     private val pipelineDelegate = lazy { AnalysisPipeline(decoder, plateTracker, poseEstimator) }
     private val pipeline by pipelineDelegate

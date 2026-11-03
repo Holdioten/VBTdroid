@@ -126,6 +126,7 @@ class AnalysisPipelineTest {
 
         assertEquals(1, result.reps.size)
         assertEquals(0, pose.calls)
+        assertEquals(0, pose.resets)
         assertFalse(result.analyzePose)
         assertTrue(result.frameAngles.isEmpty())
         assertTrue(result.frameAnglesByRep.isEmpty())
@@ -321,10 +322,16 @@ class AnalysisPipelineTest {
     private class FakePose(private val frame: PoseFrame? = null) : PoseEstimator {
         var calls = 0
             private set
+        var resets = 0
+            private set
 
         override fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame? {
             calls++
             return frame?.copy(tSec = tSec)
+        }
+
+        override fun reset() {
+            resets++
         }
     }
 
