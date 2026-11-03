@@ -6,7 +6,7 @@ Android 端离线 VBT（Velocity Based Training）分析工具。
 
 ## 状态
 
-**M1：Gradle 多模块骨架已创建；算法与应用功能尚未实现。**
+**M1 已完成：Gradle 多模块骨架、core 指标引擎、Android 导入/分析/报告/历史/导出主流程与自动化测试均已实现；真机模型与视频兼容性验证见 `docs/validation/`（待补）。**
 
 ## 范围
 
