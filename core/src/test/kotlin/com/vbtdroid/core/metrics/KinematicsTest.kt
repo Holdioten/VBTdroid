@@ -3,6 +3,7 @@ package com.vbtdroid.core.metrics
 import com.vbtdroid.core.model.BarSample
 import com.vbtdroid.core.signal.SavitzkyGolay
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import kotlin.math.abs
@@ -26,7 +27,7 @@ class KinematicsTest {
     fun `quadratic position gives constant acceleration`() {
         val samples = (0..20).map { BarSample(it * 0.05, 0.0, 0.5 * (it * 0.05) * (it * 0.05)) }
         val out = Kinematics.derive(samples)
-        assertTrue(out.drop(3).dropLast(3).all { abs(it.ayMps2 - 1.0) < 0.05 })
+        assertTrue(out.drop(3).dropLast(3).all { abs(it.ayMps2!! - 1.0) < 0.05 })
     }
 
     @Test
@@ -48,6 +49,14 @@ class KinematicsTest {
 
         assertEquals(2, out.size)
         assertTrue(out.all { abs(it.vxMps - 1.0) < 1e-9 && abs(it.vyMps - 2.0) < 1e-9 })
+        assertTrue(out.all { it.ayMps2 == null })
+    }
+
+    @Test
+    fun `single sample acceleration is unavailable`() {
+        val out = Kinematics.derive(listOf(BarSample(0.0, 0.0, 0.0))).single()
+
+        assertNull(out.ayMps2)
     }
 
     @Test

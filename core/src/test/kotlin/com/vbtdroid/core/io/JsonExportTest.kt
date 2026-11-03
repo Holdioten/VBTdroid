@@ -73,7 +73,9 @@ class JsonExportTest {
             listOf(
                 "LOW_TRACK_CONFIDENCE",
                 "HIGH_OCCLUSION",
+                "ANGLES_UNAVAILABLE_OCCLUSION",
                 "CAMERA_NOT_LEVEL",
+                "CAMERA_NOT_LEVEL_ESTIMATE",
                 "LOW_CALIBRATION",
                 "LOW_REP_CONFIDENCE",
             ),

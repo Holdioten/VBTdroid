@@ -1,6 +1,7 @@
 package com.vbtdroid.core.metrics
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class JointAnglesTest {
@@ -10,7 +11,7 @@ class JointAnglesTest {
         val b = Point2(1.0, 0.0)
         val c = Point2(1.0, 1.0)
 
-        assertEquals(90.0, JointAngles.angle(a, b, c), 1e-9)
+        assertEquals(90.0, JointAngles.angle(a, b, c)!!, 1e-9)
     }
 
     @Test
@@ -24,10 +25,10 @@ class JointAnglesTest {
     }
 
     @Test
-    fun `degenerate vector returns zero`() {
+    fun `degenerate vector is unavailable`() {
         val point = Point2(1.0, 2.0)
 
-        assertEquals(0.0, JointAngles.angle(point, point, point), 0.0)
+        assertNull(JointAngles.angle(point, point, point))
     }
 
     @Test

@@ -42,10 +42,25 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
         val points = LinkedHashMap<Int, Point2>(pose.size)
         val visibility = LinkedHashMap<Int, Float>(pose.size)
         pose.forEachIndexed { index, landmark ->
-            points[index] = Point2(landmark.x().toDouble(), landmark.y().toDouble())
+            points[index] = Point2(
+                landmark.x().toDouble() * bitmap.width,
+                landmark.y().toDouble() * bitmap.height,
+            )
             visibility[index] = landmark.visibility().orElse(0f)
         }
-        return PoseFrame(tSec, points, visibility)
+        return PoseFrame(
+            tSec = tSec,
+            landmarks = points,
+            visibility = visibility,
+            frameWidth = bitmap.width,
+            frameHeight = bitmap.height,
+            normalized = false,
+        )
+    }
+
+    @Synchronized
+    override fun reset() {
+        lastTimestampMs = -1L
     }
 
     override fun close() {

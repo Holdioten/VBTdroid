@@ -25,12 +25,26 @@ data class PhaseConfig(
     val lockoutSec: Double = 0.10,
 )
 
+data class PhaseSegmentation(
+    val reps: List<RepSlice>,
+    val warnings: List<String>,
+)
+
 object PhaseSegmenter {
+    const val INCOMPLETE_REP_NO_LOCKOUT = "INCOMPLETE_REP_NO_LOCKOUT"
+
     fun segment(
         samples: List<MotionSample>,
         lift: Lift,
         config: PhaseConfig = PhaseConfig(),
-    ): List<RepSlice> {
+    ): List<RepSlice> = segmentDetailed(samples, lift, config).reps
+
+    /** Formal reps always end in lockout; trailing or interrupted movement is reported, not accepted. */
+    fun segmentDetailed(
+        samples: List<MotionSample>,
+        lift: Lift,
+        config: PhaseConfig = PhaseConfig(),
+    ): PhaseSegmentation {
         require(config.vEps.isFinite() && config.vEps >= 0.0) { "vEps must be finite and non-negative" }
         require(config.minPhaseSec.isFinite() && config.minPhaseSec >= 0.0) {
             "minPhaseSec must be finite and non-negative"
@@ -38,7 +52,7 @@ object PhaseSegmenter {
         require(config.lockoutSec.isFinite() && config.lockoutSec >= 0.0) {
             "lockoutSec must be finite and non-negative"
         }
-        if (samples.isEmpty()) return emptyList()
+        if (samples.isEmpty()) return PhaseSegmentation(emptyList(), emptyList())
         for (index in samples.indices) {
             require(samples[index].tSec.isFinite() && samples[index].vyMps.isFinite()) {
                 "sample timestamps and vertical velocities must be finite"
@@ -50,11 +64,27 @@ object PhaseSegmenter {
             }
         }
 
-        val runs = mergeShortRuns(classify(samples, config.vEps), config.minPhaseSec)
-        return when (lift) {
-            Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs, config.lockoutSec)
-            Lift.DEADLIFT -> segmentDeadlifts(runs, config.lockoutSec)
+        // Lockout has a 0.10 s threshold and must be protected before generic 0.12 s run merging.
+        val runsWithLockouts = detectLockouts(classify(samples, config.vEps), config.lockoutSec)
+        val runs = mergeShortRuns(runsWithLockouts, config.minPhaseSec)
+        val result = when (lift) {
+            Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs)
+            Lift.DEADLIFT -> segmentDeadlifts(runs)
         }
+        return PhaseSegmentation(
+            reps = result.reps,
+            warnings = if (result.incompleteCount > 0) listOf(INCOMPLETE_REP_NO_LOCKOUT) else emptyList(),
+        )
+    }
+
+    /** Duration-margin confidence for phase review; manual boundaries always require review. */
+    fun confidence(rep: RepSlice, config: PhaseConfig = PhaseConfig()): Double {
+        if (rep.phases.any { it.manual }) return 0.7
+        val margin = rep.phases.minOfOrNull { phase ->
+            val required = if (phase.type == PhaseType.LOCKOUT) config.lockoutSec else config.minPhaseSec
+            if (required <= 0.0) 1.0 else (phase.endSec - phase.startSec) / required
+        } ?: 0.0
+        return margin.coerceIn(0.0, 1.0)
     }
 
     private data class Run(
@@ -65,6 +95,11 @@ object PhaseSegmenter {
         val durationSec: Double get() = endSec - startSec
     }
 
+    private data class MutableSegmentation(
+        val reps: List<RepSlice>,
+        val incompleteCount: Int,
+    )
+
     private fun classify(samples: List<MotionSample>, vEps: Double): List<Run> {
         val runs = mutableListOf<Run>()
         val exitEps = vEps * 0.5
@@ -74,16 +109,8 @@ object PhaseSegmenter {
         for (index in 1 until samples.size) {
             val vyMps = samples[index].vyMps
             val nextType = when (type) {
-                PhaseType.ECCENTRIC -> if (vyMps >= -exitEps) {
-                    phaseFor(vyMps, vEps)
-                } else {
-                    PhaseType.ECCENTRIC
-                }
-                PhaseType.CONCENTRIC -> if (vyMps <= exitEps) {
-                    phaseFor(vyMps, vEps)
-                } else {
-                    PhaseType.CONCENTRIC
-                }
+                PhaseType.ECCENTRIC -> if (vyMps >= -exitEps) phaseFor(vyMps, vEps) else PhaseType.ECCENTRIC
+                PhaseType.CONCENTRIC -> if (vyMps <= exitEps) phaseFor(vyMps, vEps) else PhaseType.CONCENTRIC
                 PhaseType.PAUSE, PhaseType.LOCKOUT -> phaseFor(vyMps, vEps)
             }
             if (nextType != type) {
@@ -102,13 +129,25 @@ object PhaseSegmenter {
         else -> PhaseType.PAUSE
     }
 
-    /** 用最短持续时间抑制阈值抖动，并丢弃孤立速度尖峰。 */
+    private fun detectLockouts(source: List<Run>, lockoutSec: Double): List<Run> = source.mapIndexed { index, run ->
+        if (run.type == PhaseType.PAUSE && index > 0 && source[index - 1].type == PhaseType.CONCENTRIC &&
+            run.durationSec + 1e-9 >= lockoutSec
+        ) {
+            run.copy(type = PhaseType.LOCKOUT)
+        } else {
+            run
+        }
+    }
+
+    /** Uses the generic minimum for ordinary phases, never for a detected lockout. */
     private fun mergeShortRuns(source: List<Run>, minPhaseSec: Double): List<Run> {
         val runs = source.toMutableList()
-        if (runs.size == 1 && runs.single().durationSec < minPhaseSec) return emptyList()
+        if (runs.size == 1 && runs.single().durationSec < minPhaseSec &&
+            runs.single().type != PhaseType.LOCKOUT
+        ) return emptyList()
         var index = 0
         while (index < runs.size && runs.size > 1) {
-            if (runs[index].durationSec >= minPhaseSec) {
+            if (runs[index].type == PhaseType.LOCKOUT || runs[index].durationSec + 1e-9 >= minPhaseSec) {
                 index++
                 continue
             }
@@ -149,21 +188,26 @@ object PhaseSegmenter {
             }
             index = maxOf(0, first - 1)
         }
-        return if (runs.size == 1 && runs.single().durationSec < minPhaseSec) emptyList() else runs
+        return if (runs.size == 1 && runs.single().durationSec < minPhaseSec &&
+            runs.single().type != PhaseType.LOCKOUT
+        ) emptyList() else runs
     }
 
-    private fun segmentEccentricLifts(runs: List<Run>, lockoutSec: Double): List<RepSlice> {
+    private fun segmentEccentricLifts(runs: List<Run>): MutableSegmentation {
         val reps = mutableListOf<RepSlice>()
         var phases = mutableListOf<Phase>()
+        var incomplete = 0
 
         fun finish() {
             if (phases.isNotEmpty()) {
-                reps += RepSlice(
-                    index = reps.size + 1,
-                    startSec = phases.first().startSec,
-                    endSec = phases.last().endSec,
-                    phases = phases.toList(),
-                )
+                if (phases.any { it.type == PhaseType.ECCENTRIC } &&
+                    phases.any { it.type == PhaseType.CONCENTRIC } &&
+                    phases.any { it.type == PhaseType.LOCKOUT }
+                ) {
+                    reps += RepSlice(reps.size + 1, phases.first().startSec, phases.last().endSec, phases.toList())
+                } else {
+                    incomplete++
+                }
                 phases = mutableListOf()
             }
         }
@@ -175,33 +219,29 @@ object PhaseSegmenter {
                 continue
             }
             if (phases.isEmpty()) continue
-
-            if (run.type == PhaseType.PAUSE && phases.any { it.type == PhaseType.CONCENTRIC } &&
-                run.durationSec >= lockoutSec
-            ) {
-                val lockoutEnd = minOf(run.endSec, run.startSec + lockoutSec)
-                if (lockoutEnd > run.startSec) phases += Phase(PhaseType.LOCKOUT, run.startSec, lockoutEnd)
+            if (run.type == PhaseType.LOCKOUT && phases.any { it.type == PhaseType.CONCENTRIC }) {
+                phases += run.toPhase()
                 finish()
             } else {
                 phases += run.toPhase()
             }
         }
         finish()
-        return reps
+        return MutableSegmentation(reps, incomplete)
     }
 
-    private fun segmentDeadlifts(runs: List<Run>, lockoutSec: Double): List<RepSlice> {
+    private fun segmentDeadlifts(runs: List<Run>): MutableSegmentation {
         val reps = mutableListOf<RepSlice>()
         var phases = mutableListOf<Phase>()
+        var incomplete = 0
 
         fun finish() {
             if (phases.isNotEmpty()) {
-                reps += RepSlice(
-                    index = reps.size + 1,
-                    startSec = phases.first().startSec,
-                    endSec = phases.last().endSec,
-                    phases = phases.toList(),
-                )
+                if (phases.any { it.type == PhaseType.CONCENTRIC } && phases.any { it.type == PhaseType.LOCKOUT }) {
+                    reps += RepSlice(reps.size + 1, phases.first().startSec, phases.last().endSec, phases.toList())
+                } else {
+                    incomplete++
+                }
                 phases = mutableListOf()
             }
         }
@@ -213,19 +253,15 @@ object PhaseSegmenter {
                 continue
             }
             if (phases.isEmpty()) continue
-
-            if (run.type == PhaseType.PAUSE && phases.any { it.type == PhaseType.CONCENTRIC } &&
-                run.durationSec >= lockoutSec
-            ) {
-                val lockoutEnd = minOf(run.endSec, run.startSec + lockoutSec)
-                if (lockoutEnd > run.startSec) phases += Phase(PhaseType.LOCKOUT, run.startSec, lockoutEnd)
+            if (run.type == PhaseType.LOCKOUT && phases.any { it.type == PhaseType.CONCENTRIC }) {
+                phases += run.toPhase()
                 finish()
             } else if (run.type != PhaseType.ECCENTRIC) {
                 phases += run.toPhase()
             }
         }
         finish()
-        return reps
+        return MutableSegmentation(reps, incomplete)
     }
 
     private fun Run.toPhase() = Phase(type, startSec, endSec)

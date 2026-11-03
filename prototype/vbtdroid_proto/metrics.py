@@ -41,7 +41,9 @@ def calculate_metrics(rep, samples, load_kg=None):
     mcv = (clast["y_m"] - cfirst["y_m"]) / concentric_duration
     rep_ys = [sample["y_m"] for sample in rep_samples]
     rep_xs = [sample["x_m"] for sample in rep_samples]
-    rom_concentric = max(concentric_ys) - min(concentric_ys)
+    rom_concentric = clast["y_m"] - cfirst["y_m"]
+    if rom_concentric <= 0:
+        raise ValueError("向心端点位移非正，向心 ROM 不可用")
     peak_velocity = velocities[peak_index]
     sticking_point = None
     if rom_concentric > 0:
@@ -52,7 +54,7 @@ def calculate_metrics(rep, samples, load_kg=None):
                 break
 
     metrics = {
-        "duration_s": rep["end_sec"] - rep["start_sec"],
+        "rep_duration_s": rep["end_sec"] - rep["start_sec"],
         "rom_total_m": max(rep_ys) - min(rep_ys),
         "rom_concentric_m": rom_concentric,
         "mean_velocity_mps": (last["y_m"] - first["y_m"]) / rep_duration,

@@ -33,6 +33,8 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
     private val inputHeight: Int
     private val outputCount: Int
     private val inputType: DataType
+    private val inputQuantizationScale: Float
+    private val inputQuantizationZeroPoint: Int
 
     init {
         val modelFile = "models/plate.tflite"
@@ -86,6 +88,12 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
                 "Plate model input must be 384x224 or 640x640, got ${inputWidth}x$inputHeight"
             }
             inputType = createdInterpreter.getInputTensor(0).dataType()
+            val quantization = createdInterpreter.getInputTensor(0).quantizationParams()
+            inputQuantizationScale = quantization.scale
+            inputQuantizationZeroPoint = quantization.zeroPoint
+            require(inputType != DataType.UINT8 || inputQuantizationScale > 0f) {
+                "Quantized plate model requires a positive input scale"
+            }
             require(inputType == DataType.FLOAT32 || inputType == DataType.UINT8) {
                 "Unsupported plate model input type: $inputType"
             }
@@ -116,6 +124,7 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
             .order(ByteOrder.nativeOrder())
         val pixels = IntArray(inputWidth * inputHeight)
         resized.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
+        if (resized !== bitmap) resized.recycle()
         pixels.forEach { pixel ->
             val red = pixel shr 16 and 0xff
             val green = pixel shr 8 and 0xff
@@ -125,9 +134,12 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
                 input.putFloat(green / 255f)
                 input.putFloat(blue / 255f)
             } else {
-                input.put(red.toByte())
-                input.put(green.toByte())
-                input.put(blue.toByte())
+                fun quantize(channel: Int): Int =
+                    ((channel / 255f) / inputQuantizationScale + inputQuantizationZeroPoint)
+                        .toInt().coerceIn(0, 255)
+                input.put(quantize(red).toByte())
+                input.put(quantize(green).toByte())
+                input.put(quantize(blue).toByte())
             }
         }
         input.rewind()

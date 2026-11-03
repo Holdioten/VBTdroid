@@ -81,4 +81,62 @@ class PhaseSegmenterTest {
 
         assertTrue(PhaseSegmenter.segment(samples, Lift.DEADLIFT).isEmpty())
     }
+
+    @Test
+    fun `two complete reps are both returned`() {
+        val samples = buildList {
+            var t = 0.0
+            repeat(2) {
+                repeat(4) { add(sample(t, -0.5)); t += 0.05 }
+                repeat(3) { add(sample(t, 0.0)); t += 0.05 }
+                repeat(4) { add(sample(t, 0.5)); t += 0.05 }
+                repeat(3) { add(sample(t, 0.0)); t += 0.05 }
+            }
+        }
+
+        val reps = PhaseSegmenter.segment(samples, Lift.SQUAT)
+
+        assertEquals(2, reps.size)
+        assertTrue(reps.all { it.phases.last().type == PhaseType.LOCKOUT })
+    }
+
+    @Test
+    fun `trailing rep without lockout is incomplete and warned`() {
+        val samples = buildList {
+            for (i in 0..4) add(sample(i * 0.05, -0.5))
+            for (i in 5..9) add(sample(i * 0.05, 0.5))
+        }
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertTrue(result.reps.isEmpty())
+        assertEquals(listOf(PhaseSegmenter.INCOMPLETE_REP_NO_LOCKOUT), result.warnings)
+    }
+
+    @Test
+    fun `zero point ten second lockout survives generic short run merge`() {
+        val samples = lockoutSamples(lockoutSteps = 3)
+
+        val rep = PhaseSegmenter.segment(samples, Lift.SQUAT).single()
+
+        assertEquals(PhaseType.LOCKOUT, rep.phases.last().type)
+        assertEquals(0.10, rep.phases.last().endSec - rep.phases.last().startSec, 1e-9)
+    }
+
+    @Test
+    fun `zero point twelve second lockout remains distinct`() {
+        val samples = lockoutSamples(lockoutSteps = 3, stepSec = 0.06)
+
+        val rep = PhaseSegmenter.segment(samples, Lift.SQUAT).single()
+
+        assertEquals(PhaseType.LOCKOUT, rep.phases.last().type)
+        assertEquals(0.12, rep.phases.last().endSec - rep.phases.last().startSec, 1e-9)
+    }
+
+    private fun lockoutSamples(lockoutSteps: Int, stepSec: Double = 0.05) = buildList {
+        var t = 0.0
+        repeat(4) { add(sample(t, -0.5)); t += stepSec }
+        repeat(4) { add(sample(t, 0.5)); t += stepSec }
+        repeat(lockoutSteps) { add(sample(t, 0.0)); t += stepSec }
+    }
 }

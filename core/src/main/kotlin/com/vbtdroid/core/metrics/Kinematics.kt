@@ -9,8 +9,8 @@ data class MotionSample(
     val yM: Double,
     val vxMps: Double,
     val vyMps: Double,
-    val axMps2: Double,
-    val ayMps2: Double,
+    val axMps2: Double?,
+    val ayMps2: Double?,
 )
 
 object Kinematics {

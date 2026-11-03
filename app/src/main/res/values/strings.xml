@@ -118,4 +118,25 @@
     <string name="history_rep_rom">向心 ROM：%1$s m</string>
     <string name="history_phase">%1$s：%2$.3f–%3$.3f 秒；手动=%4$b</string>
     <string name="history_export_unavailable">此历史记录缺少可显示的导出数据</string>
+
+    <string name="report_filter_config">滤波：%1$s；均值窗口 %2$d/阶数 %3$d；峰值窗口 %4$d/阶数 %5$d</string>
+    <string name="report_key_frame_angles">关键帧关节角</string>
+    <string name="report_key_frame_start">起始</string>
+    <string name="report_key_frame_bottom">底部/触胸</string>
+    <string name="report_key_frame_sticking">粘滞点</string>
+    <string name="report_key_frame_lockout">锁定</string>
+    <string name="report_angle_confidence">%1$s：%2$.1f°；置信度 %3$.2f</string>
+    <string name="metric_hip_angle">髋角</string>
+    <string name="metric_knee_angle">膝角</string>
+    <string name="metric_ankle_angle">踝角</string>
+    <string name="metric_trunk_angle">躯干角</string>
+    <string name="metric_shoulder_angle">肩角</string>
+    <string name="metric_elbow_angle">肘角</string>
+    <string name="metric_wrist_angle">腕角</string>
+    <string name="quality_angles_unavailable_occlusion">遮挡超过 20%，关节角不可用</string>
+    <string name="quality_camera_estimate">相机未水平，垂直速度仅作估算且不参与 PR 判定</string>
+    <string name="quality_load_required">缺少负荷，力、功率、功和 1RM 不可用</string>
+    <string name="quality_incomplete_rep">检测到未锁定的不完整重复，已排除出正式结果</string>
+    <string name="quality_acceleration_unavailable">有效样本不足，加速度及相关指标不可用</string>
+    <string name="quality_non_monotonic">向心轨迹非单调，该重复不可用</string>
 </resources>

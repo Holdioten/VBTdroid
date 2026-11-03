@@ -22,14 +22,15 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /** 跟踪已初始化的杠铃片；神经网络检测仅用于初始化或丢失后的恢复。 */
-open class PlateTracker(private val detector: PlateDetector? = null) {
-    private var centerX = 0f
-    private var centerY = 0f
+open class PlateTracker(private val detector: PlateDetector? = null) : AutoCloseable {
+    private val successfulPair = SuccessfulFramePair<Mat> { it.release() }
+    private val centerX get() = successfulPair.centerX
+    private val centerY get() = successfulPair.centerY
+    private val lastTimeSec get() = successfulPair.timeSec
+    private val previousGray get() = successfulPair.frame
     private var velocityX = 0f
     private var velocityY = 0f
-    private var lastTimeSec: Double? = null
     private var axisReference: PlateAxisReference? = null
-    private var previousGray: Mat? = null
 
     open fun initialRoi(bitmap: Bitmap): RectF? {
         val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
@@ -41,6 +42,15 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
         )
     }
 
+    open fun reset() {
+        successfulPair.clear()
+        velocityX = 0f
+        velocityY = 0f
+        axisReference = null
+    }
+
+    override fun close() = reset()
+
     open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
@@ -48,13 +58,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
         try {
             val fitted = findEllipse(gray, roi, null, null, null)
                 ?: throw IllegalArgumentException("Could not fit a plate ellipse inside the selected ROI")
-            centerX = fitted.ellipse.center.x.toFloat()
-            centerY = fitted.ellipse.center.y.toFloat()
             velocityX = 0f
             velocityY = 0f
-            lastTimeSec = tSec
             axisReference = PlateAxisReference(fitted.majorAxis)
-            replacePreviousGray(gray)
+            commitSuccessfulFrame(gray, fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec)
             return observation(tSec, fitted)
         } finally {
             gray.release()
@@ -78,7 +85,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
             val roi = RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius)
             val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, predictedX, predictedY)
             if (fitted != null && fitted.confidence >= MIN_TRACK_CONFIDENCE) {
-                updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec)
+                updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec, currentGray)
                 return observation(tSec, fitted)
             }
 
@@ -100,11 +107,11 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
                     detection.cyPx,
                 )?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
                 if (recovered != null) {
-                    updatePosition(recovered.ellipse.center.x.toFloat(), recovered.ellipse.center.y.toFloat(), tSec)
+                    updatePosition(recovered.ellipse.center.x.toFloat(), recovered.ellipse.center.y.toFloat(), tSec, currentGray)
                     return observation(tSec, recovered)
                 }
                 if (reference.accepts(detectedDiameter)) {
-                    updatePosition(detection.cxPx, detection.cyPx, tSec)
+                    updatePosition(detection.cxPx, detection.cyPx, tSec, currentGray)
                     return PlateObservation(
                         tSec = tSec,
                         xPx = centerX.toDouble(),
@@ -114,9 +121,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
                     )
                 }
             }
+            // A failed frame is never paired with the last successful center.
+            successfulPair.failed()
             return null
         } finally {
-            replacePreviousGray(currentGray)
             currentGray.release()
         }
     }
@@ -156,16 +164,18 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
             confidence = fit.confidence.toDouble(),
         )
 
-    private fun updatePosition(nextX: Float, nextY: Float, tSec: Double) {
+    private fun updatePosition(nextX: Float, nextY: Float, tSec: Double, currentGray: Mat) {
         val previousTime = lastTimeSec
         if (previousTime != null && tSec > previousTime) {
             val elapsed = (tSec - previousTime).toFloat()
             velocityX = (nextX - centerX) / elapsed
             velocityY = (nextY - centerY) / elapsed
         }
-        centerX = nextX
-        centerY = nextY
-        lastTimeSec = tSec
+        commitSuccessfulFrame(currentGray, nextX, nextY, tSec)
+    }
+
+    private fun commitSuccessfulFrame(gray: Mat, x: Float, y: Float, tSec: Double) {
+        successfulPair.matched(gray.clone(), x, y, tSec)
     }
 
     private fun toGray(bitmap: Bitmap): Mat {
@@ -181,11 +191,6 @@ open class PlateTracker(private val detector: PlateDetector? = null) {
         } finally {
             rgba.release()
         }
-    }
-
-    private fun replacePreviousGray(gray: Mat) {
-        previousGray?.release()
-        previousGray = gray.clone()
     }
 
     private fun findEllipse(

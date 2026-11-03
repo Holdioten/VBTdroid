@@ -17,7 +17,7 @@ import org.junit.Test
 
 class ReportRecomputeTest {
     @Test
-    fun `manual recompute uses previous reps only for velocity loss`() {
+    fun `manual recompute refreshes full set velocity loss`() {
         val previous = metrics(1, 0.5)
         val editedOriginal = metrics(2, 0.6)
         val future = metrics(3, 1.0)
@@ -29,9 +29,9 @@ class ReportRecomputeTest {
         assertNotNull(recomputed)
         val edited = recomputed!!.reps.first { it.repIndex == 2 }
         assertEquals(0.75, edited.mcvMps, 1e-9)
-        assertEquals(-50.0, edited.velocityLossPct!!, 1e-9)
-        assertSame(previous, recomputed.reps.first { it.repIndex == 1 })
-        assertSame(future, recomputed.reps.first { it.repIndex == 3 })
+        assertEquals(25.0, edited.velocityLossPct!!, 1e-9)
+        assertEquals(50.0, recomputed.reps.first { it.repIndex == 1 }.velocityLossPct!!, 1e-9)
+        assertEquals(0.0, recomputed.reps.first { it.repIndex == 3 }.velocityLossPct!!, 1e-9)
     }
 
     @Test

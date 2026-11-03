@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class RepMetricsTest {
-    private fun motion(t: Double, y: Double, vy: Double, ay: Double = 0.0, x: Double = 0.0) =
+    private fun motion(t: Double, y: Double, vy: Double, ay: Double? = 0.0, x: Double = 0.0) =
         MotionSample(t, x, y, 0.0, vy, 0.0, ay)
 
     private fun concentricRep(start: Double = 0.0, end: Double = 1.0) =
@@ -23,7 +23,7 @@ class RepMetricsTest {
 
         assertEquals(0.5, metrics.mcvMps, 1e-6)
         assertEquals(0.5, metrics.romConcentricM, 1e-6)
-        assertEquals(0.5, metrics.peakVelocityMps, 1e-6)
+        assertEquals(0.5, metrics.peakVelocityMps!!, 1e-6)
         assertNull(metrics.meanForceN)
     }
 
@@ -56,7 +56,7 @@ class RepMetricsTest {
 
         val metrics = RepMetricsCalculator.compute(concentricRep(), samples, null)
 
-        assertEquals(metrics.mcvMps, metrics.mpvMps, 1e-6)
+        assertEquals(metrics.mcvMps, metrics.mpvMps!!, 1e-6)
     }
 
     @Test
@@ -71,7 +71,7 @@ class RepMetricsTest {
         val metrics = RepMetricsCalculator.compute(concentricRep(end = 1.5), samples, null)
 
         assertEquals(2.0 / 3.0, metrics.mcvMps, 1e-6)
-        assertEquals(0.4, metrics.mpvMps, 1e-6)
+        assertEquals(0.4, metrics.mpvMps!!, 1e-6)
         assertEquals(1.0, metrics.romTotalM, 1e-6)
         assertEquals(2.0 / 3.0, metrics.meanVelocityMps, 1e-6)
         assertNull(metrics.velocityLossPct)
@@ -118,6 +118,49 @@ class RepMetricsTest {
         assertThrows(IllegalArgumentException::class.java) {
             RepMetricsCalculator.compute(concentricRep(), samples, null)
         }
+    }
+
+    @Test
+    fun `non monotonic concentric path uses endpoints and carries quality warning`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 0.5),
+            motion(0.5, 0.4, 0.5),
+            motion(1.0, 0.3, 0.5),
+        )
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(), samples, null)
+
+        assertEquals(0.3, metrics.romConcentricM, 1e-9)
+        assertEquals(listOf(RepMetricsCalculator.NON_MONOTONIC_CONCENTRIC), metrics.qualityWarnings)
+    }
+
+    @Test
+    fun `peaks use independent lower smoothing series`() {
+        val mean = (0..4).map { motion(it * 0.25, it * 0.125, 0.5, ay = 1.0) }
+        val peak = (0..4).map { motion(it * 0.25, it * 0.125, 0.9, ay = 3.0) }
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(), mean, 100.0, peakSamples = peak)
+
+        assertEquals(0.9, metrics.peakVelocityMps!!, 1e-9)
+        assertEquals(3.0, metrics.peakAccelerationMps2!!, 1e-9)
+        assertEquals(100.0 * (9.80665 + 1.0), metrics.meanForceN!!, 1e-6)
+        assertEquals(100.0 * (9.80665 + 3.0), metrics.peakForceN!!, 1e-6)
+    }
+
+    @Test
+    fun `missing second derivative yields null not zero`() {
+        val samples = listOf(
+            motion(0.0, 0.0, 0.5, ay = null),
+            motion(1.0, 0.5, 0.5, ay = null),
+        )
+
+        val metrics = RepMetricsCalculator.compute(concentricRep(), samples, 100.0)
+
+        assertNull(metrics.mpvMps)
+        assertNull(metrics.peakAccelerationMps2)
+        assertNull(metrics.peakDecelerationMps2)
+        assertNull(metrics.meanForceN)
+        assertEquals(listOf(RepMetricsCalculator.ACCELERATION_UNAVAILABLE), metrics.unavailableReasons)
     }
 
     @Test

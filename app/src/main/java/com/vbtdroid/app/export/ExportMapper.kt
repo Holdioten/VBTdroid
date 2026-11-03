@@ -40,7 +40,9 @@ object ExportMapper {
                         "rep_confidence" to result.quality.repConfidence,
                         "calibration_confidence" to result.quality.calibrationConfidence,
                     ),
-                    warnings = result.repWarnings[rep.repIndex].orEmpty(),
+                    warnings = (
+                        result.repWarnings[rep.repIndex].orEmpty() + rep.unavailableReasons + rep.qualityWarnings
+                        ).distinct(),
                     phases = slice?.phases.orEmpty().map { phase ->
                         PhaseExport(
                             type = phase.type.toExportId(),

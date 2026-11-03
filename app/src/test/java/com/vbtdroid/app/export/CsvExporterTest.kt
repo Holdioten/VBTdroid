@@ -35,7 +35,12 @@ class CsvExporterTest {
     fun `csv has header and one row per rep`() {
         val csv = CsvExporter.export(fakeResult(2))
 
-        assertEquals("rep,mcv,mpv,pv,rom,vl,sticking,meanForce,meanPower", csv.lines().first())
+        assertEquals(
+            "rep,rep_duration_s,mcv_mps,mpv_mps,peak_velocity_mps,rom_total_m,rom_concentric_m," +
+                "velocity_loss_pct,sticking_point_pct,mean_force_n,mean_power_w,peak_force_n,peak_power_w," +
+                "peak_acceleration_mps2,peak_deceleration_mps2,work_j",
+            csv.lines().first(),
+        )
         assertEquals(3, csv.lines().filter { it.isNotBlank() }.size)
     }
 
@@ -43,7 +48,7 @@ class CsvExporterTest {
     fun `null values export as empty fields`() {
         val row = CsvExporter.export(fakeResult(1)).lines()[1]
 
-        assertEquals("1,0.6,0.6,0.7,0.5,,,,", row)
-        assertTrue(row.contains(",,,"))
+        assertEquals("1,1.0,0.6,0.6,0.7,0.5,0.5,,,,,,,1.0,-1.0,", row)
+        assertTrue(row.endsWith(","))
     }
 }

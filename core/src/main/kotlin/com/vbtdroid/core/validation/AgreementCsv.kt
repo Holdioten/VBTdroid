@@ -25,7 +25,7 @@ object AgreementCsv {
         return Agreement.blandAltman(pairedReference.toDoubleArray(), pairedMeasured.toDoubleArray())
     }
 
-    /** Gradle runnable: `./gradlew :core:run --args='truth.csv app.csv mcv'`. */
+    /** Gradle runnable: `./gradlew :core:run --args='truth.csv app.csv mcv_mps'`. */
     @JvmStatic
     fun main(args: Array<String>) {
         if (args.size != 3) {

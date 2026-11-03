@@ -9,7 +9,7 @@ import kotlin.math.tan
 data class Point2(val x: Double, val y: Double)
 
 object JointAngles {
-    fun angle(a: Point2, b: Point2, c: Point2): Double {
+    fun angle(a: Point2, b: Point2, c: Point2): Double? {
         val abX = a.x - b.x
         val abY = a.y - b.y
         val cbX = c.x - b.x
@@ -17,7 +17,7 @@ object JointAngles {
         val abLength = hypot(abX, abY)
         val cbLength = hypot(cbX, cbY)
 
-        if (abLength == 0.0 || cbLength == 0.0) return 0.0
+        if (abLength <= 1e-12 || cbLength <= 1e-12 || !abLength.isFinite() || !cbLength.isFinite()) return null
 
         val normalizedDot = ((abX / abLength) * (cbX / cbLength) +
             (abY / abLength) * (cbY / cbLength)).coerceIn(-1.0, 1.0)

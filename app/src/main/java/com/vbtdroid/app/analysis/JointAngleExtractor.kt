@@ -15,6 +15,7 @@ data class FrameAngles(
     val elbowDeg: Double?,
     val wristDeg: Double?,
     val confidence: Double,
+    val confidenceByJoint: Map<String, Double> = emptyMap(),
 )
 
 object JointAngleExtractor {
@@ -43,27 +44,31 @@ object JointAngleExtractor {
     ): FrameAngles {
         val side = if (averageVisibility(pose, left) >= averageVisibility(pose, right)) left else right
         val validAngleVisibilities = mutableListOf<Float>()
+        val confidenceByJoint = mutableMapOf<String, Double>()
 
         fun point(index: Int): Point2? {
             val visibility = pose.visibility[index] ?: return null
             if (visibility < minVisibility) return null
-            return pose.landmarks[index]
+            return pose.pixelPoint(index)
         }
 
-        fun angle(a: Int, b: Int, c: Int): Double? {
+        fun angle(name: String, a: Int, b: Int, c: Int): Double? {
             val pa = point(a) ?: return null
             val pb = point(b) ?: return null
             val pc = point(c) ?: return null
-            validAngleVisibilities += listOfNotNull(pose.visibility[a], pose.visibility[b], pose.visibility[c])
-            return JointAngles.correctAzimuth(JointAngles.angle(pa, pb, pc), cameraAngleDeg)
+            val visibilities = listOfNotNull(pose.visibility[a], pose.visibility[b], pose.visibility[c])
+            val raw = JointAngles.angle(pa, pb, pc) ?: return null
+            validAngleVisibilities += visibilities
+            confidenceByJoint[name] = visibilities.min().toDouble()
+            return JointAngles.correctAzimuth(raw, cameraAngleDeg)
         }
 
-        val hip = angle(side.shoulder, side.hip, side.knee)
-        val knee = angle(side.hip, side.knee, side.ankle)
-        val ankle = angle(side.knee, side.ankle, side.footIndex)
-        val shoulder = angle(side.hip, side.shoulder, side.elbow)
-        val elbow = angle(side.shoulder, side.elbow, side.wrist)
-        val wrist = angle(side.elbow, side.wrist, side.index)
+        val hip = angle("hip_angle_deg", side.shoulder, side.hip, side.knee)
+        val knee = angle("knee_angle_deg", side.hip, side.knee, side.ankle)
+        val ankle = angle("ankle_angle_deg", side.knee, side.ankle, side.footIndex)
+        val shoulder = angle("shoulder_angle_deg", side.hip, side.shoulder, side.elbow)
+        val elbow = angle("elbow_angle_deg", side.shoulder, side.elbow, side.wrist)
+        val wrist = angle("wrist_angle_deg", side.elbow, side.wrist, side.index)
 
         val trunk = run {
             val shoulderPoint = point(side.shoulder)
@@ -71,14 +76,16 @@ object JointAngleExtractor {
             if (shoulderPoint == null || hipPoint == null) {
                 null
             } else {
-                JointAngles.correctAzimuth(
-                    JointAngles.angle(
-                        Point2(hipPoint.x, hipPoint.y - 1.0),
-                        hipPoint,
-                        shoulderPoint,
-                    ),
-                    cameraAngleDeg,
-                )
+                JointAngles.angle(
+                    Point2(hipPoint.x, hipPoint.y - 1.0),
+                    hipPoint,
+                    shoulderPoint,
+                )?.let { raw ->
+                    val visibility = minOf(pose.visibility[side.shoulder] ?: 0f, pose.visibility[side.hip] ?: 0f)
+                    validAngleVisibilities += visibility
+                    confidenceByJoint["trunk_angle_deg"] = visibility.toDouble()
+                    JointAngles.correctAzimuth(raw, cameraAngleDeg)
+                }
             }
         }
 
@@ -93,6 +100,7 @@ object JointAngleExtractor {
             elbowDeg = elbow,
             wristDeg = wrist,
             confidence = confidence,
+            confidenceByJoint = confidenceByJoint,
         )
     }
 

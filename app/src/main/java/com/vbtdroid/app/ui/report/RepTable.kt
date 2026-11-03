@@ -71,6 +71,13 @@ internal fun metricDisplayName(metric: MetricId): String = stringResource(
         MetricId.MEAN_POWER -> R.string.metric_mean_power
         MetricId.VOLUME_LOAD -> R.string.metric_volume_load
         MetricId.WORK -> R.string.metric_work
+        MetricId.HIP_ANGLE -> R.string.metric_hip_angle
+        MetricId.KNEE_ANGLE -> R.string.metric_knee_angle
+        MetricId.ANKLE_ANGLE -> R.string.metric_ankle_angle
+        MetricId.TRUNK_ANGLE -> R.string.metric_trunk_angle
+        MetricId.SHOULDER_ANGLE -> R.string.metric_shoulder_angle
+        MetricId.ELBOW_ANGLE -> R.string.metric_elbow_angle
+        MetricId.WRIST_ANGLE -> R.string.metric_wrist_angle
         else -> error("No report display mapping for ${metric.id}")
     },
 )
@@ -81,6 +88,8 @@ internal fun formatMetricValue(value: Double?, metric: MetricId): String {
     val decimals = when (metric) {
         MetricId.MEAN_FORCE, MetricId.MEAN_POWER, MetricId.WORK, MetricId.VOLUME_LOAD -> 1
         MetricId.VELOCITY_LOSS, MetricId.SET_VELOCITY_LOSS, MetricId.STICKING_POINT -> 1
+        MetricId.HIP_ANGLE, MetricId.KNEE_ANGLE, MetricId.ANKLE_ANGLE, MetricId.TRUNK_ANGLE,
+        MetricId.SHOULDER_ANGLE, MetricId.ELBOW_ANGLE, MetricId.WRIST_ANGLE -> 1
         else -> 3
     }
     return "%.${decimals}f".format(value)

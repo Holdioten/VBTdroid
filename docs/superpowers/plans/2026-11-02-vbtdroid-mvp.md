@@ -677,7 +677,7 @@ Expected: FAIL。
 
 - [ ] **Step 3: 实现**
 
-`angle` 用 `acos` 夹紧 `[-1,1]`，退化向量返回 `0.0`。  
+`angle` 用 `acos` 夹紧 `[-1,1]`，退化向量返回 `null` 并由角度边界记录不可用原因。  
 `correctAzimuth`：`atan(tan(image) / sin(camera))`，角度制；`camera=90` 原样返回；`image>90` 先按 `180-image` 校正，再取 `180-result`；`image=90` 返回 90。  
 `Quality`：`trackConfidence<0.6` 加 `LOW_TRACK_CONFIDENCE`；`occlusionPct>20` 加 `HIGH_OCCLUSION`；`!cameraLevel` 加 `CAMERA_NOT_LEVEL`；`calibrationConfidence<0.5` 加 `LOW_CALIBRATION`。  
 `JsonExport` 用 `kotlinx.serialization.Json { prettyPrint = true }`。
@@ -1098,7 +1098,7 @@ Expected: FAIL。
 
 - [ ] **Step 3: 实现**
 
-管线：解码 → 首帧检测/用户 ROI → 逐帧跟踪 → 标定 → 姿态（每 2–3 帧）→ `Kinematics.derive` → `PhaseSegmenter.segment` → `RepMetricsCalculator.compute`（逐 rep，传入当前最佳 MCV）→ `SetSummary`。  
+管线：解码 → 首帧检测/用户 ROI → 逐帧跟踪 → 标定 → 姿态（每 2–3 帧）→ `Kinematics.derive`（均值/峰值独立滤波）→ `PhaseSegmenter.segment` → 先计算全部 MCV，再按全组最佳 MCV 计算逐 rep 速度损失 → `SetSummary`。  
 进度：`onProgress(decodedFrames / totalFrames)`。  
 报告 UI：rep 表（MCV/MPV/PV/ROM/VL/粘滞点/力/功率）、速度曲线、杠铃轨迹、相位条、质量警告。  
 所有文案走 `stringResource`；指标显示名通过 `MetricId` + `docs/glossary.md` 映射，禁止硬编码中文/英文。
@@ -1220,7 +1220,7 @@ Expected: FAIL。
 - [ ] **Step 3: 实现**
 
 Room 三表：Session/Set/Rep；`RepEntity.metricsJson` 存 JSON。  
-`CsvExporter`：列 `rep,mcv,mpv,pv,rom,vl,sticking,meanForce,meanPower`；null 输出空字段。  
+`CsvExporter`：列 `rep,rep_duration_s,mcv_mps,mpv_mps,peak_velocity_mps,rom_total_m,rom_concentric_m,velocity_loss_pct,sticking_point_pct,mean_force_n,mean_power_w`；null 输出空字段。  
 `Agreement`：bias = mean(diff)，SD = sample SD，LOA = bias ± 1.96·SD；ICC(2,1) 用双向随机、绝对一致公式。  
 验证工具：读 ground truth CSV + App 导出 CSV，输出 `AgreementResult`。
 

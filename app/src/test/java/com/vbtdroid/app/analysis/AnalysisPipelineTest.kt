@@ -37,7 +37,7 @@ class AnalysisPipelineTest {
             AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, 100.0),
         )
 
-        assertEquals(1, result.reps.size)
+        assertEquals(result.quality.warnings.toString(), 1, result.reps.size)
         assertTrue(result.reps[0].mcvMps > 0.0)
         assertEquals(1.0, result.quality.trackConfidence, 1e-6)
         assertEquals(1, result.summary.repCount)
@@ -78,6 +78,19 @@ class AnalysisPipelineTest {
             assertTrue(expected.message.orEmpty().contains("ROI"))
         }
         assertTrue(decoder.bitmaps.all(Bitmap::isRecycled))
+    }
+
+    @Test
+    fun `high occlusion disables joint angles and missing load has reason`() = runTest {
+        val pipeline = AnalysisPipeline(FakeDecoder(), FakeTracker(confidence = 0.5), FakePose())
+
+        val result = pipeline.analyze(AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, null))
+
+        assertTrue(result.quality.occlusionPct > 20.0)
+        assertTrue(!result.quality.anglesAvailable)
+        assertTrue(result.frameAnglesByRep.isEmpty())
+        assertTrue(result.quality.warnings.contains("ANGLES_UNAVAILABLE_OCCLUSION"))
+        assertTrue(result.quality.warnings.contains("LOAD_REQUIRED"))
     }
 
     @Test
@@ -155,6 +168,32 @@ class AnalysisPipelineTest {
         assertEquals(listOf("REP_SKIPPED_2"), computation.warnings)
     }
 
+    @Test
+    fun `velocity loss uses full set best for every rep`() {
+        val samples = listOf(
+            motion(0.0, 0.0),
+            motion(1.0, 1.0),
+            motion(2.0, 2.0),
+            motion(3.0, 3.5),
+        )
+        val slices = listOf(
+            RepSlice(1, 0.0, 1.0, listOf(Phase(PhaseType.CONCENTRIC, 0.0, 1.0))),
+            RepSlice(2, 2.0, 3.0, listOf(Phase(PhaseType.CONCENTRIC, 2.0, 3.0))),
+        )
+
+        val result = computeValidReps(slices, samples, null)
+
+        assertEquals(100.0 / 3.0, result.reps[0].velocityLossPct!!, 1e-9)
+        assertEquals(0.0, result.reps[1].velocityLossPct!!, 1e-9)
+    }
+
+    @Test
+    fun `total work is null when no rep has valid work`() {
+        val summary = summarize(listOf(metricsWithoutWork()), 100.0)
+
+        assertNull(summary.totalWorkJ)
+    }
+
     private class FakeDecoder(frameCount: Int = syntheticY.size) : VideoDecoder(
         RuntimeEnvironment.getApplication(),
     ) {
@@ -177,7 +216,10 @@ class AnalysisPipelineTest {
         override fun decode(uri: Uri, maxLongSide: Int) = frames.asFlow()
     }
 
-    private class FakeTracker(private val provideRoi: Boolean = true) : PlateTracker() {
+    private class FakeTracker(
+        private val provideRoi: Boolean = true,
+        private val confidence: Double = 1.0,
+    ) : PlateTracker() {
         var initialRoiCalls = 0
             private set
         var initializedRoi: RectF? = null
@@ -202,7 +244,7 @@ class AnalysisPipelineTest {
                 xPx = 16.0,
                 yPx = syntheticY[index],
                 majorAxisPx = 45.0,
-                confidence = 1.0,
+                confidence = confidence,
             )
         }
     }
@@ -213,6 +255,16 @@ class AnalysisPipelineTest {
 
     private companion object {
         const val FPS = 10.0
+
+        fun metricsWithoutWork() = com.vbtdroid.core.metrics.RepMetrics(
+            repIndex = 1, durationS = 1.0, romTotalM = 0.5, romConcentricM = 0.5,
+            meanVelocityMps = 0.5, mcvMps = 0.5, mpvMps = 0.5, peakVelocityMps = 0.5,
+            peakAccelerationMps2 = null, peakDecelerationMps2 = null,
+            stickingPointPct = null, velocityLossPct = null,
+            barPathHorizontalRangeM = 0.0, barPathDeviationM = 0.0,
+            meanForceN = null, peakForceN = null, meanPowerW = null, peakPowerW = null,
+            impulseNs = null, workJ = null,
+        )
 
         fun motion(tSec: Double, yM: Double) = MotionSample(
             tSec = tSec,

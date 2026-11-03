@@ -3,6 +3,7 @@ package com.vbtdroid.app.analysis
 import android.graphics.RectF
 import android.net.Uri
 import com.vbtdroid.app.video.VideoDecoder
+import com.vbtdroid.app.video.VideoLimits
 import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.core.calibration.Calibration
@@ -10,6 +11,7 @@ import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.Kinematics
 import com.vbtdroid.core.metrics.LvpEstimate
 import com.vbtdroid.core.metrics.MotionSample
+import com.vbtdroid.core.metrics.RepMetricException
 import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.metrics.RepMetricsCalculator
 import com.vbtdroid.core.model.Lift
@@ -50,6 +52,7 @@ data class AnalysisResult(
     val quality: QualityFlags,
     val fps: Double,
     val motionSamples: List<MotionSample> = emptyList(),
+    val peakMotionSamples: List<MotionSample> = emptyList(),
     val repSlices: List<RepSlice> = emptyList(),
     val frameAnglesByRep: Map<Int, List<FrameAngles>> = emptyMap(),
     val lift: Lift = Lift.SQUAT,
@@ -89,9 +92,14 @@ class AnalysisPipeline(
             request.cameraAngleDeg <= 90.0) {
             "Camera angle must be in (0, 90]"
         }
-        require(request.loadKg == null || request.loadKg.isFinite()) { "Load must be finite" }
+        require(request.loadKg == null || (request.loadKg.isFinite() && request.loadKg > 0.0)) {
+            "Load must be positive and finite"
+        }
+        tracker.reset()
+        poseEstimator.reset()
 
         val meta = decoder.readMeta(request.uri)
+        VideoLimits.requireSupportedDuration(meta.durationSec)
         val metadataFps = meta.effectiveFps.takeIf { it > 0.0 }
             ?: meta.nominalFps.takeIf { it > 0.0 }
             ?: 0.0
@@ -163,12 +171,19 @@ class AnalysisPipeline(
             cameraAngleDeg = request.cameraAngleDeg,
         ).copy(cameraLevel = request.cameraLevel)
         val barSamples = observations.map(calibration::toMeters)
-        val motionSamples = Kinematics.derive(barSamples)
-        val segmentedReps = PhaseSegmenter.segment(motionSamples, request.lift)
-        val computation = computeValidReps(segmentedReps, motionSamples, request.loadKg)
+        val motionSamples = Kinematics.derive(barSamples, window = MEAN_FILTER_WINDOW, polyOrder = FILTER_ORDER)
+        val peakMotionSamples = Kinematics.derive(barSamples, window = PEAK_FILTER_WINDOW, polyOrder = FILTER_ORDER)
+        val segmentation = PhaseSegmenter.segmentDetailed(motionSamples, request.lift)
+        val segmentedReps = segmentation.reps
+        val computation = computeValidReps(
+            segmentedReps = segmentedReps,
+            motionSamples = motionSamples,
+            loadKg = request.loadKg,
+            peakMotionSamples = peakMotionSamples,
+        )
         val reps = computation.reps
         val validSlices = computation.validSlices
-        val extraWarnings = computation.warnings.toMutableList()
+        val extraWarnings = (computation.warnings + segmentation.warnings).toMutableList()
 
         if (!poseProducedAngles) extraWarnings += "POSE_UNAVAILABLE"
         if (poseFailed && poseProducedAngles) extraWarnings += "POSE_PARTIAL"
@@ -181,23 +196,37 @@ class AnalysisPipeline(
         } ?: 0.0
         val fps = metadataFps.takeIf { it > 0.0 } ?: measuredFps
         val trackConfidence = observations.map { it.confidence.coerceIn(0.0, 1.0) }.average()
-        val occlusionPct = if (decodedFrames > 0) missedFrames * 100.0 / decodedFrames else 100.0
-        val repConfidence = if (segmentedReps.isEmpty()) 0.0 else reps.size.toDouble() / segmentedReps.size
+        val lowConfidenceFrames = observations.count { it.confidence < 0.6 }
+        val occlusionPct = if (decodedFrames > 0) {
+            (missedFrames + lowConfidenceFrames) * 100.0 / decodedFrames
+        } else {
+            100.0
+        }
+        val repConfidence = if (validSlices.isEmpty()) {
+            0.0
+        } else {
+            validSlices.map { PhaseSegmenter.confidence(it) }.average()
+        }
         val evaluatedQuality = Quality.evaluate(
             trackConfidence = trackConfidence,
             occlusionPct = occlusionPct,
             repConfidence = repConfidence,
             calibrationConfidence = observations.first().confidence.coerceIn(0.0, 1.0),
             cameraLevel = request.cameraLevel,
+            loadProvided = request.loadKg != null,
         )
         val quality = evaluatedQuality.copy(
             warnings = (evaluatedQuality.warnings + extraWarnings).distinct(),
         )
-        val anglesByRep = validSlices.mapNotNull { slice ->
-            poseAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
-                .takeIf { it.isNotEmpty() }
-                ?.let { slice.index to it }
-        }.toMap()
+        val anglesByRep = if (!quality.anglesAvailable) {
+            emptyMap()
+        } else {
+            validSlices.mapNotNull { slice ->
+                poseAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { slice.index to it }
+            }.toMap()
+        }
 
         onProgress(1f)
         AnalysisResult(
@@ -206,7 +235,16 @@ class AnalysisPipeline(
             quality = quality,
             fps = fps,
             motionSamples = motionSamples,
+            peakMotionSamples = peakMotionSamples,
             repSlices = validSlices,
+            filterConfig = FilterConfigExport(
+                meanWindow = MEAN_FILTER_WINDOW,
+                meanPolyOrder = FILTER_ORDER,
+                peakWindow = PEAK_FILTER_WINDOW,
+                peakPolyOrder = FILTER_ORDER,
+                meanAppliesTo = listOf("mcv_mps", "mpv_mps", "mean_force_n", "mean_power_w"),
+                peakAppliesTo = listOf("peak_velocity_mps", "peak_acceleration_mps2", "peak_force_n", "peak_power_w"),
+            ),
             frameAnglesByRep = anglesByRep,
             lift = request.lift,
             variant = request.variant,
@@ -218,6 +256,8 @@ class AnalysisPipeline(
             calibration = calibration,
             repWarnings = reps.associate { rep ->
                 rep.repIndex to buildList {
+                    addAll(rep.unavailableReasons)
+                    addAll(rep.qualityWarnings)
                     if (request.loadKg == null) add("LOAD_REQUIRED")
                     if (!request.cameraLevel) add("CAMERA_NOT_LEVEL_ESTIMATE")
                     if (trackConfidence < 0.6) add("LOW_TRACK_CONFIDENCE")
@@ -225,13 +265,16 @@ class AnalysisPipeline(
                     if (validSlices.firstOrNull { it.index == rep.repIndex }?.phases?.any { it.manual } == true) {
                         add("MANUAL_PHASES")
                     }
-                }
+                }.distinct()
             },
         )
     }
 
     private companion object {
         const val POSE_FRAME_STRIDE = 3
+        const val MEAN_FILTER_WINDOW = 7
+        const val PEAK_FILTER_WINDOW = 5
+        const val FILTER_ORDER = 2
     }
 }
 
@@ -241,32 +284,42 @@ internal data class RepComputation(
     val warnings: List<String>,
 )
 
-/** Computes reps in forward order; invalid reps never enter later velocity-loss baselines. */
+/** Computes every MCV before assigning velocity loss against the full-set best. */
 internal fun computeValidReps(
     segmentedReps: List<RepSlice>,
     motionSamples: List<MotionSample>,
     loadKg: Double?,
+    peakMotionSamples: List<MotionSample> = motionSamples,
 ): RepComputation {
-    val reps = mutableListOf<RepMetrics>()
-    val validSlices = mutableListOf<RepSlice>()
+    val valid = mutableListOf<Pair<RepSlice, RepMetrics>>()
     val warnings = mutableListOf<String>()
-    var bestMcvSoFar: Double? = null
     for (slice in segmentedReps) {
         try {
             val metrics = RepMetricsCalculator.compute(
                 rep = slice,
                 samples = motionSamples,
                 loadKg = loadKg,
-                bestMcvMps = bestMcvSoFar,
+                peakSamples = peakMotionSamples,
             )
-            reps += metrics
-            validSlices += slice
-            bestMcvSoFar = maxOf(bestMcvSoFar ?: 0.0, metrics.mcvMps)
+            valid += slice to metrics
+        } catch (error: RepMetricException) {
+            warnings += "REP_${slice.index}_${error.reason}"
         } catch (_: IllegalArgumentException) {
             warnings += "REP_SKIPPED_${slice.index}"
         }
     }
-    return RepComputation(reps, validSlices, warnings)
+    return RepComputation(
+        reps = withFullSetVelocityLoss(valid.map { it.second }),
+        validSlices = valid.map { it.first },
+        warnings = warnings,
+    )
+}
+
+internal fun withFullSetVelocityLoss(reps: List<RepMetrics>): List<RepMetrics> {
+    val best = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return reps
+    return reps.map { rep ->
+        rep.copy(velocityLossPct = (best - rep.mcvMps) / best * 100.0)
+    }
 }
 
 internal fun summarize(reps: List<RepMetrics>, loadKg: Double?): SetSummary {
@@ -283,6 +336,8 @@ internal fun summarize(reps: List<RepMetrics>, loadKg: Double?): SetSummary {
             null
         },
         totalVolumeKg = positiveLoad?.times(reps.size),
-        totalWorkJ = positiveLoad?.let { reps.sumOf { it.workJ ?: 0.0 } },
+        totalWorkJ = positiveLoad?.let {
+            reps.mapNotNull { rep -> rep.workJ }.takeIf { work -> work.isNotEmpty() }?.sum()
+        },
     )
 }

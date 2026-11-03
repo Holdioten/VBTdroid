@@ -25,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
+import com.vbtdroid.app.analysis.FrameAngles
 import com.vbtdroid.app.export.CsvExporter
 import com.vbtdroid.app.export.ExportMapper
 import com.vbtdroid.core.io.JsonExport
@@ -202,6 +203,14 @@ fun ReportScreen(
                         if (slice.phases.any { it.manual }) {
                             Text(stringResource(R.string.report_manual_phases))
                         }
+                        val repAngles = current.frameAnglesByRep[repMetrics.repIndex].orEmpty()
+                        if (repAngles.isNotEmpty()) {
+                            Text(stringResource(R.string.report_key_frame_angles))
+                            selectKeyFrameAngles(repMetrics, slice, current.motionSamples, repAngles).forEach { keyFrame ->
+                                Text(stringResource(keyFrameLabel(keyFrame.kind)))
+                                AngleRows(keyFrame.angles)
+                            }
+                        }
                     }
                     if (manualEditRejected) {
                         Text(
@@ -220,6 +229,18 @@ fun ReportScreen(
                 ) {
                     Text(stringResource(R.string.report_quality), style = MaterialTheme.typography.titleMedium)
                     Text(stringResource(R.string.report_fps, current.fps))
+                    current.filterConfig?.let { filter ->
+                        Text(
+                            stringResource(
+                                R.string.report_filter_config,
+                                filter.method,
+                                filter.meanWindow,
+                                filter.meanPolyOrder,
+                                filter.peakWindow,
+                                filter.peakPolyOrder,
+                            ),
+                        )
+                    }
                     Text(
                         stringResource(
                             R.string.report_quality_values,
@@ -238,6 +259,38 @@ fun ReportScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+private fun keyFrameLabel(kind: KeyFrameKind): Int = when (kind) {
+    KeyFrameKind.START -> R.string.report_key_frame_start
+    KeyFrameKind.BOTTOM_OR_TOUCH -> R.string.report_key_frame_bottom
+    KeyFrameKind.STICKING -> R.string.report_key_frame_sticking
+    KeyFrameKind.LOCKOUT -> R.string.report_key_frame_lockout
+}
+
+@Composable
+private fun AngleRows(angles: FrameAngles) {
+    val values = listOf(
+        Triple(MetricId.HIP_ANGLE, angles.hipDeg, "hip_angle_deg"),
+        Triple(MetricId.KNEE_ANGLE, angles.kneeDeg, "knee_angle_deg"),
+        Triple(MetricId.ANKLE_ANGLE, angles.ankleDeg, "ankle_angle_deg"),
+        Triple(MetricId.TRUNK_ANGLE, angles.trunkDeg, "trunk_angle_deg"),
+        Triple(MetricId.SHOULDER_ANGLE, angles.shoulderDeg, "shoulder_angle_deg"),
+        Triple(MetricId.ELBOW_ANGLE, angles.elbowDeg, "elbow_angle_deg"),
+        Triple(MetricId.WRIST_ANGLE, angles.wristDeg, "wrist_angle_deg"),
+    )
+    values.forEach { (metric, value, key) ->
+        value?.let {
+            Text(
+                stringResource(
+                    R.string.report_angle_confidence,
+                    metricDisplayName(metric),
+                    it,
+                    angles.confidenceByJoint[key] ?: angles.confidence,
+                ),
+            )
         }
     }
 }
@@ -266,6 +319,12 @@ private fun qualityWarningText(warning: String): String = stringResource(
         warning == "POSE_UNAVAILABLE" -> R.string.quality_pose_unavailable
         warning == "POSE_PARTIAL" -> R.string.quality_pose_partial
         warning == "NO_VALID_REPS" -> R.string.quality_no_valid_reps
+        warning == "LOAD_REQUIRED" -> R.string.quality_load_required
+        warning == "CAMERA_NOT_LEVEL_ESTIMATE" -> R.string.quality_camera_estimate
+        warning == "ANGLES_UNAVAILABLE_OCCLUSION" -> R.string.quality_angles_unavailable_occlusion
+        warning == "INCOMPLETE_REP_NO_LOCKOUT" -> R.string.quality_incomplete_rep
+        warning == "ACCELERATION_UNAVAILABLE" -> R.string.quality_acceleration_unavailable
+        warning.contains("NON_MONOTONIC_CONCENTRIC") -> R.string.quality_non_monotonic
         warning.startsWith("REP_SKIPPED_") -> R.string.quality_rep_skipped
         else -> R.string.quality_unknown
     },

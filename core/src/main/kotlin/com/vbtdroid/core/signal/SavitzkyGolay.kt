@@ -15,7 +15,7 @@ object SavitzkyGolay {
 }
 
 internal object LocalPolynomial {
-    data class Result(val value: Double, val firstDerivative: Double, val secondDerivative: Double)
+    data class Result(val value: Double, val firstDerivative: Double, val secondDerivative: Double?)
 
     fun fit(
         times: DoubleArray,
@@ -36,7 +36,7 @@ internal object LocalPolynomial {
         val degree = minOf(polyOrder, count - 1)
         val scale = (start until end).maxOf { kotlin.math.abs(times[it] - times[centerIndex]) }
         if (scale == 0.0 || !scale.isFinite()) {
-            return Result(values[centerIndex], 0.0, 0.0)
+            return Result(values[centerIndex], 0.0, null)
         }
 
         // Coordinates are normalized around the evaluation point to keep the fit conditioned.
@@ -60,7 +60,7 @@ internal object LocalPolynomial {
         return Result(
             value = coefficients[0],
             firstDerivative = if (degree >= 1) coefficients[1] / scale else 0.0,
-            secondDerivative = if (degree >= 2) 2.0 * coefficients[2] / (scale * scale) else 0.0,
+            secondDerivative = if (degree >= 2) 2.0 * coefficients[2] / (scale * scale) else null,
         )
     }
 
