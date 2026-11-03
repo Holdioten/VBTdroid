@@ -18,6 +18,7 @@
     <string name="import_default_plate_diameter">0.45</string>
     <string name="import_default_camera_angle">90</string>
     <string name="import_camera_level">相机保持水平</string>
+    <string name="import_analyze_pose">分析关节角</string>
     <string name="import_start_analysis">开始分析</string>
     <string name="import_analysis_progress">分析进度：%1$d%%</string>
     <string name="import_analysis_failed">分析失败，请检查视频、杠铃片区域和设置</string>
@@ -74,6 +75,7 @@
     <string name="quality_low_rep_confidence">重复分割置信度较低</string>
     <string name="quality_pose_unavailable">姿态不可用；杠铃指标不受影响</string>
     <string name="quality_pose_partial">部分帧姿态不可用</string>
+    <string name="quality_pose_low_confidence">关节角置信度较低，请结合视频复核</string>
     <string name="quality_no_valid_reps">未识别到有效重复</string>
     <string name="quality_rep_skipped">已跳过无效重复</string>
     <string name="quality_unknown">存在未知质量警告</string>
@@ -133,6 +135,9 @@
 
     <string name="report_filter_config">滤波：%1$s；均值窗口 %2$d/阶数 %3$d；峰值窗口 %4$d/阶数 %5$d</string>
     <string name="report_key_frame_angles">关键帧关节角</string>
+    <string name="report_joint_angles_disabled_title">关节角分析已关闭</string>
+    <string name="report_joint_angles_disabled_hint">本次未运行姿态估计；重新分析时打开“分析关节角”即可查看关节角度。</string>
+    <string name="report_joint_angles_unavailable">本组未获得可用关节角</string>
     <string name="report_key_frame_start">起始</string>
     <string name="report_key_frame_bottom">底部/触胸</string>
     <string name="report_key_frame_sticking">粘滞点</string>

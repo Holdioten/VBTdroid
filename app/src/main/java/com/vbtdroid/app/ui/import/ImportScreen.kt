@@ -80,6 +80,7 @@ fun ImportScreen(
     var plateDiameterText by remember { mutableStateOf(defaultPlateDiameter) }
     var cameraAngleText by remember { mutableStateOf(defaultCameraAngle) }
     var cameraLevel by remember { mutableStateOf(true) }
+    var analyzePose by remember { mutableStateOf(true) }
 
     val currentPreview = preview
     DisposableEffect(currentPreview) {
@@ -226,6 +227,10 @@ fun ImportScreen(
                 Text(stringResource(R.string.import_camera_level))
                 Switch(checked = cameraLevel, onCheckedChange = { cameraLevel = it }, enabled = !analyzing)
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.import_analyze_pose))
+                Switch(checked = analyzePose, onCheckedChange = { analyzePose = it }, enabled = !analyzing)
+            }
 
             Spacer(Modifier.height(16.dp))
             Text(stringResource(R.string.import_roi_title), style = MaterialTheme.typography.titleMedium)
@@ -274,6 +279,7 @@ fun ImportScreen(
                                 plateDiameterM = plateDiameter ?: return@let,
                                 loadKg = if (loadText.isBlank()) null else loadKg,
                                 cameraLevel = cameraLevel,
+                                analyzePose = analyzePose,
                                 roi = RectF(roi ?: return@let),
                             ),
                         )

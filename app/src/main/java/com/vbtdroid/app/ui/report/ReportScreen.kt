@@ -263,6 +263,25 @@ fun ReportScreen(
                 }
             }
         }
+        if (!current.analyzePose) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.report_joint_angles_disabled_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(R.string.report_joint_angles_disabled_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.report_repetitions), style = MaterialTheme.typography.titleMedium)
@@ -317,11 +336,15 @@ fun ReportScreen(
                             Text(stringResource(R.string.report_manual_phases))
                         }
                         val repAngles = current.frameAnglesByRep[repMetrics.repIndex].orEmpty()
-                        if (repAngles.isNotEmpty()) {
-                            Text(stringResource(R.string.report_key_frame_angles))
-                            selectKeyFrameAngles(repMetrics, slice, current.motionSamples, repAngles).forEach { keyFrame ->
-                                Text(stringResource(keyFrameLabel(keyFrame.kind)))
-                                AngleRows(keyFrame.angles)
+                        if (current.analyzePose) {
+                            if (repAngles.isNotEmpty()) {
+                                Text(stringResource(R.string.report_key_frame_angles))
+                                selectKeyFrameAngles(repMetrics, slice, current.motionSamples, repAngles).forEach { keyFrame ->
+                                    Text(stringResource(keyFrameLabel(keyFrame.kind)))
+                                    AngleRows(keyFrame.angles)
+                                }
+                            } else {
+                                Text(stringResource(R.string.report_joint_angles_unavailable))
                             }
                         }
                     }
@@ -438,6 +461,7 @@ private fun qualityWarningText(warning: String): String = stringResource(
         warning == "INCOMPLETE_REP_NO_LOCKOUT" -> R.string.quality_incomplete_rep
         warning == "INCOMPLETE_REP" -> R.string.quality_incomplete_rep
         warning == "NO_LOCKOUT" -> R.string.quality_no_lockout
+        warning == "POSE_LOW_CONFIDENCE" -> R.string.quality_pose_low_confidence
         warning == "ACCELERATION_UNAVAILABLE" -> R.string.quality_acceleration_unavailable
         warning.contains("NON_MONOTONIC_CONCENTRIC") -> R.string.quality_non_monotonic
         warning.startsWith("REP_SKIPPED_") -> R.string.quality_rep_skipped

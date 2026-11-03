@@ -18,6 +18,7 @@
     <string name="import_default_plate_diameter">0.45</string>
     <string name="import_default_camera_angle">90</string>
     <string name="import_camera_level">Camera is level</string>
+    <string name="import_analyze_pose">Analyze joint angles</string>
     <string name="import_start_analysis">Start analysis</string>
     <string name="import_analysis_progress">Analysis progress: %1$d%%</string>
     <string name="import_analysis_failed">Analysis failed. Check the video, plate region, and settings.</string>
@@ -49,6 +50,9 @@
     <string name="report_phase_edit_hint">Drag phase boundaries to correct them, then tap Done.</string>
     <string name="report_manual_phases">Manual phases</string>
     <string name="report_manual_invalid">Not enough valid samples in these phases; metrics were not updated</string>
+    <string name="report_joint_angles_disabled_title">Joint-angle analysis is off</string>
+    <string name="report_joint_angles_disabled_hint">Pose estimation did not run. Turn on “Analyze joint angles” when re-analyzing to see joint angles.</string>
+    <string name="report_joint_angles_unavailable">No joint-angle data for this rep</string>
     <string name="report_quality">Quality and warnings</string>
     <string name="report_fps">Effective frame rate: %1$.2f fps</string>
     <string name="report_quality_values">Track confidence %1$.2f; occlusion %2$.1f%%; segmentation confidence %3$.2f; calibration confidence %4$.2f</string>
@@ -91,6 +95,7 @@
     <string name="quality_low_rep_confidence">Low repetition segmentation confidence</string>
     <string name="quality_pose_unavailable">Pose unavailable; bar metrics are unaffected</string>
     <string name="quality_pose_partial">Pose unavailable on some frames</string>
+    <string name="quality_pose_low_confidence">Joint-angle confidence is low; review against the video</string>
     <string name="quality_no_valid_reps">No valid repetitions detected</string>
     <string name="quality_rep_skipped">An invalid repetition was skipped</string>
     <string name="quality_incomplete_rep">A rep missing an eccentric/concentric phase or too short was excluded from formal results</string>
