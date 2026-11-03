@@ -68,8 +68,8 @@ object PhaseSegmenter {
         val runsWithLockouts = detectLockouts(classify(samples, config.vEps), config.lockoutSec)
         val runs = mergeShortRuns(runsWithLockouts, config.minPhaseSec)
         val result = when (lift) {
-            Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs)
-            Lift.DEADLIFT -> segmentDeadlifts(runs)
+            Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs, config.lockoutSec)
+            Lift.DEADLIFT -> segmentDeadlifts(runs, config.lockoutSec)
         }
         return PhaseSegmentation(
             reps = result.reps,
@@ -193,7 +193,7 @@ object PhaseSegmenter {
         ) emptyList() else runs
     }
 
-    private fun segmentEccentricLifts(runs: List<Run>): MutableSegmentation {
+    private fun segmentEccentricLifts(runs: List<Run>, lockoutSec: Double): MutableSegmentation {
         val reps = mutableListOf<RepSlice>()
         var phases = mutableListOf<Phase>()
         var incomplete = 0
@@ -220,7 +220,7 @@ object PhaseSegmenter {
             }
             if (phases.isEmpty()) continue
             if (run.type == PhaseType.LOCKOUT && phases.any { it.type == PhaseType.CONCENTRIC }) {
-                phases += run.toPhase()
+                phases += run.toPhase().let { it.copy(endSec = minOf(it.endSec, it.startSec + lockoutSec)) }
                 finish()
             } else {
                 phases += run.toPhase()
@@ -230,7 +230,7 @@ object PhaseSegmenter {
         return MutableSegmentation(reps, incomplete)
     }
 
-    private fun segmentDeadlifts(runs: List<Run>): MutableSegmentation {
+    private fun segmentDeadlifts(runs: List<Run>, lockoutSec: Double): MutableSegmentation {
         val reps = mutableListOf<RepSlice>()
         var phases = mutableListOf<Phase>()
         var incomplete = 0
@@ -254,7 +254,7 @@ object PhaseSegmenter {
             }
             if (phases.isEmpty()) continue
             if (run.type == PhaseType.LOCKOUT && phases.any { it.type == PhaseType.CONCENTRIC }) {
-                phases += run.toPhase()
+                phases += run.toPhase().let { it.copy(endSec = minOf(it.endSec, it.startSec + lockoutSec)) }
                 finish()
             } else if (run.type != PhaseType.ECCENTRIC) {
                 phases += run.toPhase()

@@ -130,7 +130,7 @@ class PhaseSegmenterTest {
         val rep = PhaseSegmenter.segment(samples, Lift.SQUAT).single()
 
         assertEquals(PhaseType.LOCKOUT, rep.phases.last().type)
-        assertEquals(0.12, rep.phases.last().endSec - rep.phases.last().startSec, 1e-9)
+        assertEquals(0.10, rep.phases.last().endSec - rep.phases.last().startSec, 1e-9)
     }
 
     private fun lockoutSamples(lockoutSteps: Int, stepSec: Double = 0.05) = buildList {

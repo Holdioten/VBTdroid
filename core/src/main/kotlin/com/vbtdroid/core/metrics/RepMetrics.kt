@@ -34,6 +34,7 @@ class RepMetricException(val reason: String) : IllegalArgumentException(reason)
 object RepMetricsCalculator {
     private const val GRAVITY_MPS2 = 9.80665
     private const val MONOTONIC_TOLERANCE_M = 1e-6
+    private const val STICKING_EPSILON = 1e-9
     const val NON_MONOTONIC_CONCENTRIC = "NON_MONOTONIC_CONCENTRIC"
     const val ACCELERATION_UNAVAILABLE = "ACCELERATION_UNAVAILABLE"
     const val LOAD_REQUIRED = "LOAD_REQUIRED"
@@ -94,16 +95,28 @@ object RepMetricsCalculator {
             else -> mcv
         }
 
+        // Strict comparisons avoid selecting a point on the descending shoulder of a flat
+        // velocity plateau as the local minimum; the first point that is lower than both
+        // neighbours is the reproducible sticking point. A near-flat bottom is resolved to
+        // the last sample of that plateau so tiny solver differences cannot shift the result.
         val stickingPoint = (meanPeakVelocityIndex + 1 until concentricSamples.lastIndex)
             .firstOrNull { index ->
                 val before = concentricSamples[index - 1].vyMps
                 val current = concentricSamples[index].vyMps
                 val after = concentricSamples[index + 1].vyMps
-                current <= before && current <= after && (current < before || current < after)
+                current <= before + STICKING_EPSILON && current <= after + STICKING_EPSILON
             }
-            ?.let { index ->
+            ?.let { start ->
+                var index = start
+                while (index + 1 < concentricSamples.lastIndex &&
+                    abs(concentricSamples[index + 1].vyMps - concentricSamples[index].vyMps) <=
+                    STICKING_EPSILON
+                ) {
+                    index++
+                }
                 (concentricSamples[index].yM - firstConcentric.yM) / romConcentric * 100.0
             }
+            ?.takeIf { it.isFinite() && it in 0.0..100.0 }
         val velocityLoss = bestMcvMps?.takeIf { it > 0.0 }?.let { (it - mcv) / it * 100.0 }
 
         val concentricPeakSamples = peakSamples.window(rep.startSec, rep.endSec)
