@@ -225,11 +225,13 @@ class AnalysisPipeline(
         val quality = evaluatedQuality.copy(
             warnings = (evaluatedQuality.warnings + extraWarnings).distinct(),
         )
+        // Smooth the pose series once; both the report and the burned-in overlay use it.
+        val smoothedFrameAngles = JointAngleSmoother.smooth(frameAngles)
         val anglesByRep = if (!quality.anglesAvailable) {
             emptyMap()
         } else {
             validSlices.mapNotNull { slice ->
-                frameAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
+                smoothedFrameAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
                     .takeIf { it.isNotEmpty() }
                     ?.let { slice.index to it }
             }.toMap()
@@ -255,7 +257,7 @@ class AnalysisPipeline(
             frameAnglesByRep = anglesByRep,
             observations = observations.toList(),
             poseFrames = poseFrames.toList(),
-            frameAngles = frameAngles.toList(),
+            frameAngles = smoothedFrameAngles,
             lift = request.lift,
             variant = request.variant,
             loadKg = request.loadKg,
@@ -282,7 +284,7 @@ class AnalysisPipeline(
 
     private companion object {
         const val POSE_FRAME_STRIDE = 3
-        const val MEAN_FILTER_WINDOW = 7
+        const val MEAN_FILTER_WINDOW = 9
         const val PEAK_FILTER_WINDOW = 5
         const val FILTER_ORDER = 2
     }
