@@ -1,7 +1,12 @@
 package com.vbtdroid.app
 
-import android.graphics.Bitmap
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
@@ -13,7 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import com.vbtdroid.app.analysis.AnalysisPipeline
+import androidx.compose.ui.res.stringResource
+import com.vbtdroid.app.analysis.AnalysisForegroundService
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.data.AnalysisRepository
 import com.vbtdroid.app.data.AppDatabase
@@ -22,18 +28,14 @@ import com.vbtdroid.app.data.SetEntity
 import com.vbtdroid.app.ui.history.HistoryScreen
 import com.vbtdroid.app.ui.import.ImportScreen
 import com.vbtdroid.app.ui.report.ReportScreen
-import com.vbtdroid.app.video.VideoDecoder
-import com.vbtdroid.app.vision.MediaPipePoseEstimator
-import com.vbtdroid.app.vision.PlateTracker
-import com.vbtdroid.app.vision.PoseEstimator
-import com.vbtdroid.app.vision.TflitePlateDetector
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 42)
+        }
         setContent {
             MaterialTheme {
                 AnalysisApp()
@@ -48,35 +50,44 @@ private enum class AppScreen { IMPORT, REPORT, HISTORY }
 private fun AnalysisApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val decoder = remember(context) { VideoDecoder(context) }
     val database = remember(context) { AppDatabase.build(context) }
     val repository = remember(database) { AnalysisRepository(database) }
-    val plateDetector = remember(context) {
-        runCatching { TflitePlateDetector(context) }.getOrNull()
-    }
-    val mediaPipePose = remember(context) {
-        runCatching { MediaPipePoseEstimator(context) }.getOrNull()
-    }
-    val poseEstimator: PoseEstimator = mediaPipePose ?: NoPoseEstimator
-    val pipeline = remember(decoder, plateDetector, poseEstimator) {
-        AnalysisPipeline(decoder, PlateTracker(plateDetector), poseEstimator)
-    }
-    DisposableEffect(plateDetector, mediaPipePose, database) {
-        onDispose {
-            plateDetector?.close()
-            mediaPipePose?.close()
-            database.close()
-        }
-    }
-
+    var serviceBinder by remember { mutableStateOf<AnalysisForegroundService.AnalysisBinder?>(null) }
     var screen by remember { mutableStateOf(AppScreen.IMPORT) }
     var result by remember { mutableStateOf<AnalysisResult?>(null) }
     var analyzing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var analysisError by remember { mutableStateOf<String?>(null) }
-    var analysisJob by remember { mutableStateOf<Job?>(null) }
     var history by remember { mutableStateOf<List<SetEntity>>(emptyList()) }
     var historyDetail by remember { mutableStateOf<HistoryDetail?>(null) }
+    val serviceUnavailable = stringResource(R.string.analysis_service_unavailable)
+
+    val connection = remember(context) {
+        object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                serviceBinder = binder as AnalysisForegroundService.AnalysisBinder
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                serviceBinder = null
+                if (analyzing) {
+                    analyzing = false
+                    analysisError = serviceUnavailable
+                }
+            }
+        }
+    }
+    DisposableEffect(context, database) {
+        context.bindService(
+            Intent(context, AnalysisForegroundService::class.java),
+            connection,
+            Context.BIND_AUTO_CREATE,
+        )
+        onDispose {
+            context.unbindService(connection)
+            database.close()
+        }
+    }
 
     fun openHistory() {
         scope.launch {
@@ -97,6 +108,7 @@ private fun AnalysisApp() {
                     screen = AppScreen.IMPORT
                 },
                 onShowHistory = ::openHistory,
+                onPersist = { updated -> repository.updateSavedAnalysis(updated) },
             )
         } ?: run { screen = AppScreen.IMPORT }
         AppScreen.HISTORY -> HistoryScreen(
@@ -113,34 +125,42 @@ private fun AnalysisApp() {
             analysisProgress = progress,
             analysisError = analysisError,
             onAnalyze = { request ->
-                analysisJob = scope.launch {
+                val binder = serviceBinder
+                if (binder == null) {
+                    analysisError = serviceUnavailable
+                } else {
                     analyzing = true
                     analysisError = null
                     progress = 0f
-                    try {
-                        val analyzed = pipeline.analyze(request) { progress = it }
-                        result = repository.saveAnalysis(analyzed, request)
-                        screen = AppScreen.REPORT
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        analysisError = error.message ?: error::class.java.simpleName
-                    } finally {
-                        analyzing = false
-                        analysisJob = null
-                    }
+                    context.startForegroundService(Intent(context, AnalysisForegroundService::class.java))
+                    binder.analyze(
+                        request = request,
+                        callbacks = object : AnalysisForegroundService.Callbacks {
+                            override fun onProgress(value: Float) {
+                                if (analyzing) progress = value
+                            }
+
+                            override fun onResult(value: AnalysisResult) {
+                                analyzing = false
+                                result = value
+                                screen = AppScreen.REPORT
+                            }
+
+                            override fun onError(message: String) {
+                                analyzing = false
+                                analysisError = message
+                            }
+                        },
+                    )
                 }
             },
             onCancel = {
-                analysisJob?.cancel()
+                serviceBinder?.cancel()
+                analyzing = false
                 analysisError = null
             },
             onShowHistory = ::openHistory,
-            suggestRoi = { bitmap -> PlateTracker(plateDetector).initialRoi(bitmap) },
+            suggestRoi = { bitmap -> serviceBinder?.suggestRoi(bitmap) },
         )
     }
-}
-
-private object NoPoseEstimator : PoseEstimator {
-    override fun estimate(bitmap: Bitmap, tSec: Double) = null
 }

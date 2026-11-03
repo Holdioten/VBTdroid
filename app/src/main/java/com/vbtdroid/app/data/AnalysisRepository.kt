@@ -75,12 +75,55 @@ class AnalysisRepository(private val database: AppDatabase) {
             if (phaseEntities.isNotEmpty()) dao.insertPhases(phaseEntities)
 
             val estimate = aggregateLvp(request.lift, request.variant)
-            val finalResult = result.copy(lvp = estimate)
+            val finalResult = result.copy(lvp = estimate, savedSetId = set.setId)
             val finalExport = ExportMapper.toSetExport(finalResult, request, estimate)
             val encoded = JsonExport.encode(finalExport)
             dao.updateSet(set.copy(metricsJson = encoded, qualityJson = encoded, exportJson = encoded))
             finalResult
         }
+
+    /** Persists manual phase edits and refreshed metrics for a previously saved set. */
+    suspend fun updateSavedAnalysis(result: AnalysisResult): Boolean {
+        val setId = result.savedSetId ?: return false
+        return database.withTransaction {
+            val existing = dao.setById(setId) ?: return@withTransaction false
+            val export = ExportMapper.toSetExport(result)
+            val encoded = JsonExport.encode(export)
+            dao.deleteRepsForSet(setId)
+            val repEntities = export.reps.map { rep ->
+                RepEntity(
+                    setId = setId,
+                    repIndex = rep.index,
+                    startSec = rep.phases.minOfOrNull { it.startSec } ?: 0.0,
+                    endSec = rep.phases.maxOfOrNull { it.endSec } ?: 0.0,
+                    metricsJson = JsonExport.encodeRep(rep),
+                    qualityJson = JsonExport.encodeRep(rep),
+                )
+            }
+            if (repEntities.isNotEmpty()) dao.insertReps(repEntities)
+            val phaseEntities = export.reps.flatMapIndexed { repIndex, rep ->
+                rep.phases.mapIndexed { phaseIndex, phase ->
+                    PhaseEntity(
+                        repId = repEntities[repIndex].repId,
+                        phaseIndex = phaseIndex,
+                        type = phase.type,
+                        startSec = phase.startSec,
+                        endSec = phase.endSec,
+                        manual = phase.manual,
+                    )
+                }
+            }
+            if (phaseEntities.isNotEmpty()) dao.insertPhases(phaseEntities)
+            dao.updateSet(
+                existing.copy(
+                    mcvAvgMps = result.summary.mcvAvgMps,
+                    metricsJson = encoded,
+                    qualityJson = encoded,
+                    exportJson = encoded,
+                ),
+            ) > 0
+        }
+    }
 
     suspend fun history(): List<SetEntity> = dao.history()
 
@@ -96,6 +139,10 @@ class AnalysisRepository(private val database: AppDatabase) {
 
     suspend fun sameLiftVariant(lift: Lift, variant: LiftVariant): List<SetEntity> =
         dao.setsForLiftVariant(lift.name, variant.name)
+
+    /** Same-lift, same-variant rows at one external load, newest first. */
+    suspend fun sameLoad(lift: Lift, variant: LiftVariant, loadKg: Double): List<SetEntity> =
+        dao.setsForLiftVariantLoad(lift.name, variant.name, loadKg)
 
     suspend fun profile(lift: Lift, variant: LiftVariant): LvpEstimate {
         val stored = dao.liftProfile(lift.name, variant.name)

@@ -67,6 +67,7 @@ data class AnalysisResult(
     val repWarnings: Map<Int, List<String>> = emptyMap(),
     val lvp: LvpEstimate? = null,
     val createdAtEpochMs: Long = System.currentTimeMillis(),
+    val savedSetId: String? = null,
 )
 
 /**

@@ -14,7 +14,12 @@ import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.phases.Phase
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -185,6 +190,34 @@ class AnalysisPipelineTest {
 
         assertEquals(100.0 / 3.0, result.reps[0].velocityLossPct!!, 1e-9)
         assertEquals(0.0, result.reps[1].velocityLossPct!!, 1e-9)
+    }
+
+    @Test
+    fun `analysis job cancellation reaches decoding`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val decoder = object : VideoDecoder(RuntimeEnvironment.getApplication()) {
+            override fun readMeta(uri: Uri) = VideoMeta(2.0, 32, 32, 0, 10.0, 10.0)
+            override fun decode(uri: Uri, maxLongSide: Int) = flow {
+                repeat(20) { index ->
+                    started.complete(Unit)
+                    delay(10_000)
+                    emit(Frame(index / 10.0, Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)))
+                }
+            }
+        }
+        val pipeline = AnalysisPipeline(decoder, FakeTracker(), FakePose())
+
+        val job = launch {
+            pipeline.analyze(
+                AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, null, roi = RectF(0f, 0f, 32f, 32f)),
+            )
+        }
+        started.await()
+        job.cancel()
+        job.join()
+
+        assertTrue(started.isCompleted)
+        assertTrue(job.isCancelled)
     }
 
     @Test

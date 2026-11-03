@@ -15,9 +15,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +33,7 @@ import com.vbtdroid.app.export.ExportMapper
 import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.model.MetricId
 import com.vbtdroid.core.phases.RepSlice
+import kotlinx.coroutines.delay
 
 @Composable
 fun ReportScreen(
@@ -38,11 +41,23 @@ fun ReportScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onShowHistory: () -> Unit = {},
+    onPersist: (suspend (AnalysisResult) -> Boolean)? = null,
 ) {
     var current by remember(result) { mutableStateOf(result) }
     var manualEditRejected by remember(result) { mutableStateOf(false) }
+    var persistPending by remember(result) { mutableStateOf(false) }
+    var persistFailed by remember(result) { mutableStateOf(false) }
+    val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
     var exportSucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(current, persistPending) {
+        if (persistPending) {
+            delay(400)
+            persistFailed = latestPersist?.invoke(current) == false
+            persistPending = false
+        }
+    }
 
     fun writeExport(uri: android.net.Uri?, content: () -> String) {
         if (uri == null) return
@@ -72,6 +87,7 @@ fun ReportScreen(
         } else {
             current = recomputed
             manualEditRejected = false
+            persistPending = true
             true
         }
     }
@@ -100,6 +116,12 @@ fun ReportScreen(
                 }
             }
             Text(stringResource(R.string.report_saved_automatically))
+            if (persistFailed) {
+                Text(
+                    stringResource(R.string.report_save_failed),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             exportSucceeded?.let { succeeded ->
                 Text(
                     stringResource(if (succeeded) R.string.report_export_succeeded else R.string.report_export_failed),

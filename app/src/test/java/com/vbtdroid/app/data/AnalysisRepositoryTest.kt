@@ -66,6 +66,7 @@ class AnalysisRepositoryTest {
         assertEquals("literature", saved.lvp?.v1rmSource)
         assertEquals(4, repository.history().size)
         assertEquals(3, repository.sameLiftVariant(Lift.SQUAT, LiftVariant.HIGH_BAR).size)
+        assertEquals(1, repository.sameLoad(Lift.SQUAT, LiftVariant.HIGH_BAR, 100.0).size)
 
         val detail = repository.detail(repository.history().first().setId)
         assertNotNull(detail)
@@ -78,6 +79,29 @@ class AnalysisRepositoryTest {
         assertTrue(export.calibration!!.cameraLevel)
         assertEquals(140.0, export.summary!!.totalVolumeKg!!, 1e-9)
         assertEquals("high_bar", export.variant)
+    }
+
+    @Test
+    fun `manual phase edits are persisted for a saved set`() = runBlocking {
+        val saved = repository.saveAnalysis(result(100.0, 0.8, 1L), request(100.0))
+        val edited = saved.copy(
+            repSlices = listOf(
+                RepSlice(
+                    1,
+                    0.0,
+                    1.5,
+                    listOf(Phase(PhaseType.CONCENTRIC, 0.0, 1.5, manual = true)),
+                ),
+            ),
+            reps = saved.reps.map { it.copy(durationS = 1.5) },
+        )
+
+        assertTrue(repository.updateSavedAnalysis(edited))
+
+        val detail = repository.detail(saved.savedSetId!!)!!
+        val phase = detail.phases.values.single().single()
+        assertEquals(1.5, phase.endSec, 1e-9)
+        assertTrue(phase.manual)
     }
 
     @Test

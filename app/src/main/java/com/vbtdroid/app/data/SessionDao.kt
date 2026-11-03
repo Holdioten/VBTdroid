@@ -34,6 +34,12 @@ interface SessionDao {
     @Query("SELECT * FROM sets WHERE lift = :lift AND variant = :variant ORDER BY createdAtEpochMs DESC")
     suspend fun setsForLiftVariant(lift: String, variant: String): List<SetEntity>
 
+    @Query(
+        "SELECT * FROM sets WHERE lift = :lift AND variant = :variant AND loadKg = :loadKg " +
+            "ORDER BY createdAtEpochMs DESC",
+    )
+    suspend fun setsForLiftVariantLoad(lift: String, variant: String, loadKg: Double): List<SetEntity>
+
     @Query("SELECT * FROM sets ORDER BY createdAtEpochMs DESC")
     suspend fun history(): List<SetEntity>
 
@@ -42,6 +48,9 @@ interface SessionDao {
 
     @Query("SELECT * FROM reps WHERE setId = :setId ORDER BY repIndex")
     suspend fun repsForSet(setId: String): List<RepEntity>
+
+    @Query("DELETE FROM reps WHERE setId = :setId")
+    suspend fun deleteRepsForSet(setId: String)
 
     @Query("SELECT * FROM phases WHERE repId = :repId ORDER BY phaseIndex")
     suspend fun phasesForRep(repId: String): List<PhaseEntity>
