@@ -96,6 +96,11 @@
 
     <string name="report_export_json">导出 JSON</string>
     <string name="report_export_csv">导出 CSV</string>
+    <string name="report_export_overlay_video">导出叠加视频</string>
+    <string name="report_export_overlay_progress">叠加视频导出中：%1$d%%</string>
+    <string name="report_export_overlay_succeeded">叠加视频已导出</string>
+    <string name="report_export_overlay_failed">叠加视频导出失败：%1$s</string>
+    <string name="report_export_overlay_no_data">没有杠铃片轨迹，无法导出叠加视频</string>
     <string name="report_export_succeeded">导出完成</string>
     <string name="report_export_failed">导出失败，请重新选择保存位置</string>
     <string name="report_saved_automatically">本组已保存到历史记录</string>

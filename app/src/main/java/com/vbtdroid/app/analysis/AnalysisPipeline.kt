@@ -6,6 +6,7 @@ import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.video.VideoLimits
 import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
+import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.calibration.Calibration
 import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.Kinematics
@@ -55,6 +56,9 @@ data class AnalysisResult(
     val peakMotionSamples: List<MotionSample> = emptyList(),
     val repSlices: List<RepSlice> = emptyList(),
     val frameAnglesByRep: Map<Int, List<FrameAngles>> = emptyMap(),
+    val observations: List<PlateObservation> = emptyList(),
+    val poseFrames: List<PoseFrame> = emptyList(),
+    val frameAngles: List<FrameAngles> = emptyList(),
     val lift: Lift = Lift.SQUAT,
     val variant: LiftVariant = LiftVariant.DEFAULT,
     val loadKg: Double? = null,
@@ -106,7 +110,8 @@ class AnalysisPipeline(
             ?: 0.0
         val estimatedFrames = (meta.durationSec * metadataFps).roundToInt()
         val observations = mutableListOf<PlateObservation>()
-        val poseAngles = mutableListOf<FrameAngles>()
+        val poseFrames = mutableListOf<PoseFrame>()
+        val frameAngles = mutableListOf<FrameAngles>()
         var decodedFrames = 0
         var missedFrames = 0
         var firstFrameSec: Double? = null
@@ -144,12 +149,13 @@ class AnalysisPipeline(
                     try {
                         val pose = poseEstimator.estimate(frame.bitmap, frame.tSec)
                         if (pose != null) {
+                            poseFrames += pose
                             val angles = JointAngleExtractor.extract(
                                 pose = pose,
                                 lift = request.lift,
                                 cameraAngleDeg = request.cameraAngleDeg,
                             )
-                            poseAngles += angles
+                            frameAngles += angles
                             poseProducedAngles = true
                         }
                     } catch (_: RuntimeException) {
@@ -223,7 +229,7 @@ class AnalysisPipeline(
             emptyMap()
         } else {
             validSlices.mapNotNull { slice ->
-                poseAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
+                frameAngles.filter { it.tSec >= slice.startSec && it.tSec <= slice.endSec }
                     .takeIf { it.isNotEmpty() }
                     ?.let { slice.index to it }
             }.toMap()
@@ -247,6 +253,9 @@ class AnalysisPipeline(
                 peakAppliesTo = listOf("peak_velocity_mps", "peak_acceleration_mps2", "peak_force_n", "peak_power_w"),
             ),
             frameAnglesByRep = anglesByRep,
+            observations = observations.toList(),
+            poseFrames = poseFrames.toList(),
+            frameAngles = frameAngles.toList(),
             lift = request.lift,
             variant = request.variant,
             loadKg = request.loadKg,

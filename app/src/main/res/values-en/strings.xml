@@ -53,6 +53,15 @@
     <string name="report_no_data">No data to display</string>
     <string name="report_value_missing">—</string>
     <string name="report_external_load_assumption">Force, power, and work use external load only; body mass is excluded.</string>
+    <string name="report_export_json">Export JSON</string>
+    <string name="report_export_csv">Export CSV</string>
+    <string name="report_export_overlay_video">Export overlay video</string>
+    <string name="report_export_overlay_progress">Exporting overlay video: %1$d%%</string>
+    <string name="report_export_overlay_succeeded">Overlay video exported</string>
+    <string name="report_export_overlay_failed">Overlay video export failed: %1$s</string>
+    <string name="report_export_overlay_no_data">No plate track is available, so the overlay video cannot be exported.</string>
+    <string name="report_saved_automatically">This set was saved to history</string>
+    <string name="report_save_failed">Could not save the edit. Check storage space and try again.</string>
 
     <string name="metric_mcv">Mean concentric velocity (MCV, m/s)</string>
     <string name="metric_mpv">Mean propulsive velocity (MPV, m/s)</string>
