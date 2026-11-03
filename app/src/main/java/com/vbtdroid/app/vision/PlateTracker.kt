@@ -22,7 +22,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /** 跟踪已初始化的杠铃片；神经网络检测仅用于初始化或丢失后的恢复。 */
-class PlateTracker(private val detector: PlateDetector? = null) {
+open class PlateTracker(private val detector: PlateDetector? = null) {
     private var centerX = 0f
     private var centerY = 0f
     private var velocityX = 0f
@@ -31,7 +31,17 @@ class PlateTracker(private val detector: PlateDetector? = null) {
     private var axisReference: PlateAxisReference? = null
     private var previousGray: Mat? = null
 
-    fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
+    open fun initialRoi(bitmap: Bitmap): RectF? {
+        val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
+        return RectF(
+            detection.cxPx - detection.widthPx / 2f,
+            detection.cyPx - detection.heightPx / 2f,
+            detection.cxPx + detection.widthPx / 2f,
+            detection.cyPx + detection.heightPx / 2f,
+        )
+    }
+
+    open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
         val gray = toGray(bitmap)
@@ -52,7 +62,7 @@ class PlateTracker(private val detector: PlateDetector? = null) {
     }
 
     /** 使用 PyrLK 光流预测中心，再在局部搜索区拟合椭圆精修。 */
-    fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
+    open fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
         ensureOpenCv()
         val reference = axisReference ?: return null
         val currentGray = toGray(bitmap)

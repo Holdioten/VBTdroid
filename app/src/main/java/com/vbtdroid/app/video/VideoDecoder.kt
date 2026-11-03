@@ -16,10 +16,10 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 
-class VideoDecoder(context: Context) {
+open class VideoDecoder(context: Context) {
     private val appContext = context.applicationContext
 
-    fun decode(uri: Uri, maxLongSide: Int = 1920): Flow<Frame> = callbackFlow {
+    open fun decode(uri: Uri, maxLongSide: Int = 1920): Flow<Frame> = callbackFlow {
         require(maxLongSide > 0) { "maxLongSide must be positive" }
         val job = launch(Dispatchers.IO) {
             var extractor: MediaExtractor? = null
@@ -96,7 +96,7 @@ class VideoDecoder(context: Context) {
         awaitClose { job.cancel() }
     }.buffer(Channel.RENDEZVOUS)
 
-    fun readMeta(uri: Uri): VideoMeta {
+    open fun readMeta(uri: Uri): VideoMeta {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(appContext, uri)

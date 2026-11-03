@@ -46,4 +46,6 @@ dependencies {
     implementation(libs.tflite.gpu)
     implementation(libs.mediapipe.tasks.vision)
     testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
 }
