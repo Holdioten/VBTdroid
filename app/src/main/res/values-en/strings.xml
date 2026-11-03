@@ -22,6 +22,14 @@
     <string name="import_analysis_progress">Analysis progress: %1$d%%</string>
     <string name="import_analysis_failed">Analysis failed. Check the video, plate region, and settings.</string>
     <string name="import_invalid_settings">Enter a valid load, plate diameter, and camera angle</string>
+    <string name="import_roi_title">Plate region in the first frame</string>
+    <string name="import_roi_confirm_hint">A region was suggested; adjust it if needed, then confirm.</string>
+    <string name="import_roi_manual_required">No automatic region available; draw a box around the plate in the first frame, then confirm.</string>
+    <string name="import_roi_edit_hint">Drag inside to move, drag a corner to resize, drag outside to draw a new box</string>
+    <string name="import_roi_confirm">Confirm plate region</string>
+    <string name="import_roi_confirmed">Plate region confirmed</string>
+    <string name="import_roi_reset">Reset selection</string>
+    <string name="import_first_frame_preview">First video frame; drag to select the plate</string>
 
     <string name="report_title">Analysis report</string>
     <string name="report_back">Back</string>

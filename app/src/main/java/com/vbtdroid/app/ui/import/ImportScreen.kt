@@ -143,7 +143,9 @@ fun ImportScreen(
     val validAngle = cameraAngle != null && cameraAngle.isFinite() &&
         cameraAngle > 0.0 && cameraAngle <= 90.0
     val validSettings = validLoad && validPlate && validAngle
-    val validRoi = roi?.let { !it.isEmpty && it.width() >= 5f && it.height() >= 5f } == true
+    val minRoiSize = preview?.let { RoiGeometry.minimumSize(it.width, it.height) }
+        ?: RoiGeometry.MIN_SIZE_PX
+    val validRoi = roi?.let { !it.isEmpty && it.width() >= minRoiSize && it.height() >= minRoiSize } == true
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -228,6 +230,9 @@ fun ImportScreen(
             Spacer(Modifier.height(16.dp))
             Text(stringResource(R.string.import_roi_title), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(if (autoRoiUnavailable) R.string.import_roi_manual_required else R.string.import_roi_confirm_hint))
+            if (preview != null) {
+                Text(stringResource(R.string.import_roi_edit_hint))
+            }
             preview?.let { frame ->
                 RoiSelector(
                     bitmap = frame,
@@ -238,11 +243,22 @@ fun ImportScreen(
                     },
                 )
             }
-            Button(
-                onClick = { roiConfirmed = true },
-                enabled = !analyzing && validRoi && !roiConfirmed,
-            ) {
-                Text(stringResource(if (roiConfirmed) R.string.import_roi_confirmed else R.string.import_roi_confirm))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { roiConfirmed = true },
+                    enabled = !analyzing && validRoi && !roiConfirmed,
+                ) {
+                    Text(stringResource(if (roiConfirmed) R.string.import_roi_confirmed else R.string.import_roi_confirm))
+                }
+                OutlinedButton(
+                    onClick = {
+                        roi = null
+                        roiConfirmed = false
+                    },
+                    enabled = !analyzing && roi != null,
+                ) {
+                    Text(stringResource(R.string.import_roi_reset))
+                }
             }
 
             if (!validSettings) Text(stringResource(R.string.import_invalid_settings))

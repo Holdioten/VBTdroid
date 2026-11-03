@@ -86,10 +86,12 @@
     <string name="variant_touch_and_go">触胸即起</string>
     <string name="variant_default">默认</string>
     <string name="import_roi_title">首帧杠铃片区域</string>
-    <string name="import_roi_confirm_hint">已给出区域建议；可拖动重新框选，然后确认。</string>
-    <string name="import_roi_manual_required">未提供自动区域；请在首帧上拖动框选完整杠铃片，然后确认。</string>
+    <string name="import_roi_confirm_hint">已给出区域建议；可拖动调整后确认。</string>
+    <string name="import_roi_manual_required">未提供自动区域；请在首帧上框选完整杠铃片，然后确认。</string>
+    <string name="import_roi_edit_hint">拖动框内移动，拖角缩放，框外重新画</string>
     <string name="import_roi_confirm">确认杠铃片区域</string>
     <string name="import_roi_confirmed">杠铃片区域已确认</string>
+    <string name="import_roi_reset">重置选区</string>
     <string name="import_first_frame_preview">视频首帧，拖动以框选杠铃片</string>
 
     <string name="report_export_json">导出 JSON</string>
