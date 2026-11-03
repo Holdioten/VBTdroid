@@ -19,6 +19,7 @@ Status: complete (APK built; device install skipped because the target phone was
 - `c7da989` test(phases): cover deadlift rep without lockout
 - `05148d7` feat(analysis): make joint-angle analysis optional and occlusion-tolerant
 - `3e60bda` feat(ui): add analyze-joint-angles switch and disabled state
+- `4142ba3` perf(analysis): defer pose model creation until needed
 
 The bar-path overlay now consumes smoothed `motionSamples`; the overlay files were already in the
 working branch (`e0d0ce6`, `e332cc2`) and were updated in place to use
@@ -82,6 +83,8 @@ Behaviour:
 - Import screen adds `分析关节角` / `Analyze joint angles`, default ON.
 - When OFF:
   - `poseEstimator.reset()` and every `poseEstimator.estimate()` call are skipped.
+  - `DeferredPoseEstimator` prevents MediaPipe model construction until the first estimate, so an
+    OFF run never loads the pose model.
   - `poseFrames` and `frameAngles` stay empty; `frameAnglesByRep` is empty.
   - No `POSE_*` warnings are emitted.
   - The pipeline drops `ANGLES_UNAVAILABLE_OCCLUSION` so a disabled analysis cannot look like a
@@ -121,7 +124,7 @@ Result: `BUILD SUCCESSFUL`.
 Test totals from JUnit XML:
 
 - core: 68 tests, 0 failures, 0 errors, 0 skipped
-- app debug unit tests: 57 tests, 0 failures, 0 errors, 0 skipped
+- app debug unit tests: 59 tests, 0 failures, 0 errors, 0 skipped
 
 APK:
 
