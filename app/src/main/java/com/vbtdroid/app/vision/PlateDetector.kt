@@ -10,8 +10,6 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
-import kotlin.math.max
-import kotlin.math.min
 
 data class PlateDetection(
     val cxPx: Float,
@@ -25,16 +23,26 @@ interface PlateDetector {
     fun detect(bitmap: Bitmap): List<PlateDetection>
 }
 
-/** 适配输出形状为 [1, 5, N] 的 YOLOv8 TFLite 模型。 */
+/**
+ * EfficientDet-Lite0 plate detector (`app/src/main/assets/models/plate.tflite`).
+ *
+ * The bundled model comes from simonkosina/vbt (MIT) and exposes four outputs:
+ * scores `[1, N]`, boxes `[1, N, 4]` normalized as `ymin, xmin, ymax, xmax`,
+ * a detection count `[1]` and class ids `[1, N]`. Tensor indices are resolved by
+ * shape/name instead of relying on a fixed output order.
+ */
 class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
     private val interpreter: Interpreter
     private val gpuDelegate: GpuDelegate?
     private val inputWidth: Int
     private val inputHeight: Int
-    private val outputCount: Int
     private val inputType: DataType
-    private val inputQuantizationScale: Float
-    private val inputQuantizationZeroPoint: Int
+    private val scoreOutput: OutputTensor
+    private val boxesOutput: OutputTensor
+    private val countOutput: OutputTensor
+    private val classOutput: OutputTensor?
+
+    private data class OutputTensor(val index: Int, val elementCount: Int, val name: String)
 
     init {
         val modelFile = "models/plate.tflite"
@@ -78,35 +86,47 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
         }
 
         try {
-            val inputShape = createdInterpreter.getInputTensor(0).shape()
+            val inputTensor = createdInterpreter.getInputTensor(0)
+            val inputShape = inputTensor.shape()
             require(inputShape.size == 4 && inputShape[0] == 1 && inputShape[3] == 3) {
                 "Unsupported plate model input tensor: ${inputShape.contentToString()}"
             }
             inputHeight = inputShape[1]
             inputWidth = inputShape[2]
-            require((inputWidth == 384 && inputHeight == 224) || (inputWidth == 640 && inputHeight == 640)) {
-                "Plate model input must be 384x224 or 640x640, got ${inputWidth}x$inputHeight"
+            require(inputWidth > 0 && inputHeight > 0) {
+                "Plate model input must have positive dimensions, got ${inputWidth}x$inputHeight"
             }
-            inputType = createdInterpreter.getInputTensor(0).dataType()
-            val quantization = createdInterpreter.getInputTensor(0).quantizationParams()
-            inputQuantizationScale = quantization.scale
-            inputQuantizationZeroPoint = quantization.zeroPoint
-            require(inputType != DataType.UINT8 || inputQuantizationScale > 0f) {
-                "Quantized plate model requires a positive input scale"
-            }
+            inputType = inputTensor.dataType()
             require(inputType == DataType.FLOAT32 || inputType == DataType.UINT8) {
                 "Unsupported plate model input type: $inputType"
             }
 
-            val outputTensor = createdInterpreter.getOutputTensor(0)
-            val outputShape = outputTensor.shape()
-            require(outputShape.size == 3 && outputShape[0] == 1 && outputShape[1] == 5) {
-                "Unsupported plate model output tensor: ${outputShape.contentToString()}; expected [1,5,N]"
+            val outputs = (0 until createdInterpreter.outputTensorCount).map { index ->
+                val tensor = createdInterpreter.getOutputTensor(index)
+                require(tensor.dataType() == DataType.FLOAT32) {
+                    "Unsupported plate model output type at index $index: ${tensor.dataType()}; expected FLOAT32"
+                }
+                OutputTensor(
+                    index = index,
+                    elementCount = tensor.shape().fold(1) { total, dimension -> total * dimension },
+                    name = tensor.name().orEmpty(),
+                )
             }
-            require(outputTensor.dataType() == DataType.FLOAT32) {
-                "Unsupported plate model output type: ${outputTensor.dataType()}; expected FLOAT32"
-            }
-            outputCount = outputShape[2]
+
+            boxesOutput = outputs.singleOrNull { tensor ->
+                createdInterpreter.getOutputTensor(tensor.index).shape().let { shape ->
+                    shape.isNotEmpty() && shape.last() == EfficientDetPostprocess.BOX_VALUES
+                }
+            } ?: unsupportedOutputs(outputs, createdInterpreter)
+            countOutput = outputs.singleOrNull { it.elementCount == 1 }
+                ?: unsupportedOutputs(outputs, createdInterpreter)
+            val scoreAndClass = outputs.filter { it.index != boxesOutput.index && it.index != countOutput.index }
+            require(scoreAndClass.size == 2) { unsupportedOutputsMessage(outputs, createdInterpreter) }
+            val score = scoreAndClass.firstOrNull { it.name.contains("score", ignoreCase = true) }
+                ?: scoreAndClass.firstOrNull { it.name.contains("output_1", ignoreCase = true) }
+                ?: scoreAndClass[0]
+            scoreOutput = score
+            classOutput = scoreAndClass.firstOrNull { it !== score }
             interpreter = createdInterpreter
             gpuDelegate = delegate
         } catch (error: Throwable) {
@@ -118,6 +138,7 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
 
     @Synchronized
     override fun detect(bitmap: Bitmap): List<PlateDetection> {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return emptyList()
         val resized = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
         val bytesPerChannel = if (inputType == DataType.FLOAT32) 4 else 1
         val input = ByteBuffer.allocateDirect(inputWidth * inputHeight * 3 * bytesPerChannel)
@@ -134,35 +155,54 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
                 input.putFloat(green / 255f)
                 input.putFloat(blue / 255f)
             } else {
-                fun quantize(channel: Int): Int =
-                    ((channel / 255f) / inputQuantizationScale + inputQuantizationZeroPoint)
-                        .toInt().coerceIn(0, 255)
-                input.put(quantize(red).toByte())
-                input.put(quantize(green).toByte())
-                input.put(quantize(blue).toByte())
+                // EfficientDet uint8 models consume raw 0..255 pixels through the signature input.
+                input.put(red.toByte())
+                input.put(green.toByte())
+                input.put(blue.toByte())
             }
         }
         input.rewind()
-        val output = ByteBuffer.allocateDirect(5 * outputCount * 4).order(ByteOrder.nativeOrder())
-        interpreter.run(input, output)
-        output.rewind()
-        val planar = FloatArray(5 * outputCount)
-        output.asFloatBuffer().get(planar)
 
-        val scaleX = bitmap.width.toFloat() / inputWidth
-        val scaleY = bitmap.height.toFloat() / inputHeight
-        val candidates = (0 until outputCount).mapNotNull { index ->
-            val score = planar[4 * outputCount + index]
-            if (!score.isFinite() || score < CONFIDENCE_THRESHOLD) return@mapNotNull null
-            PlateDetection(
-                cxPx = planar[index] * scaleX,
-                cyPx = planar[outputCount + index] * scaleY,
-                widthPx = planar[2 * outputCount + index] * scaleX,
-                heightPx = planar[3 * outputCount + index] * scaleY,
-                confidence = score,
-            ).takeIf { it.widthPx > 0 && it.heightPx > 0 }
+        val scores = FloatArray(scoreOutput.elementCount)
+        val boxes = FloatArray(boxesOutput.elementCount)
+        val counts = FloatArray(countOutput.elementCount)
+        val classes = classOutput?.let { FloatArray(it.elementCount) }
+        val outputBuffers = buildMap {
+            put(scoreOutput.index, scores.toDirectBuffer())
+            put(boxesOutput.index, boxes.toDirectBuffer())
+            put(countOutput.index, counts.toDirectBuffer())
+            if (classOutput != null && classes != null) put(classOutput.index, classes.toDirectBuffer())
         }
-        return nonMaximumSuppression(candidates)
+        interpreter.runForMultipleInputsOutputs(arrayOf(input), outputBuffers)
+        readFloats(outputBuffers.getValue(scoreOutput.index), scores)
+        readFloats(outputBuffers.getValue(boxesOutput.index), boxes)
+        readFloats(outputBuffers.getValue(countOutput.index), counts)
+        if (classOutput != null && classes != null) {
+            readFloats(outputBuffers.getValue(classOutput.index), classes)
+        }
+
+        val detectedCount = (counts.firstOrNull() ?: 0f).takeIf { it.isFinite() }?.toInt() ?: 0
+        val classValues = classes
+        val scoreValues: FloatArray
+        val classIds: FloatArray?
+        if (classValues != null &&
+            EfficientDetPostprocess.looksLikeClassIds(scores, detectedCount) &&
+            !EfficientDetPostprocess.looksLikeClassIds(classValues, detectedCount)
+        ) {
+            // Output names did not reveal which tensor carries class ids; swap them.
+            scoreValues = classValues
+            classIds = scores
+        } else {
+            scoreValues = scores
+            classIds = classValues
+        }
+        val candidates = EfficientDetPostprocess.parse(
+            scores = scoreValues,
+            boxes = boxes,
+            classIds = classIds,
+            count = counts.firstOrNull() ?: 0f,
+        )
+        return EfficientDetPostprocess.toDetections(candidates, bitmap.width, bitmap.height)
     }
 
     override fun close() {
@@ -170,29 +210,25 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
         gpuDelegate?.close()
     }
 
-    private fun nonMaximumSuppression(detections: List<PlateDetection>): List<PlateDetection> {
-        val remaining = detections.sortedByDescending { it.confidence }.toMutableList()
-        val kept = mutableListOf<PlateDetection>()
-        while (remaining.isNotEmpty()) {
-            val best = remaining.removeAt(0)
-            kept += best
-            remaining.removeAll { intersectionOverUnion(best, it) > NMS_IOU_THRESHOLD }
-        }
-        return kept
-    }
-
-    private fun intersectionOverUnion(a: PlateDetection, b: PlateDetection): Float {
-        val left = max(a.cxPx - a.widthPx / 2f, b.cxPx - b.widthPx / 2f)
-        val top = max(a.cyPx - a.heightPx / 2f, b.cyPx - b.heightPx / 2f)
-        val right = min(a.cxPx + a.widthPx / 2f, b.cxPx + b.widthPx / 2f)
-        val bottom = min(a.cyPx + a.heightPx / 2f, b.cyPx + b.heightPx / 2f)
-        val intersection = max(0f, right - left) * max(0f, bottom - top)
-        val union = a.widthPx * a.heightPx + b.widthPx * b.heightPx - intersection
-        return if (union > 0f) intersection / union else 0f
-    }
-
     private companion object {
-        const val CONFIDENCE_THRESHOLD = 0.35f
-        const val NMS_IOU_THRESHOLD = 0.45f
+        fun FloatArray.toDirectBuffer(): ByteBuffer =
+            ByteBuffer.allocateDirect(size * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
+
+        fun readFloats(buffer: ByteBuffer, destination: FloatArray) {
+            buffer.rewind()
+            buffer.asFloatBuffer().get(destination)
+        }
+
+        fun unsupportedOutputs(
+            outputs: List<OutputTensor>,
+            interpreter: Interpreter,
+        ): Nothing = throw IllegalArgumentException(unsupportedOutputsMessage(outputs, interpreter))
+
+        fun unsupportedOutputsMessage(outputs: List<OutputTensor>, interpreter: Interpreter): String {
+            val shapes = outputs.joinToString { output ->
+                interpreter.getOutputTensor(output.index).shape().contentToString()
+            }
+            return "Unsupported plate model outputs: $shapes; expected scores [1,N], boxes [1,N,4], count [1] and classes [1,N]"
+        }
     }
 }

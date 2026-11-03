@@ -6,6 +6,9 @@ ASSET_DIR="$ROOT/app/src/main/assets/models"
 LOCK_FILE="$ROOT/ml/models.lock"
 POSE_PATH="app/src/main/assets/models/pose_landmarker_lite.task"
 POSE_URL="https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+# EfficientDet-Lite0 plate detector from simonkosina/vbt (MIT License).
+PLATE_PATH="app/src/main/assets/models/plate.tflite"
+PLATE_URL="${PLATE_MODEL_URL:-https://raw.githubusercontent.com/simonkosina/vbt/main/models/efficientdet_lite0.tflite}"
 
 mkdir -p "$ASSET_DIR"
 
@@ -44,13 +47,7 @@ download_and_verify() {
 }
 
 download_and_verify "$POSE_PATH" "$POSE_URL"
-
-if [[ -n "${PLATE_MODEL_URL:-}" ]]; then
-    PLATE_PATH="app/src/main/assets/models/plate.tflite"
-    download_and_verify "$PLATE_PATH" "$PLATE_MODEL_URL"
-else
-    echo "No plate detector downloaded. To enable, add a vetted plate.tflite SHA256 to ml/models.lock and set PLATE_MODEL_URL." >&2
-fi
+download_and_verify "$PLATE_PATH" "$PLATE_URL"
 
 for index in "${!TEMP_FILES[@]}"; do
     mv -f -- "${TEMP_FILES[$index]}" "${DESTINATIONS[$index]}"
