@@ -255,4 +255,6 @@
 
     <string name="phase_eccentric_not_counted">不计入次数</string>
     <string name="report_deadlift_stage_help">硬拉正式次数从离地到锁定；下放属于离心收尾，不计入次数。</string>
+
+    <string name="import_back_to_roi">返回框选</string>
 </resources>

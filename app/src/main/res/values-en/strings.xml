@@ -195,4 +195,6 @@
 
     <string name="phase_eccentric_not_counted">Not counted as a rep</string>
     <string name="report_deadlift_stage_help">Deadlift reps count from the floor to lockout; the lowering is an eccentric finish and is not counted.</string>
+
+    <string name="import_back_to_roi">Back to region</string>
 </resources>

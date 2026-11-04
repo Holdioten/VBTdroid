@@ -116,9 +116,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val PAGE_VIDEO = 0
-private const val PAGE_SETTINGS = 1
-private const val PAGE_ROI = 2
+private const val PAGE_VIDEO = ImportFlowPolicy.PAGE_VIDEO
+private const val PAGE_ROI = ImportFlowPolicy.PAGE_ROI
+private const val PAGE_SETTINGS = ImportFlowPolicy.PAGE_SETTINGS
 
 /**
  * Pre-analysis flow in three horizontal pages: video, settings, ROI. State survives Activity
@@ -321,6 +321,7 @@ fun ImportScreen(
                         scope.launch { snackbar.showSnackbar(cancelledMessage) }
                     },
                     onNext = { goTo(pagerState.currentPage + 1) },
+                    onBackToRoi = { goTo(PAGE_ROI) },
                     onReset = {
                         roi = null
                         roiConfirmed = false
@@ -397,6 +398,7 @@ fun ImportScreen(
                             analyzePose = analyzePose,
                             onAnalyzePose = { analyzePose = it },
                             validSettings = validSettings,
+                            summary = summaryText(lift, variant, loadText, plateDiameterText, cameraAngleText),
                         )
                         PAGE_ROI -> RoiPage(
                             preview = preview,
@@ -414,7 +416,6 @@ fun ImportScreen(
                                 roiConfirmed = false
                             },
                             onGoVideo = { goTo(PAGE_VIDEO) },
-                            summary = summaryText(lift, variant, loadText, plateDiameterText, cameraAngleText),
                         )
                     }
                 }
@@ -442,7 +443,7 @@ private fun summaryText(
 /** Three-step indicator. Tapping a step jumps to it (pages handle their own empty states). */
 @Composable
 private fun StepIndicator(current: Int, onSelect: (Int) -> Unit) {
-    val labels = listOf(R.string.import_step_video, R.string.import_step_params, R.string.import_step_roi)
+    val labels = listOf(R.string.import_step_video, R.string.import_step_roi, R.string.import_step_params)
     Row(
         Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.s),
         horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
@@ -570,6 +571,7 @@ private fun SettingsPage(
     analyzePose: Boolean,
     onAnalyzePose: (Boolean) -> Unit,
     validSettings: Boolean,
+    summary: String,
 ) {
     SectionLabel(stringResource(R.string.import_lift))
     SegmentedPicker(
@@ -662,6 +664,10 @@ private fun SettingsPage(
             color = VbtTheme.colors.warning,
         )
     }
+    SectionCard(padding = VbtSpacing.m) {
+        SectionLabel(stringResource(R.string.import_summary_title))
+        Text(summary, style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @Composable
@@ -675,7 +681,6 @@ private fun RoiPage(
     onModify: () -> Unit,
     onReset: () -> Unit,
     onGoVideo: () -> Unit,
-    summary: String,
 ) {
     if (preview == null) {
         SectionCard {
@@ -743,10 +748,6 @@ private fun RoiPage(
             )
         }
     }
-    SectionCard(padding = VbtSpacing.m) {
-        SectionLabel(stringResource(R.string.import_summary_title))
-        Text(summary, style = MaterialTheme.typography.bodyMedium)
-    }
 }
 
 /**
@@ -771,6 +772,7 @@ private fun ImportActionBar(
     canAnalyze: Boolean,
     onCancel: () -> Unit,
     onNext: () -> Unit,
+    onBackToRoi: () -> Unit,
     onReset: () -> Unit,
     onConfirm: () -> Unit,
     onAnalyze: () -> Unit,
@@ -809,19 +811,10 @@ private fun ImportActionBar(
             PrimaryButton(
                 text = stringResource(R.string.import_next),
                 onClick = onNext,
-                enabled = hasFrame && !loading,
+                enabled = ImportFlowPolicy.canLeaveVideo(hasFrame, loading),
             )
         }
-        PAGE_SETTINGS -> PrimaryActionBar(
-            hint = if (!validSettings) stringResource(R.string.import_invalid_settings) else null,
-        ) {
-            PrimaryButton(
-                text = stringResource(R.string.import_next),
-                onClick = onNext,
-                enabled = validSettings,
-            )
-        }
-        else -> when {
+        PAGE_ROI -> when {
             !hasFrame -> PrimaryActionBar(
                 hint = stringResource(if (loading) R.string.import_loading_frame else R.string.import_cta_need_video),
             ) {}
@@ -850,12 +843,32 @@ private fun ImportActionBar(
                     }
                 }
             }
+            else -> PrimaryActionBar {
+                PrimaryButton(
+                    text = stringResource(R.string.import_next),
+                    onClick = onNext,
+                    enabled = ImportFlowPolicy.canLeaveRoi(roiConfirmed),
+                )
+            }
+        }
+        else -> when {
+            ImportFlowPolicy.mustReturnToRoi(page, roiConfirmed) -> PrimaryActionBar(
+                hint = stringResource(R.string.import_cta_need_roi),
+            ) {
+                OutlinedButton(
+                    onClick = onBackToRoi,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
+                    colors = secondaryOutlinedColors(),
+                ) {
+                    Text(stringResource(R.string.import_back_to_roi), style = MaterialTheme.typography.labelLarge)
+                }
+            }
             !validSettings -> PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
             else -> PrimaryActionBar {
                 PrimaryButton(
                     text = stringResource(R.string.import_start_analysis),
                     onClick = onAnalyze,
-                    enabled = canAnalyze,
+                    enabled = ImportFlowPolicy.showStart(page, roiConfirmed, validSettings) && canAnalyze,
                 )
             }
         }
