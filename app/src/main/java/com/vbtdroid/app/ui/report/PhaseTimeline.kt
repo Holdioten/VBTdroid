@@ -193,9 +193,9 @@ private const val MIN_MANUAL_PHASE_SEC = 0.001
 internal fun phaseColors(): Map<PhaseType, Color> {
     val colors = VbtTheme.colors
     return mapOf(
-        PhaseType.ECCENTRIC -> colors.phaseEccentric,
-        PhaseType.PAUSE -> colors.phasePause,
-        PhaseType.CONCENTRIC -> colors.phaseConcentric,
-        PhaseType.LOCKOUT -> colors.phaseLockout,
+        PhaseType.ECCENTRIC to colors.phaseEccentric,
+        PhaseType.PAUSE to colors.phasePause,
+        PhaseType.CONCENTRIC to colors.phaseConcentric,
+        PhaseType.LOCKOUT to colors.phaseLockout,
     )
 }
