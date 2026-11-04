@@ -263,3 +263,25 @@
 - 测试：`PhaseLabelsTest` 新增 5 个用例（硬拉离心标签、图例过滤、默认集合、仅存在时显示、深蹲保持四类）。
 
 验证：`:app:testDebugUnitTest` 73 通过，0 失败；`:app:assembleDebug` 成功。设备离线，未安装。
+
+## 12. 导入页分步条高度与分页布局修复
+
+问题：真机截图中，三个步骤胶囊撑满整个屏幕高度，分页区域（视频卡）被挤到屏外。
+
+原因：
+- `StepIndicator` 的胶囊内层 `Row` 使用 `fillMaxSize()`，在无上限高度的父级中向外无限撑开。
+- 分页器 `HorizontalPager` 使用 `fillMaxSize()`，在 `Column` 中占满全部高度，导致上方的分步条和错误横幅向下溢出。
+
+修复（提交见下）：
+- 胶囊内层改为 `fillMaxWidth().heightIn(min = MinTouchTarget)`，高度由内容决定，最小 48dp。
+- 分页器改为 `Modifier.weight(1f).fillMaxWidth()`，只占用分步条与横幅之外的剩余高度。
+- 胶囊形状、等宽、激活色、点击跳转保持不变。
+- 其它 `fillMaxSize` 检查：导入页剩余用法均位于分页器内部页面、Scaffold 根容器或 ROI 编辑器（ROI 编辑器由父级约束），未发现同类问题。
+
+验证：
+- `:app:testDebugUnitTest`：73 通过，0 失败，0 跳过。
+- `:app:assembleDebug`：成功。
+- 安装到 `192.168.57.102:37657`：`Success`。
+- 截图（`/tmp/opencode/vbtdroid-shots/`）：
+  - `ui-steps-fix-empty.png`：空态。三个胶囊约 48dp 高，投放区与“操作步骤”卡完整可见。
+  - `ui-steps-fix-filled.png`：已选视频（第 1 页）。视频首帧完整可见，元数据芯片、更换视频、底部“下一步”均可见。

@@ -349,9 +349,10 @@ fun ImportScreen(
                     MessageBanner(stringResource(R.string.import_analysis_failed_reason, it))
                 }
             }
+            // Weight, not fillMaxSize: the pager takes only the height left after the bars above it.
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalAlignment = Alignment.Top,
             ) { page ->
                 Column(
@@ -457,7 +458,10 @@ private fun StepIndicator(current: Int, onSelect: (Int) -> Unit) {
                 color = if (active) VbtTheme.colors.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 Row(
-                    Modifier.fillMaxSize().padding(horizontal = VbtSpacing.s),
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = MinTouchTarget)
+                        .padding(horizontal = VbtSpacing.s),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
