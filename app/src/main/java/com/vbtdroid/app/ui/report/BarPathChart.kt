@@ -35,8 +35,8 @@ fun BarPathChart(
     comparisonRep: RepSlice? = null,
     height: Dp = 220.dp,
     chartBackground: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    /** Playback position in seconds; the trail is drawn up to this time. Null draws the whole rep. */
-    progressSec: Double? = null,
+    /** Trail is drawn up to this time (frames advance it). Null draws the whole rep. No cursor line. */
+    trailUpToSec: Double? = null,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
     val phases = phaseColors()
@@ -51,7 +51,7 @@ fun BarPathChart(
     }
     // Drawn runs are the current rep only, split by phase; the scale still uses the whole rep so the
     // path does not jump while it is revealed.
-    val drawnRuns = rep?.let { RepTimeline.trailRuns(samples, it, progressSec ?: it.endSec) }.orEmpty()
+    val drawnRuns = rep?.let { RepTimeline.trailRuns(samples, it, trailUpToSec ?: it.endSec) }.orEmpty()
     val compareColor = VbtTheme.colors.comparison
     val axisColor = VbtTheme.colors.outline
     val points = samples.filter {
@@ -115,12 +115,6 @@ fun BarPathChart(
                     if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
                 }
                 drawPath(path, stageColor(run.type), style = Stroke(width = 3.dp.toPx()))
-            }
-            // Playback cursor: vertical line at the playhead on the rep's time axis.
-            progressSec?.let { t ->
-                timeToX(t, rep.startSec, rep.endSec, size.width)?.let { x ->
-                    drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.5.dp.toPx())
-                }
             }
             val drawn = drawnRuns.flatMap { it.samples }
             if (drawn.isNotEmpty()) {

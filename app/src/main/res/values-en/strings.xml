@@ -64,13 +64,12 @@
     <string name="quality_low_rep_confidence">Low repetition segmentation confidence</string>
     <string name="quality_pose_unavailable">Pose unavailable; bar metrics are unaffected</string>
     <string name="quality_pose_partial">Pose unavailable on some frames</string>
-    <string name="quality_pose_low_confidence">Joint-angle confidence is low; review against the video</string>
+    <string name="quality_pose_low_confidence">Pose confidence is low; review against the video</string>
     <string name="quality_no_valid_reps">No valid repetitions detected</string>
     <string name="quality_rep_skipped">An invalid repetition was skipped</string>
     <string name="quality_incomplete_rep">A rep missing an eccentric/concentric phase or too short was excluded from formal results</string>
     <string name="quality_no_lockout">This rep has no top lockout; rep count is unaffected</string>
     <string name="quality_unknown">Unknown quality warning</string>
-    <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
 
     <string name="import_load_label">Load (optional)</string>
     <string name="import_plate_label">Plate diameter (cm)</string>
@@ -81,7 +80,7 @@
     <string name="unit_mps">m/s</string>
     <string name="import_camera_preset_side">Side 90°</string>
     <string name="import_camera_preset_diagonal">Front/rear 45°</string>
-    <string name="import_pose_hint">Off: no joint angles or key frames</string>
+    <string name="import_pose_hint">Off: no pose analysis</string>
     <string name="import_status_suggested">Auto suggested</string>
     <string name="import_status_manual">Draw manually</string>
     <string name="import_replace_video">Replace video</string>
@@ -170,19 +169,14 @@
     <string name="history_rep_rom">ROM %1$s m</string>
     <string name="history_phase">%1$s %2$.2f–%3$.2f s</string>
     <string name="history_export_unavailable">This record has no displayable export data</string>
-    <string name="report_key_frame_angles">Key-frame joint angles</string>
-    <string name="report_key_frame_start">Start</string>
-    <string name="report_key_frame_bottom">Bottom / chest</string>
-    <string name="report_key_frame_sticking">Sticking point</string>
-    <string name="report_key_frame_lockout">Lockout</string>
     <string name="metric_hip_angle">Hip</string>
     <string name="metric_knee_angle">Knee</string>
     <string name="metric_ankle_angle">Ankle</string>
-    <string name="metric_trunk_angle">Trunk</string>
+    <string name="metric_trunk_angle">Back</string>
     <string name="metric_shoulder_angle">Shoulder</string>
     <string name="metric_elbow_angle">Elbow</string>
     <string name="metric_wrist_angle">Wrist</string>
-    <string name="quality_angles_unavailable_occlusion">Occlusion above 20%; joint angles unavailable</string>
+    <string name="quality_angles_unavailable_occlusion">Occlusion above 20%; pose analysis unavailable</string>
     <string name="quality_camera_estimate">Camera not level; vertical velocity is an estimate and excluded from PRs</string>
     <string name="quality_load_required">No load entered; force, power, work and 1RM unavailable</string>
     <string name="quality_acceleration_unavailable">Too few valid samples; acceleration metrics unavailable</string>
@@ -203,4 +197,8 @@
 
     <string name="report_mini_reps">Valid reps</string>
     <string name="report_overlay_unavailable">Overlay video unavailable</string>
+    <string name="report_card_pose">Pose analysis</string>
+    <string name="report_pose_off">Off</string>
+
+    <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
 </resources>

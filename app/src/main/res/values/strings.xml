@@ -58,7 +58,7 @@
     <string name="quality_low_rep_confidence">重复分割置信度较低</string>
     <string name="quality_pose_unavailable">姿态不可用；杠铃指标不受影响</string>
     <string name="quality_pose_partial">部分帧姿态不可用</string>
-    <string name="quality_pose_low_confidence">关节角置信度较低，请结合视频复核</string>
+    <string name="quality_pose_low_confidence">姿态置信度较低，请结合视频复核</string>
     <string name="quality_no_valid_reps">未识别到有效重复</string>
     <string name="quality_rep_skipped">已跳过无效重复</string>
     <string name="quality_unknown">存在未知质量警告</string>
@@ -98,21 +98,16 @@
     <string name="history_phase">%1$s %2$.2f–%3$.2f 秒</string>
     <string name="history_export_unavailable">此历史记录缺少可显示的导出数据</string>
 
-    <string name="report_key_frame_angles">关键帧关节角</string>
     <string name="report_joint_angles_disabled_title">姿态分析已关闭</string>
     <string name="report_joint_angles_disabled_hint">重新分析时开启“姿态分析”</string>
-    <string name="report_key_frame_start">起始</string>
-    <string name="report_key_frame_bottom">底部/触胸</string>
-    <string name="report_key_frame_sticking">粘滞点</string>
-    <string name="report_key_frame_lockout">锁定</string>
     <string name="metric_hip_angle">髋角</string>
     <string name="metric_knee_angle">膝角</string>
     <string name="metric_ankle_angle">踝角</string>
-    <string name="metric_trunk_angle">躯干角</string>
+    <string name="metric_trunk_angle">背角</string>
     <string name="metric_shoulder_angle">肩角</string>
     <string name="metric_elbow_angle">肘角</string>
     <string name="metric_wrist_angle">腕角</string>
-    <string name="quality_angles_unavailable_occlusion">遮挡超过 20%，关节角不可用</string>
+    <string name="quality_angles_unavailable_occlusion">遮挡超过 20%，姿态分析不可用</string>
     <string name="quality_camera_estimate">相机未水平，垂直速度仅作估算且不参与 PR 判定</string>
     <string name="quality_load_required">缺少负荷，力、功率、功和 1RM 不可用</string>
     <string name="quality_incomplete_rep">检测到缺少离心/向心或时长过短的重复，已排除出正式结果</string>
@@ -123,7 +118,6 @@
     <string name="analysis_notification_title">正在分析训练视频</string>
     <string name="analysis_notification_text">分析在后台继续</string>
     <string name="analysis_service_unavailable">分析服务尚未连接，请稍后重试</string>
-    <string name="analysis_already_running">已有分析正在进行，请等待完成或取消后再试</string>
 
     <string name="import_load_label">负荷（可选）</string>
     <string name="import_plate_label">杠铃片直径（cm）</string>
@@ -134,7 +128,7 @@
     <string name="unit_mps">m/s</string>
     <string name="import_camera_preset_side">侧拍 90°</string>
     <string name="import_camera_preset_diagonal">前/后 45°</string>
-    <string name="import_pose_hint">关闭则不输出关节角</string>
+    <string name="import_pose_hint">关闭则不做姿态分析</string>
     <string name="import_status_suggested">已自动建议</string>
     <string name="import_status_manual">请手动框选</string>
     <string name="import_replace_video">更换视频</string>
@@ -206,4 +200,8 @@
 
     <string name="report_mini_reps">有效次</string>
     <string name="report_overlay_unavailable">叠加视频不可用</string>
+    <string name="report_card_pose">姿态分析</string>
+    <string name="report_pose_off">已关闭</string>
+
+    <string name="analysis_already_running">已有分析正在进行，请等待完成或取消后再试</string>
 </resources>

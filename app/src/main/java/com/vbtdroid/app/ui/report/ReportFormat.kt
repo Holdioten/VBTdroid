@@ -15,13 +15,6 @@ internal fun formatKgValue(value: Double?): String? =
         String.format(Locale.US, "%.2f", it).trimEnd('0').trimEnd('.')
     }
 
-internal fun keyFrameLabel(kind: KeyFrameKind): Int = when (kind) {
-    KeyFrameKind.START -> R.string.report_key_frame_start
-    KeyFrameKind.BOTTOM_OR_TOUCH -> R.string.report_key_frame_bottom
-    KeyFrameKind.STICKING -> R.string.report_key_frame_sticking
-    KeyFrameKind.LOCKOUT -> R.string.report_key_frame_lockout
-}
-
 @Composable
 internal fun qualityWarningText(warning: String): String = stringResource(
     when {

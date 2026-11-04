@@ -7,6 +7,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -237,7 +240,9 @@ fun ReportScreen(
             },
         )
     }
-    val cardsContent: @Composable (Modifier) -> Unit = { cardModifier ->
+    // Two card pages so the column fits the screen without clipping: page A = numbers and pose,
+    // page B = trail and per-rep bars. Landscape shows both pages in one horizontal strip.
+    val pageA: @Composable (Modifier) -> Unit = { cardModifier ->
         if (reps.isEmpty()) {
             GlassCard(modifier = cardModifier) {
                 Text(stringResource(R.string.report_no_data), style = MaterialTheme.typography.bodyMedium)
@@ -259,19 +264,20 @@ fun ReportScreen(
                     selectedRep?.mcvMps,
                     cursorSec = cursorInRep,
                 )
-                if (current.analyzePose) {
-                    selectedRep?.let { rep ->
-                        AngleCard(
-                            modifier = cardModifier,
-                            rep = rep,
-                            slice = slice,
-                            samples = current.motionSamples,
-                            angles = current.frameAnglesByRep[rep.repIndex].orEmpty(),
-                            lift = current.lift,
-                            cursorSec = cursorInRep,
-                        )
-                    }
-                }
+            }
+            PoseCard(
+                modifier = cardModifier,
+                lift = current.lift,
+                slice = selectedSlice,
+                frames = selectedRep?.let { current.frameAnglesByRep[it.repIndex].orEmpty() }.orEmpty(),
+                analyzePose = current.analyzePose,
+                cursorSec = cursorInRep,
+            )
+        }
+    }
+    val pageB: @Composable (Modifier) -> Unit = { cardModifier ->
+        if (reps.isNotEmpty()) {
+            selectedSlice?.let { slice ->
                 BarPathCard(
                     modifier = cardModifier,
                     samples = current.motionSamples,
@@ -281,7 +287,7 @@ fun ReportScreen(
                     onCompare = { compareWithBest = it },
                     // In the gap after a rep, trailRepAt still returns it: the full trail stays
                     // until the next rep starts, then the chart draws the new rep from its start.
-                    progressSec = playbackSec?.takeIf {
+                    trailUpToSec = playbackSec?.takeIf {
                         RepTimeline.trailRepAt(current.repSlices, it)?.index == slice.index
                     },
                 )
@@ -294,6 +300,7 @@ fun ReportScreen(
             )
         }
     }
+    val cardPages = rememberPagerState(pageCount = { 2 })
     val actions: @Composable (Modifier) -> Unit = { modifier ->
         ReportActions(
             onStages = { stageSheetOpen = true },
@@ -324,11 +331,20 @@ fun ReportScreen(
                 Row(
                     Modifier.weight(1f).fillMaxWidth().padding(start = VbtSpacing.m, end = VbtSpacing.m, top = VbtSpacing.s),
                 ) {
-                    Column(
-                        Modifier.weight(0.36f).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
-                    ) {
-                        cardsContent(Modifier.fillMaxWidth())
+                    Column(Modifier.weight(0.36f).fillMaxHeight()) {
+                        HorizontalPager(
+                            state = cardPages,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            verticalAlignment = Alignment.Top,
+                        ) { page ->
+                            Column(
+                                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+                            ) {
+                                if (page == 0) pageA(Modifier.fillMaxWidth()) else pageB(Modifier.fillMaxWidth())
+                            }
+                        }
+                        PageDots(current = cardPages.currentPage, count = 2)
                     }
                     Spacer(Modifier.weight(0.64f))
                 }
@@ -358,7 +374,8 @@ fun ReportScreen(
                         .padding(VbtSpacing.m),
                     horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
                 ) {
-                    cardsContent(Modifier.width(240.dp))
+                    pageA(Modifier.width(240.dp))
+                    pageB(Modifier.width(240.dp))
                 }
                 actions(Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs))
             }

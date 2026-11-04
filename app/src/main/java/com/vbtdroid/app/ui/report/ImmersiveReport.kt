@@ -7,6 +7,9 @@ import android.widget.FrameLayout
 import android.widget.VideoView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -77,8 +81,8 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Scrim colour for floating cards: #0A0E11 at 72% (spec §1.7). */
-private val GlassColor = Bg.copy(alpha = 0.72f)
+/** Card scrim: #0A0E11 at 82%, so burned-in video text does not show through the cards. */
+private val GlassColor = Bg.copy(alpha = 0.82f)
 
 /**
  * Full-bleed overlay video. Scales to cover the parent (cropping) so portrait and landscape both
@@ -367,35 +371,45 @@ internal fun VelocityCard(
     }
 }
 
-/** Joint angle over the rep (curve + playback cursor) and the key-frame values in a 2×2 grid. */
+/**
+ * 姿态分析 card: joint angles at the current playback frame (nearest pose frame, low confidence shown
+ * as “—”). Headline joint curve over the rep with the playback cursor. Off-state is stated, not hidden.
+ */
 @Composable
-internal fun AngleCard(
+internal fun PoseCard(
     modifier: Modifier,
-    rep: RepMetrics,
-    slice: RepSlice,
-    samples: List<MotionSample>,
-    angles: List<FrameAngles>,
     lift: Lift,
+    slice: RepSlice?,
+    frames: List<FrameAngles>,
+    analyzePose: Boolean,
     cursorSec: Double?,
 ) {
-    val frames = selectKeyFrameAngles(rep, slice, samples, angles)
-    if (frames.isEmpty()) return
-    val key = headlineKey(lift)
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_key_frame_angles)) {
-        JointAngleChart(
-            angles = angles,
-            key = key,
-            rep = slice,
-            cursorSec = cursorSec,
-            height = 40.dp,
-        )
-        frames.chunked(2).forEach { pair ->
+    GlassCard(modifier = modifier, title = stringResource(R.string.report_card_pose)) {
+        if (!analyzePose) {
+            Text(
+                stringResource(R.string.report_pose_off),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+            return@GlassCard
+        }
+        if (slice != null) {
+            JointAngleChart(
+                frames = frames,
+                joint = PoseReadout.headlineJoint(lift),
+                rep = slice,
+                cursorSec = cursorSec,
+                height = 36.dp,
+            )
+        }
+        val current = PoseReadout.frameAt(frames, cursorSec ?: slice?.startSec)
+        PoseReadout.joints(lift).chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                pair.forEach { frame ->
-                    val value = angleValue(frame.angles, key)
+                pair.forEach { joint ->
+                    val value = PoseReadout.display(current, joint)
                     Column(Modifier.weight(1f)) {
                         Text(
-                            stringResource(keyFrameLabel(frame.kind)),
+                            stringResource(joint.labelRes),
                             style = MaterialTheme.typography.labelSmall,
                             color = VbtTheme.colors.onSurfaceVariant,
                             maxLines = 1,
@@ -404,7 +418,7 @@ internal fun AngleCard(
                             value?.let { stringResource(R.string.report_angle_value, it) }
                                 ?: stringResource(R.string.report_value_missing),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = confidenceColorFor(frame.angles, key),
+                            color = if (value == null) VbtTheme.colors.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                         )
                     }
@@ -415,21 +429,17 @@ internal fun AngleCard(
     }
 }
 
-@Composable
-private fun confidenceColorFor(angles: FrameAngles, key: String) =
-    com.vbtdroid.app.ui.components.confidenceColor(angles.confidenceByJoint[key] ?: angles.confidence)
-
-/** Joint/key-frame angle over the rep; a vertical cursor marks the playback time. */
+/** Joint angle over the rep for one joint; low-confidence frames are dropped. Cursor marks playback. */
 @Composable
 internal fun JointAngleChart(
-    angles: List<FrameAngles>,
-    key: String,
+    frames: List<FrameAngles>,
+    joint: PoseJoint,
     rep: RepSlice,
     cursorSec: Double?,
     height: Dp,
 ) {
-    val series = angles.filter { it.tSec >= rep.startSec && it.tSec <= rep.endSec }
-        .mapNotNull { frame -> angleValue(frame, key)?.takeIf { it.isFinite() }?.let { frame.tSec to it } }
+    val series = frames.filter { it.tSec >= rep.startSec && it.tSec <= rep.endSec }
+        .mapNotNull { frame -> PoseReadout.display(frame, joint)?.let { frame.tSec to it } }
     val lineColor = VbtTheme.colors.skeleton
     val cursorColor = MaterialTheme.colorScheme.primary
     Canvas(Modifier.fillMaxWidth().height(height)) {
@@ -452,14 +462,6 @@ internal fun JointAngleChart(
     }
 }
 
-/** Joint shown as the headline angle: elbow for bench, knee for squat and deadlift. */
-private fun headlineKey(lift: Lift): String = if (lift == Lift.BENCH) "elbow_angle_deg" else "knee_angle_deg"
-
-private fun angleValue(angles: FrameAngles, key: String): Double? = when (key) {
-    "elbow_angle_deg" -> angles.elbowDeg
-    else -> angles.kneeDeg
-}
-
 @Composable
 internal fun BarPathCard(
     modifier: Modifier,
@@ -468,7 +470,7 @@ internal fun BarPathCard(
     bestSlice: RepSlice?,
     compare: Boolean,
     onCompare: (Boolean) -> Unit,
-    progressSec: Double?,
+    trailUpToSec: Double?,
 ) {
     val comparison = bestSlice?.takeIf { it.index != slice?.index }
     val compareLabel = stringResource(R.string.report_compare_best)
@@ -477,7 +479,7 @@ internal fun BarPathCard(
             samples = samples,
             rep = slice,
             comparisonRep = if (compare) comparison else null,
-            progressSec = progressSec,
+            trailUpToSec = trailUpToSec,
             height = 96.dp,
             chartBackground = Color.Transparent,
         )
@@ -616,6 +618,29 @@ internal fun DetailSheet(
                     RepTable(reps)
                 }
             }
+        }
+    }
+}
+
+/** Page indicator for the card pages: filled dot = current page. */
+@Composable
+internal fun PageDots(current: Int, count: Int, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(top = VbtSpacing.xs),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(count) { index ->
+            Box(
+                Modifier
+                    .padding(horizontal = 3.dp)
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (index == current) MaterialTheme.colorScheme.primary
+                        else VbtTheme.colors.onSurfaceVariant.copy(alpha = 0.4f),
+                    ),
+            )
         }
     }
 }
