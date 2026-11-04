@@ -76,6 +76,7 @@ import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.phases.RepSlice
+import com.vbtdroid.core.phases.RepTimeline
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -258,17 +259,45 @@ fun ReportScreen(
             overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current)
         }
     }
-    // Selecting a rep seeks the overlay video to that rep's start.
-    LaunchedEffect(selectedSlice) {
-        selectedSlice?.let { playback.seekTo((it.startSec * 1000).toInt()) }
+    val overlayFile = overlayPreview.file
+    // Playback drives the rep: the card set switches only when the playhead crosses into another
+    // rep, so a manual pick while paused is not overwritten (time does not change while paused).
+    val playbackSec: Double? = if (overlayFile != null && playback.durationMs > 0f) {
+        playback.positionMs / 1000.0
+    } else {
+        null
+    }
+    val timeRep = playbackSec?.let { RepTimeline.currentRepAt(current.repSlices, it) }
+    LaunchedEffect(timeRep?.index) {
+        val target = timeRep ?: return@LaunchedEffect
+        val position = reps.indexOfFirst { it.repIndex == target.index }
+        if (position >= 0) selectedPosition = position
+    }
+    // Manual selection (bars, stepper) jumps the video to the rep's start.
+    fun selectRep(position: Int) {
+        selectedPosition = position
+        reps.getOrNull(position)?.let { rep ->
+            current.repSlices.firstOrNull { it.index == rep.repIndex }?.let { slice ->
+                playback.seekTo((slice.startSec * 1000).toInt())
+            }
+        }
     }
 
-    val overlayFile = overlayPreview.file
     val identity = subtitle
-    val repLabel = if (reps.isEmpty()) {
-        stringResource(R.string.report_value_missing)
-    } else {
-        stringResource(R.string.report_rep_index, position + 1, reps.size)
+    // Compact HUD: "第 i/n · stage" while the playhead is inside the selected rep.
+    val stageType = selectedSlice?.let { slice ->
+        val inRep = playbackSec?.takeIf { it >= slice.startSec && it <= slice.endSec }
+        inRep?.let { RepTimeline.phaseAt(slice, minOf(it, slice.endSec - 1e-6))?.type }
+    }
+    val repLabel = when {
+        reps.isEmpty() -> stringResource(R.string.report_value_missing)
+        stageType != null -> stringResource(
+            R.string.report_hud_stage,
+            position + 1,
+            reps.size,
+            stringResource(phaseLabelRes(current.lift, stageType)),
+        )
+        else -> stringResource(R.string.report_rep_index, position + 1, reps.size)
     }
     val header: @Composable (Modifier) -> Unit = { modifier ->
         ReportHeader(
@@ -276,8 +305,8 @@ fun ReportScreen(
             repLabel = repLabel,
             canPrev = position > 0,
             canNext = position < reps.size - 1,
-            onPrev = { selectedPosition = position - 1 },
-            onNext = { selectedPosition = position + 1 },
+            onPrev = { selectRep(position - 1) },
+            onNext = { selectRep(position + 1) },
             onBack = onBack,
             onHistory = onShowHistory,
             status = {
@@ -299,10 +328,10 @@ fun ReportScreen(
         } else {
             MainMcvCard(
                 modifier = cardModifier,
-                mcv = current.summary.mcvAvgMps,
+                repMcv = selectedRep?.mcvMps,
+                setMeanMcv = current.summary.mcvAvgMps,
                 bestMcv = current.summary.bestMcvMps,
                 velocityLossPct = current.summary.velocityLossPct,
-                repCount = current.summary.repCount,
             )
             selectedSlice?.let { slice ->
                 VelocityCard(cardModifier, current.motionSamples, slice, selectedRep?.mcvMps)
@@ -325,13 +354,14 @@ fun ReportScreen(
                     bestSlice = bestSlice,
                     compare = compareWithBest,
                     onCompare = { compareWithBest = it },
+                    progressSec = playbackSec?.takeIf { it >= slice.startSec && it <= slice.endSec },
                 )
             }
             RepBarsCard(
                 modifier = cardModifier,
                 reps = reps,
                 position = position,
-                onSelect = { selectedPosition = it },
+                onSelect = ::selectRep,
             )
         }
     }

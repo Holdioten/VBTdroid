@@ -19,7 +19,9 @@ import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.core.metrics.MotionSample
+import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
+import com.vbtdroid.core.phases.RepTimeline
 
 /**
  * Bar path for one rep (spec §4.4 item 3). Start is a hollow dot, end a filled dot. When
@@ -33,8 +35,23 @@ fun BarPathChart(
     comparisonRep: RepSlice? = null,
     height: Dp = 220.dp,
     chartBackground: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    /** Playback position in seconds; the trail is drawn up to this time. Null draws the whole rep. */
+    progressSec: Double? = null,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
+    val phases = phaseColors()
+    val stageColor = { type: PhaseType? ->
+        when (type) {
+            PhaseType.ECCENTRIC -> phases.getValue(PhaseType.ECCENTRIC)
+            PhaseType.CONCENTRIC -> phases.getValue(PhaseType.CONCENTRIC)
+            PhaseType.PAUSE -> phases.getValue(PhaseType.PAUSE).copy(alpha = 0.7f)
+            PhaseType.LOCKOUT -> phases.getValue(PhaseType.LOCKOUT).copy(alpha = 0.7f)
+            null -> phases.getValue(PhaseType.PAUSE).copy(alpha = 0.5f)
+        }
+    }
+    // Drawn runs are the current rep only, split by phase; the scale still uses the whole rep so the
+    // path does not jump while it is revealed.
+    val drawnRuns = rep?.let { RepTimeline.trailRuns(samples, it, progressSec ?: it.endSec) }.orEmpty()
     val compareColor = VbtTheme.colors.comparison
     val axisColor = VbtTheme.colors.outline
     val points = samples.filter {
@@ -78,15 +95,28 @@ fun BarPathChart(
             }
             drawPath(comparePath, compareColor.copy(alpha = 0.7f), style = Stroke(width = 2.dp.toPx()))
         }
-        val path = Path()
-        points.forEachIndexed { index, sample ->
-            val offset = point(sample)
-            if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
+        if (rep == null) {
+            val path = Path()
+            points.forEachIndexed { index, sample ->
+                val offset = point(sample)
+                if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
+            }
+            drawPath(path, lineColor, style = Stroke(width = 3.dp.toPx()))
+        } else {
+            for (run in drawnRuns) {
+                if (run.samples.size < 2) continue
+                val path = Path()
+                run.samples.forEachIndexed { index, sample ->
+                    val offset = point(sample)
+                    if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
+                }
+                drawPath(path, stageColor(run.type), style = Stroke(width = 3.dp.toPx()))
+            }
+            val drawn = drawnRuns.flatMap { it.samples }
+            if (drawn.isNotEmpty()) {
+                drawCircle(lineColor, radius = 5.dp.toPx(), center = point(drawn.first()), style = Stroke(width = 2.dp.toPx()))
+                drawCircle(lineColor, radius = 5.dp.toPx(), center = point(drawn.last()))
+            }
         }
-        drawPath(path, lineColor, style = Stroke(width = 3.dp.toPx()))
-        val start = point(points.first())
-        val end = point(points.last())
-        drawCircle(lineColor, radius = 5.dp.toPx(), center = start, style = Stroke(width = 2.dp.toPx()))
-        drawCircle(lineColor, radius = 5.dp.toPx(), center = end)
     }
 }

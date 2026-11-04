@@ -14,6 +14,15 @@ object OverlayStyle {
     /** Barbell trail and head: primary #3CE0B4. */
     const val TRAIL = 0xFF3CE0B4L
 
+    /** Eccentric (lowering) trail: phaseEccentric #6AA7FF. */
+    const val ECCENTRIC = 0xFF6AA7FFL
+
+    /** Pause trail: phasePause #8C97A3, drawn dim. */
+    const val PAUSE = 0xFF8C97A3L
+
+    /** Lockout trail: phaseLockout #A6F0DC, drawn dim. */
+    const val LOCKOUT = 0xFFA6F0DCL
+
     /** Speed readout text: #FFC247. */
     const val SPEED = 0xFFFFC247L
 

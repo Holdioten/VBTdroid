@@ -12,6 +12,7 @@ import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.phases.Phase
 import com.vbtdroid.core.phases.PhaseType
+import com.vbtdroid.core.phases.RepTimeline
 import com.vbtdroid.core.phases.RepSlice
 import java.util.Locale
 import kotlin.math.max
@@ -64,6 +65,13 @@ class OverlayRenderer(private val result: AnalysisResult) {
         textAlign = Paint.Align.LEFT
     }
     private val path = Path()
+    private val phaseTrailPaints: Map<PhaseType?, Paint> = mapOf(
+        PhaseType.ECCENTRIC to trailPaintOf(OverlayStyle.ECCENTRIC, 255),
+        PhaseType.CONCENTRIC to trailPaintOf(OverlayStyle.TRAIL, 255),
+        PhaseType.PAUSE to trailPaintOf(OverlayStyle.PAUSE, 160),
+        PhaseType.LOCKOUT to trailPaintOf(OverlayStyle.LOCKOUT, 160),
+        null to trailPaintOf(OverlayStyle.PAUSE, 120),
+    )
     private val bubbleRect = RectF()
 
     private var referenceWidth = 0
@@ -90,15 +98,22 @@ class OverlayRenderer(private val result: AnalysisResult) {
         drawHud(canvas, tSec, width, height, scale)
     }
 
+    /**
+     * Bar path of the current rep only, colored by phase. Nothing from earlier reps is drawn, so
+     * the trail resets when the rep changes. Between reps there is no trail.
+     */
     private fun drawTrail(canvas: Canvas, tSec: Double, dotRadius: Float) {
-        val trail = OverlayTimeline.trailSamples(result.motionSamples, tSec)
-        val points = trail.mapNotNull(::toPixel)
-        if (points.isNotEmpty()) {
-            path.reset()
-            points.forEachIndexed { index, point ->
-                if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+        val rep = RepTimeline.currentRepAt(result.repSlices, tSec)
+        if (rep != null) {
+            for (run in RepTimeline.trailRuns(result.motionSamples, rep, tSec)) {
+                val points = run.samples.mapNotNull(::toPixel)
+                if (points.size < 2) continue
+                path.reset()
+                points.forEachIndexed { index, point ->
+                    if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                }
+                canvas.drawPath(path, trailPaintFor(run.type))
             }
-            if (points.size > 1) canvas.drawPath(path, trailPaint)
         }
 
         val current = OverlayTimeline.nearestMotionSample(result.motionSamples, tSec)?.let(::toPixel)
@@ -107,6 +122,19 @@ class OverlayRenderer(private val result: AnalysisResult) {
             skeletonPaint.color = OverlayStyle.SKELETON.toInt()
             canvas.drawCircle(current.x, current.y, dotRadius * 2.4f, skeletonPaint)
         }
+    }
+
+    private fun trailPaintOf(color: Long, alpha: Int): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        this.color = (color.toInt() and 0x00FFFFFF) or (alpha shl 24)
+    }
+
+    private fun trailPaintFor(type: PhaseType?): Paint {
+        val paint = phaseTrailPaints.getValue(type)
+        paint.strokeWidth = trailPaint.strokeWidth
+        return paint
     }
 
     /** Converts smoothed bar coordinates from metres back into image pixels. */

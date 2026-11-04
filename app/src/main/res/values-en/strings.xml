@@ -104,7 +104,6 @@
     <string name="report_preview_description">First frame with the bar path of the selected rep</string>
     <string name="report_mini_best_mcv">Best MCV</string>
     <string name="report_mini_vl">Velocity loss VL</string>
-    <string name="report_mini_reps">Valid reps</string>
     <string name="report_per_rep_mcv">Mean velocity per rep</string>
     <string name="report_rep_bar_description">Rep %1$d mean velocity %2$s metres per second</string>
     <string name="report_angle_value">%1$.1f°</string>
@@ -202,8 +201,11 @@
     <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
 
     <string name="report_save_overlay">Save overlay video</string>
-    <string name="report_card_mcv">Mean MCV</string>
     <string name="report_action_stages">Stages</string>
     <string name="report_action_details">Details</string>
     <string name="report_rep_index">Rep %1$d / %2$d</string>
+
+    <string name="report_card_rep_mcv">This rep MCV</string>
+    <string name="report_mini_set_mean">Set mean</string>
+    <string name="report_hud_stage">Rep %1$d/%2$d · %3$s</string>
 </resources>

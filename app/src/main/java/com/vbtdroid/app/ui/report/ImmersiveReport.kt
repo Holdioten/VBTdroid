@@ -155,7 +155,7 @@ internal fun PlaybackBar(playback: OverlayPlayback, modifier: Modifier = Modifie
                     playback.playing = v.isPlaying
                 }
             }
-            delay(200)
+            delay(100)
         }
     }
     val duration = playback.durationMs
@@ -290,16 +290,16 @@ internal fun GlassCard(
 @Composable
 internal fun MainMcvCard(
     modifier: Modifier,
-    mcv: Double?,
+    repMcv: Double?,
+    setMeanMcv: Double?,
     bestMcv: Double?,
     velocityLossPct: Double?,
-    repCount: Int,
 ) {
     val missing = stringResource(R.string.report_value_missing)
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_card_mcv)) {
+    GlassCard(modifier = modifier, title = stringResource(R.string.report_card_rep_mcv)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.xs)) {
             Text(
-                formatMcv(mcv) ?: missing,
+                formatMcv(repMcv) ?: missing,
                 style = VbtTheme.numbers.displayMetricSm,
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
@@ -312,12 +312,12 @@ internal fun MainMcvCard(
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            MiniRow(stringResource(R.string.report_mini_set_mean), formatMcv(setMeanMcv) ?: missing)
             MiniRow(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing)
             MiniRow(
                 stringResource(R.string.report_mini_vl),
                 formatMetricValue(velocityLossPct, MetricId.SET_VELOCITY_LOSS),
             )
-            MiniRow(stringResource(R.string.report_mini_reps), repCount.toString())
         }
     }
 }
@@ -394,6 +394,7 @@ internal fun BarPathCard(
     bestSlice: RepSlice?,
     compare: Boolean,
     onCompare: (Boolean) -> Unit,
+    progressSec: Double?,
 ) {
     val comparison = bestSlice?.takeIf { it.index != slice?.index }
     val compareLabel = stringResource(R.string.report_compare_best)
@@ -402,6 +403,7 @@ internal fun BarPathCard(
             samples = samples,
             rep = slice,
             comparisonRep = if (compare) comparison else null,
+            progressSec = progressSec,
             height = 150.dp,
             chartBackground = Color.Transparent,
         )
