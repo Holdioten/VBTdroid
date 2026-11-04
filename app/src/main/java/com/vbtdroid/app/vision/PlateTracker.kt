@@ -68,7 +68,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         }
     }
 
-    /** 使用 PyrLK 光流预测中心，再在局部搜索区拟合椭圆精修。 */
+    /**
+     * 使用 PyrLK 光流预测中心，再在局部搜索区（整块杠铃片 + 余量）内先做霍夫圆定位，
+     * 用圆心作为椭圆拟合的种子；椭圆失败时退回霍夫圆结果。
+     */
     open fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
         ensureOpenCv()
         val reference = axisReference ?: return null
@@ -81,12 +84,36 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val predictedX = opticalPrediction?.x?.toFloat() ?: velocityPredictionX
             val predictedY = opticalPrediction?.y?.toFloat() ?: velocityPredictionY
 
-            val radius = reference.majorAxisPx * 0.9f
-            val roi = RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius)
-            val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, predictedX, predictedY)
-            if (fitted != null && fitted.confidence >= MIN_TRACK_CONFIDENCE) {
+            // Full plate diameter plus margin; a radius below the diameter only exposes an arc.
+            val radius = PlateRoi.localSearchRadiusPx(reference.majorAxisPx)
+            val circle = findHoughCircle(
+                currentGray,
+                RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius),
+                reference.majorAxisPx,
+                predictedX,
+                predictedY,
+            )
+            val seedX = circle?.centerX ?: predictedX
+            val seedY = circle?.centerY ?: predictedY
+            val roi = RectF(seedX - radius, seedY - radius, seedX + radius, seedY + radius)
+            val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, seedX, seedY)
+                ?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
+            if (fitted != null) {
                 updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec, currentGray)
                 return observation(tSec, fitted)
+            }
+
+            // Ellipse fit needs a clean contour; the Hough circle still localizes a partially
+            // occluded or blurred plate. Reference axis is required before this path runs.
+            if (circle != null) {
+                updatePosition(circle.centerX, circle.centerY, tSec, currentGray)
+                return PlateObservation(
+                    tSec = tSec,
+                    xPx = circle.centerX.toDouble(),
+                    yPx = circle.centerY.toDouble(),
+                    majorAxisPx = reference.majorAxisPx.toDouble(),
+                    confidence = circle.confidence.toDouble(),
+                )
             }
 
             // 检测器只在跟踪丢失时调用，用于恢复而非逐帧主信号。
@@ -193,6 +220,82 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         }
     }
 
+    /**
+     * 在局部 ROI 内检测圆，作为椭圆拟合的种子和失败回退。
+     *
+     * 半径相对于参考直径（直径/2）做 ±15% 校验，超出即视为别的圆（内毂、旁边的片）；圆心离
+     * 预测点过远也拒绝，避免整帧跳到另一个物体。
+     */
+    private fun findHoughCircle(
+        gray: Mat,
+        requestedRoi: RectF,
+        expectedAxisPx: Float,
+        predictedX: Float,
+        predictedY: Float,
+    ): HoughCircle? {
+        val left = requestedRoi.left.toInt().coerceIn(0, gray.cols() - 1)
+        val top = requestedRoi.top.toInt().coerceIn(0, gray.rows() - 1)
+        val right = requestedRoi.right.toInt().coerceIn(left + 1, gray.cols())
+        val bottom = requestedRoi.bottom.toInt().coerceIn(top + 1, gray.rows())
+        if (right - left < 5 || bottom - top < 5) return null
+
+        val expectedRadius = expectedAxisPx / 2f
+        if (!expectedRadius.isFinite() || expectedRadius <= 1f) return null
+        val minRadius = (expectedRadius * HOUGH_MIN_RADIUS_FACTOR).toInt().coerceAtLeast(1)
+        val maxRadius = (expectedRadius * HOUGH_MAX_RADIUS_FACTOR).toInt().coerceAtLeast(minRadius + 1)
+
+        val crop = gray.submat(Rect(left, top, right - left, bottom - top)).clone()
+        val blurred = Mat()
+        val circles = Mat()
+        try {
+            Imgproc.GaussianBlur(crop, blurred, org.opencv.core.Size(5.0, 5.0), 1.5)
+            Imgproc.HoughCircles(
+                blurred,
+                circles,
+                Imgproc.HOUGH_GRADIENT,
+                HOUGH_DP,
+                max(8.0, expectedRadius.toDouble() * HOUGH_MIN_DIST_FACTOR),
+                HOUGH_PARAM1,
+                HOUGH_PARAM2,
+                minRadius,
+                maxRadius,
+            )
+            var best: HoughCircle? = null
+            for (index in 0 until circles.cols()) {
+                val values = circles.get(0, index) ?: continue
+                if (values.size < 3) continue
+                val centerX = (values[0] + left).toFloat()
+                val centerY = (values[1] + top).toFloat()
+                val radiusPx = values[2].toFloat()
+                if (!centerX.isFinite() || !centerY.isFinite() || !radiusPx.isFinite()) continue
+                if (radiusPx <= 0f) continue
+                // Reject a circle whose radius moved too far from the reference plate.
+                val radiusDeviation = abs(radiusPx - expectedRadius) / expectedRadius
+                if (radiusDeviation > HOUGH_MAX_RADIUS_DEVIATION) continue
+                val dx = centerX - predictedX
+                val dy = centerY - predictedY
+                val distance = sqrt(dx * dx + dy * dy)
+                if (distance > expectedRadius * HOUGH_MAX_JUMP_FACTOR) continue
+                val radiusScore = (1f - radiusDeviation / HOUGH_MAX_RADIUS_DEVIATION).coerceIn(0f, 1f)
+                val distanceScore = (1f - distance / (expectedRadius * HOUGH_MAX_JUMP_FACTOR)).coerceIn(0f, 1f)
+                val confidence = (0.5f + 0.5f * radiusScore) * (0.5f + 0.5f * distanceScore)
+                val candidate = HoughCircle(centerX, centerY, radiusPx, confidence, distance)
+                if (best == null || candidate.confidence > best.confidence ||
+                    (candidate.confidence == best.confidence && distance < best.distance)
+                ) {
+                    best = candidate
+                }
+            }
+            return best
+        } catch (_: RuntimeException) {
+            return null
+        } finally {
+            crop.release()
+            blurred.release()
+            circles.release()
+        }
+    }
+
     private fun findEllipse(
         gray: Mat,
         requestedRoi: RectF,
@@ -264,6 +367,14 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         check(OpenCVLoader.initLocal()) { "OpenCV initialization failed; verify the OpenCV Android dependency." }
     }
 
+    private data class HoughCircle(
+        val centerX: Float,
+        val centerY: Float,
+        val radiusPx: Float,
+        val confidence: Float,
+        val distance: Float,
+    )
+
     private data class EllipseFit(
         val ellipse: RotatedRect,
         val majorAxis: Float,
@@ -275,5 +386,15 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private companion object {
         const val MAX_AXIS_DEVIATION = 0.25f
         const val MIN_TRACK_CONFIDENCE = 0.25f
+
+        // Hough circle fallback tuned on the 720x1280 side-view PC videos (plate r ~130 px).
+        const val HOUGH_DP = 1.2
+        const val HOUGH_MIN_DIST_FACTOR = 0.5
+        const val HOUGH_PARAM1 = 120.0
+        const val HOUGH_PARAM2 = 45.0
+        const val HOUGH_MIN_RADIUS_FACTOR = 0.85f
+        const val HOUGH_MAX_RADIUS_FACTOR = 1.15f
+        const val HOUGH_MAX_RADIUS_DEVIATION = 0.15f
+        const val HOUGH_MAX_JUMP_FACTOR = 2.0f
     }
 }

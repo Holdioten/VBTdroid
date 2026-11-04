@@ -256,6 +256,72 @@ class PhaseSegmenterTest {
     }
 
     @Test
+    fun `travel below the app ROM floor is rejected`() {
+        // 0.15 m: accepted by the old 0.10 m default, rejected by the 0.20 m app default.
+        val samples = sequence(
+            Move(-0.5, 6, -0.025),
+            Move(0.5, 6, 0.025),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertTrue(result.reps.isEmpty())
+        assertTrue(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+    }
+
+    private fun deadliftRep(dy: Double = 0.05, steps: Int = 10) = arrayOf(
+        Move(0.5, steps, dy),
+        Move(0.0, 4),
+        Move(-0.5, steps, -dy),
+    )
+
+    /** Short pull with a deceleration tail: passes min duration but travels ~0.22 m. */
+    private fun quarterPull() = arrayOf(
+        Move(0.5, 8, 0.02625),
+        Move(0.2, 2, 0.005),
+        Move(0.0, 4),
+        Move(-0.5, 8, -0.02625),
+        Move(-0.2, 2, -0.005),
+    )
+
+    @Test
+    fun `quarter pull is dropped while six true deadlift reps survive`() {
+        val samples = sequence(
+            *quarterPull(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertEquals(6, result.reps.size)
+        assertTrue(result.warnings.contains(PhaseSegmenter.REP_ROM_OUTLIER))
+        result.reps.forEach { rep ->
+            val rom = samples.filter { it.tSec in rep.startSec..rep.endSec }
+                .let { it.maxOf { sample -> sample.yM } - it.minOf { sample -> sample.yM } }
+            assertEquals(0.5, rom, 1e-9)
+        }
+        assertEquals((1..6).toList(), result.reps.map { it.index })
+    }
+
+    @Test
+    fun `median ROM filter waits for at least three candidates`() {
+        val samples = sequence(
+            *quarterPull(),
+            *deadliftRep(),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertEquals(2, result.reps.size)
+        assertFalse(result.warnings.contains(PhaseSegmenter.REP_ROM_OUTLIER))
+    }
+
+    @Test
     fun `long pause does not split a rep`() {
         val samples = sequence(
             Move(-0.5, 6, -0.05),

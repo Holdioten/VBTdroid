@@ -27,7 +27,12 @@ data class PhaseConfig(
     val lockoutSec: Double = 0.10,
     val minRepSec: Double = 0.45,
     val minConcentricSec: Double = 0.15,
-    val minRomM: Double = 0.10,
+    /**
+     * Minimum vertical bar travel for a rep. 0.20 m is the app default for squat/deadlift:
+     * a deliberate quarter pull on the tuning videos reached ~0.12 m while real reps reached
+     * ~0.40 m, so 0.10 m used to let partial pulls through.
+     */
+    val minRomM: Double = 0.20,
     val mergePauseSec: Double = 0.25,
 )
 
@@ -43,11 +48,14 @@ data class PhaseSegmentation(
  * are continuous and never stop at the top. Missing lockout therefore produces a
  * [NO_LOCKOUT] quality hint, not a rejected rep. Candidates that cannot stand as a rep (missing
  * eccentric/concentric, too short, or too little vertical travel) are dropped and counted as
- * [INCOMPLETE_REP].
+ * [INCOMPLETE_REP]. Once a set has several reps, candidates whose vertical travel is under half
+ * the set median are dropped as partial pulls and reported as [REP_ROM_OUTLIER].
  */
 object PhaseSegmenter {
     const val NO_LOCKOUT = "NO_LOCKOUT"
     const val INCOMPLETE_REP = "INCOMPLETE_REP"
+    /** Dropped candidate whose ROM was far below the set's median (e.g. a quarter pull). */
+    const val REP_ROM_OUTLIER = "REP_ROM_OUTLIER"
 
     /** Legacy name kept for persisted reports created before reps stopped requiring a lockout. */
     const val INCOMPLETE_REP_NO_LOCKOUT = "INCOMPLETE_REP_NO_LOCKOUT"
@@ -109,11 +117,15 @@ object PhaseSegmenter {
         // A noisy track can split one rep into two adjacent candidates separated by a tiny gap
         // with no real travel. Merge only those; reps separated by actual displacement stay split.
         val reps = mergeNoiseFragments(result.reps, samples, config)
+        // Relative ROM gate: a deliberate quarter pull can clear the absolute floor but is far
+        // below the set's typical travel, so drop it once there are enough reps for a median.
+        val (finalReps, droppedRomOutliers) = dropRomOutliers(reps, samples, config)
         val warnings = buildList {
             if (result.incompleteCount > 0) add(INCOMPLETE_REP)
-            if (reps.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) add(NO_LOCKOUT)
+            if (droppedRomOutliers > 0) add(REP_ROM_OUTLIER)
+            if (finalReps.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) add(NO_LOCKOUT)
         }
-        return PhaseSegmentation(reps, warnings)
+        return PhaseSegmentation(finalReps, warnings)
     }
 
     /** Duration-margin confidence for phase review; manual boundaries always require review. */
@@ -483,6 +495,42 @@ object PhaseSegmenter {
         return merged.mapIndexed { index, rep -> rep.copy(index = index + 1) }
     }
 
+    /**
+     * Drops candidates whose vertical travel is implausibly small relative to the rest of the
+     * set. Requires at least [ROM_OUTLIER_MIN_REPS] candidates; the absolute [PhaseConfig.minRomM]
+     * floor wins when it is stricter than half the median.
+     */
+    private fun dropRomOutliers(
+        reps: List<RepSlice>,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): Pair<List<RepSlice>, Int> {
+        if (reps.size < ROM_OUTLIER_MIN_REPS) {
+            return reps.mapIndexed { index, rep -> rep.copy(index = index + 1) } to 0
+        }
+        val roms = reps.map { repRomM(it, samples) }
+        val sorted = roms.sorted()
+        val median = if (sorted.size % 2 == 1) {
+            sorted[sorted.size / 2]
+        } else {
+            (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2.0
+        }
+        val threshold = max(config.minRomM, median * ROM_OUTLIER_MEDIAN_FRACTION)
+        var dropped = 0
+        val kept = buildList {
+            reps.forEachIndexed { index, rep ->
+                if (roms[index] + 1e-9 >= threshold) add(rep) else dropped++
+            }
+        }
+        return kept.mapIndexed { index, rep -> rep.copy(index = index + 1) } to dropped
+    }
+
+    private fun repRomM(rep: RepSlice, samples: List<MotionSample>): Double {
+        val repSamples = samples.filter { it.tSec >= rep.startSec && it.tSec <= rep.endSec }
+        if (repSamples.size < 2) return 0.0
+        return repSamples.maxOf { it.yM } - repSamples.minOf { it.yM }
+    }
+
     private fun gapHasNoDisplacement(
         gapStartSec: Double,
         gapEndSec: Double,
@@ -496,4 +544,10 @@ object PhaseSegmenter {
     }
 
     private fun Run.toPhase() = Phase(type, startSec, endSec)
+
+    /** Below this candidate count the set median is not meaningful. */
+    private const val ROM_OUTLIER_MIN_REPS = 3
+
+    /** A rep under half the set's median ROM is treated as a partial pull. */
+    private const val ROM_OUTLIER_MEDIAN_FRACTION = 0.5
 }
