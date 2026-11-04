@@ -6,7 +6,9 @@ import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import android.content.Context
+import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
+import com.vbtdroid.app.ui.report.phaseLabelRes
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.metrics.Point2
 import com.vbtdroid.core.metrics.RepMetrics
@@ -241,9 +243,8 @@ class OverlayRenderer(private val context: Context, private val result: Analysis
         val slice = RepTimeline.currentRepAt(result.repSlices, tSec)
             ?: RepTimeline.trailRepAt(result.repSlices, tSec)
         val rep = slice?.let { current -> result.reps.firstOrNull { it.repIndex == current.index } }
+        // Lift and load already live in the report top bar; the HUD only adds in-video state.
         val lines = buildList {
-            add(liftLabel())
-            add(loadLabel())
             add(repLabel(slice, tSec))
             add(velocityLabel(rep))
         }
@@ -268,55 +269,11 @@ class OverlayRenderer(private val context: Context, private val result: Analysis
         return bubbleRect.bottom
     }
 
-    private fun liftLabel(): String {
-        val lift = when (result.lift) {
-            Lift.SQUAT -> "Squat"
-            Lift.BENCH -> "Bench"
-            Lift.DEADLIFT -> "Deadlift"
-        }
-        val variant = when (result.variant) {
-            com.vbtdroid.core.model.LiftVariant.DEFAULT -> ""
-            com.vbtdroid.core.model.LiftVariant.HIGH_BAR -> "High bar"
-            com.vbtdroid.core.model.LiftVariant.LOW_BAR -> "Low bar"
-            com.vbtdroid.core.model.LiftVariant.CONVENTIONAL -> "Conventional"
-            com.vbtdroid.core.model.LiftVariant.SUMO -> "Sumo"
-            com.vbtdroid.core.model.LiftVariant.PAUSED -> "Paused"
-            com.vbtdroid.core.model.LiftVariant.TOUCH_AND_GO -> "Touch and go"
-        }
-        return if (variant.isEmpty()) lift else "$lift \u00B7 $variant"
-    }
-
-    private fun loadLabel(): String = result.loadKg?.takeIf { it > 0.0 }
-        ?.let { String.format(Locale.US, "Load %.1f kg", it) }
-        ?: "Load \u2014"
-
     private fun repLabel(slice: RepSlice?, tSec: Double): String {
-        if (slice == null) return "Rep \u2014"
+        if (slice == null) return "\u2014"
         val phase = RepTimeline.phaseAt(slice, tSec.coerceIn(slice.startSec, slice.endSec))
-        return "Rep ${slice.index}/${result.repSlices.size} \u00B7 ${phaseLabel(phase)}"
-    }
-
-    /** Lift-specific English stage names, matching the in-app labels (ui/report/PhaseLabels.kt). */
-    private fun phaseLabel(phase: Phase?): String {
-        val type = phase?.type ?: return "\u2014"
-        return when (type) {
-            PhaseType.LOCKOUT -> "Lockout"
-            PhaseType.ECCENTRIC -> when (result.lift) {
-                Lift.SQUAT -> "Descent"
-                Lift.BENCH -> "Lower"
-                Lift.DEADLIFT -> "Lower (eccentric)"
-            }
-            PhaseType.PAUSE -> when (result.lift) {
-                Lift.SQUAT -> "Bottom pause"
-                Lift.BENCH -> "Chest pause"
-                Lift.DEADLIFT -> "Start pause"
-            }
-            PhaseType.CONCENTRIC -> when (result.lift) {
-                Lift.SQUAT -> "Ascent"
-                Lift.BENCH -> "Press"
-                Lift.DEADLIFT -> "Pull"
-            }
-        }
+        val stage = phase?.let { context.getString(phaseLabelRes(result.lift, it.type)) } ?: "\u2014"
+        return context.getString(R.string.report_hud_stage, slice.index, result.repSlices.size, stage)
     }
 
     private fun velocityLabel(rep: RepMetrics?): String {
