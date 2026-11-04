@@ -34,6 +34,11 @@ class OverlayRenderer(private val result: AnalysisResult) {
         style = Paint.Style.FILL
         color = OverlayStyle.SKELETON.toInt()
     }
+    private val jointRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = OverlayStyle.SKELETON.toInt()
+        strokeCap = Paint.Cap.ROUND
+    }
     private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = OverlayStyle.TRAIL.toInt()
@@ -82,7 +87,8 @@ class OverlayRenderer(private val result: AnalysisResult) {
         val scale = width / 1080f
         if (width != referenceWidth) {
             referenceWidth = width
-            skeletonPaint.strokeWidth = max(1.2f, 2.0f * scale)
+            skeletonPaint.strokeWidth = max(2.4f, 4.0f * scale)
+            jointRingPaint.strokeWidth = max(1.4f, 2.2f * scale)
             trailPaint.strokeWidth = max(1.5f, 3.5f * scale)
             angleTextPaint.textSize = max(9f, 26f * scale)
             speedTextPaint.textSize = max(11f, 34f * scale)
@@ -160,7 +166,10 @@ class OverlayRenderer(private val result: AnalysisResult) {
         }
         LANDMARKS.forEach { index ->
             visiblePoint(pose, index)?.let { point ->
-                canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), dotRadius, jointPaint)
+                // Hollow ring + inner dot, Arcus-style. Rings read better over busy video than
+                // solid dots and keep the joint centre visible.
+                canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), dotRadius * 1.9f, jointRingPaint)
+                canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), dotRadius * 0.75f, jointPaint)
             }
         }
 
@@ -168,9 +177,18 @@ class OverlayRenderer(private val result: AnalysisResult) {
         val left = sideVisibility(pose, LEFT_SIDE)
         val right = sideVisibility(pose, RIGHT_SIDE)
         val useLeft = left >= right
-        drawAngle(canvas, angles.hipDeg, pose, if (useLeft) 23 else 24, scale, height)
-        drawAngle(canvas, angles.kneeDeg, pose, if (useLeft) 25 else 26, scale, height)
-        drawAngle(canvas, angles.ankleDeg, pose, if (useLeft) 27 else 28, scale, height)
+        when (result.lift) {
+            Lift.BENCH -> {
+                drawAngle(canvas, angles.shoulderDeg, pose, if (useLeft) 13 else 14, scale, height)
+                drawAngle(canvas, angles.elbowDeg, pose, if (useLeft) 15 else 16, scale, height)
+            }
+
+            Lift.SQUAT, Lift.DEADLIFT -> {
+                drawAngle(canvas, angles.hipDeg, pose, if (useLeft) 23 else 24, scale, height)
+                drawAngle(canvas, angles.kneeDeg, pose, if (useLeft) 25 else 26, scale, height)
+                drawAngle(canvas, angles.ankleDeg, pose, if (useLeft) 27 else 28, scale, height)
+            }
+        }
     }
 
     private fun drawAngle(
@@ -218,7 +236,9 @@ class OverlayRenderer(private val result: AnalysisResult) {
     }
 
     private fun drawHud(canvas: Canvas, tSec: Double, width: Int, height: Int, scale: Float): Float {
-        val slice = result.repSlices.firstOrNull { tSec >= it.startSec && tSec <= it.endSec }
+        // Keep the previous rep through the between-rep gap, matching the burned-in cards/trail.
+        val slice = RepTimeline.currentRepAt(result.repSlices, tSec)
+            ?: RepTimeline.trailRepAt(result.repSlices, tSec)
         val rep = slice?.let { current -> result.reps.firstOrNull { it.repIndex == current.index } }
         val lines = buildList {
             add(liftLabel())
@@ -271,7 +291,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
 
     private fun repLabel(slice: RepSlice?, tSec: Double): String {
         if (slice == null) return "Rep \u2014"
-        val phase = slice.phases.firstOrNull { tSec >= it.startSec && tSec <= it.endSec }
+        val phase = RepTimeline.phaseAt(slice, tSec.coerceIn(slice.startSec, slice.endSec))
         return "Rep ${slice.index}/${result.repSlices.size} \u00B7 ${phaseLabel(phase)}"
     }
 
