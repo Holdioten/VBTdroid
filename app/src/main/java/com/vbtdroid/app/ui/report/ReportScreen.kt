@@ -353,7 +353,11 @@ fun ReportScreen(
                     bestSlice = bestSlice,
                     compare = compareWithBest,
                     onCompare = { compareWithBest = it },
-                    progressSec = playbackSec?.takeIf { it >= slice.startSec && it <= slice.endSec },
+                    // In the gap after a rep, trailRepAt still returns it: the full trail stays
+                    // until the next rep starts, then the chart draws the new rep from its start.
+                    progressSec = playbackSec?.takeIf {
+                        RepTimeline.trailRepAt(current.repSlices, it)?.index == slice.index
+                    },
                 )
             }
             RepBarsCard(

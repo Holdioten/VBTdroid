@@ -99,11 +99,11 @@ class OverlayRenderer(private val result: AnalysisResult) {
     }
 
     /**
-     * Bar path of the current rep only, colored by phase. Nothing from earlier reps is drawn, so
-     * the trail resets when the rep changes. Between reps there is no trail.
+     * Bar path of the rep that owns the current playback time, colored by phase. In the gap after
+     * a rep the previous rep's full trail stays visible; it clears only when the next rep starts.
      */
     private fun drawTrail(canvas: Canvas, tSec: Double, dotRadius: Float) {
-        val rep = RepTimeline.currentRepAt(result.repSlices, tSec)
+        val rep = RepTimeline.trailRepAt(result.repSlices, tSec)
         if (rep != null) {
             for (run in RepTimeline.trailRuns(result.motionSamples, rep, tSec)) {
                 val points = run.samples.mapNotNull(::toPixel)

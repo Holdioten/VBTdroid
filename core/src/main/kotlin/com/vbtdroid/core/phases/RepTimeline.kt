@@ -18,6 +18,17 @@ object RepTimeline {
         return reps.last().takeIf { tSec == it.endSec }
     }
 
+    /**
+     * Rep whose trail belongs at [tSec]. Inside a rep it is that rep; in the interval after rep i
+     * ends and before rep i+1 starts it stays rep i, so its full trail remains on screen. The trail
+     * switches only when the next rep starts. After the last rep its trail also stays.
+     */
+    fun trailRepAt(reps: List<RepSlice>, tSec: Double): RepSlice? {
+        if (!tSec.isFinite() || reps.isEmpty()) return null
+        currentRepAt(reps, tSec)?.let { return it }
+        return reps.filter { tSec >= it.endSec }.maxByOrNull { it.endSec }
+    }
+
     fun phaseAt(rep: RepSlice, tSec: Double): Phase? {
         if (!tSec.isFinite()) return null
         rep.phases.firstOrNull { tSec >= it.startSec && tSec < it.endSec }?.let { return it }

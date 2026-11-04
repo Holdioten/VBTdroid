@@ -71,20 +71,24 @@ fun BarPathChart(
         val maxX = all.maxOf { it.xM }
         val minY = all.minOf { it.yM }
         val maxY = all.maxOf { it.yM }
-        val xSpan = (maxX - minX).takeIf { it > 1e-9 } ?: 1.0
-        val ySpan = (maxY - minY).takeIf { it > 1e-9 } ?: 1.0
-        fun point(sample: MotionSample): Offset {
-            val x = 12f + (sample.xM - minX).toFloat() / xSpan.toFloat() * (size.width - 24f)
-            val y = size.height - 12f -
-                (sample.yM - minY).toFloat() / ySpan.toFloat() * (size.height - 24f)
-            return Offset(x, y)
-        }
+        // One px/m for both axes; the shorter physical span is letterboxed instead of stretched.
+        val fit = fitBarPath(
+            minX = minX,
+            maxX = maxX,
+            minY = minY,
+            maxY = maxY,
+            widthPx = size.width,
+            heightPx = size.height,
+            paddingPx = 12f,
+        )
+        fun point(sample: MotionSample): Offset =
+            Offset(fit.x(sample.xM), fit.y(sample.yM, size.height))
 
-        drawLine(axisColor, Offset(12f, 0f), Offset(12f, size.height), strokeWidth = 1f)
+        drawLine(axisColor, Offset(fit.leftPx, 0f), Offset(fit.leftPx, size.height), strokeWidth = 1f)
         drawLine(
             axisColor,
-            Offset(0f, size.height - 12f),
-            Offset(size.width, size.height - 12f),
+            Offset(0f, size.height - fit.topPx),
+            Offset(size.width, size.height - fit.topPx),
             strokeWidth = 1f,
         )
         if (comparePoints.size >= 2) {

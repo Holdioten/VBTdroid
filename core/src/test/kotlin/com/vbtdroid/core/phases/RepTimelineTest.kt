@@ -54,6 +54,31 @@ class RepTimelineTest {
     }
 
     @Test
+    fun trailRepPersistsThroughGapUntilNextRepStarts() {
+        val gapped = listOf(rep1, rep2.copy(startSec = 2.5))
+
+        // Gap [2.0, 2.5): still rep 1, so its full trail stays visible.
+        assertEquals(1, RepTimeline.trailRepAt(gapped, 2.0)?.index)
+        assertEquals(1, RepTimeline.trailRepAt(gapped, 2.2)?.index)
+        assertEquals(1, RepTimeline.trailRepAt(gapped, 2.499)?.index)
+        // Next rep start clears it and draws the new rep.
+        assertEquals(2, RepTimeline.trailRepAt(gapped, 2.5)?.index)
+
+        val samples = (0..60).map { sample(1.0 + it * 0.05) }
+        val betweenReps = RepTimeline.trailRepAt(gapped, 2.2)!!
+        val trail = RepTimeline.trailRuns(samples, betweenReps, upToSec = 2.2)
+        assertTrue(trail.flatMap { it.samples }.isNotEmpty())
+        assertTrue(trail.flatMap { it.samples }.all { it.tSec <= rep1.endSec })
+    }
+
+    @Test
+    fun trailRepBeforeFirstIsNullAndAfterLastStaysLast() {
+        assertNull(RepTimeline.trailRepAt(reps, 0.5))
+        assertEquals(2, RepTimeline.trailRepAt(reps, 3.5)?.index)
+        assertNull(RepTimeline.trailRepAt(reps, Double.NaN))
+    }
+
+    @Test
     fun phaseAtFollowsRepBoundaries() {
         assertEquals(PhaseType.ECCENTRIC, RepTimeline.phaseAt(rep1, 1.2)?.type)
         assertEquals(PhaseType.CONCENTRIC, RepTimeline.phaseAt(rep1, 1.4)?.type)
