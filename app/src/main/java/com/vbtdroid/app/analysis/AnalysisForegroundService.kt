@@ -113,6 +113,9 @@ class AnalysisForegroundService : Service() {
                     val analyzed = pipeline.analyze(request) { progress ->
                         deliverProgress(AnalysisOverlayJob.analysisProgress(progress))
                     }
+                    if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                        writeDebugDump(analyzed)
+                    }
                     // One background job owns both passes: analysis 0..0.75, overlay 0.75..1.0.
                     deliverProgress(AnalysisOverlayJob.ANALYSIS_SHARE)
                     val withOverlay = attachOverlay(request, analyzed)
@@ -203,6 +206,28 @@ class AnalysisForegroundService : Service() {
             .forEach { name ->
                 runCatching { File(cacheDir, name).delete() }
             }
+    }
+
+    /** Debug-only trace so a device run can be replayed locally without guessing. */
+    private fun writeDebugDump(result: AnalysisResult) {
+        runCatching {
+            File(cacheDir, "debug-motion.csv").printWriter().use { writer ->
+                writer.println("t,y_m,vy_mps")
+                result.motionSamples.forEach { sample ->
+                    writer.println("${sample.tSec},${sample.yM},${sample.vyMps}")
+                }
+            }
+            File(cacheDir, "debug-reps.txt").writeText(
+                buildString {
+                    appendLine("reps=${result.reps.size} trackLostFromSec=${result.trackLostFromSec}")
+                    appendLine("warnings=${result.quality.warnings}")
+                    appendLine("poseFrames=${result.poseFrames.size} angles=${result.frameAngles.size}")
+                    result.repSlices.forEach { slice ->
+                        appendLine("${slice.index}: ${slice.startSec}..${slice.endSec} ${slice.phases}")
+                    }
+                },
+            )
+        }
     }
 
     private fun cancelAnalysis() {
