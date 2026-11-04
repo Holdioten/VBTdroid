@@ -40,19 +40,18 @@
 
 ## Verification
 
-Command (clean worktree containing only the HEAD state plus this overlay diff, because the main
-worktree had parallel agent edits):
+Command (clean worktree at commit `43e0a8e`):
 
 ```bash
 JAVA_HOME=/home/czq/toolchains/jdk17 \
 ANDROID_HOME=/home/czq/toolchains/android-sdk \
-./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon --offline
+./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon
 ```
 
 Result: **BUILD SUCCESSFUL**
 
 - `:core:test` — 93 tests, 0 failures.
-- `:app:testDebugUnitTest` — 129 tests, 0 failures, 0 skipped.
+- `:app:testDebugUnitTest` — 135 tests, 0 failures, 0 skipped.
 - `:app:assembleDebug` — debug APK built.
 
 ## Device overlay rebuild
