@@ -53,7 +53,9 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
         // A lifter's torso stays near the bar; background people fall outside this generous gate
         // (~2-3 plate diameters for typical framing). null barCenter keeps the largest skeleton.
         val maxBarDistancePx = maxOf(bitmap.width, bitmap.height) * MAX_BAR_DISTANCE_FRAME_FRACTION
-        val chosen = PosePersonSelector.select(candidates, barCenter, maxBarDistancePx) ?: return null
+        val chosen = PosePersonSelector.select(candidates, barCenter, maxBarDistancePx)
+            ?: candidates.indices.maxByOrNull { candidates[it].skeletonSizePx() }
+            ?: return null
         val pose = candidates[chosen]
         return PoseFrame(
             tSec = tSec,
