@@ -78,11 +78,6 @@
     <string name="import_roi_reset">重置选区</string>
     <string name="import_first_frame_preview">视频首帧，拖动以框选杠铃片</string>
 
-    <string name="report_export_overlay_video">导出叠加视频</string>
-    <string name="report_export_overlay_progress">生成中 %1$d%%</string>
-    <string name="report_export_overlay_succeeded">叠加视频已导出</string>
-    <string name="report_export_overlay_failed">生成失败：%1$s</string>
-    <string name="report_export_overlay_no_data">未检测到杠铃片，无法生成</string>
     <string name="report_export_succeeded">导出完成</string>
     <string name="report_export_failed">导出失败，请重新选择位置</string>
     <string name="report_save_failed">保存失败</string>
@@ -168,7 +163,6 @@
     <string name="report_quality_meter_occlusion">遮挡</string>
     <string name="report_quality_meter_rep">分割置信度</string>
     <string name="report_quality_meter_calibration">标定置信度</string>
-    <string name="report_export_title">导出</string>
 
     <string name="history_date_format">MM-dd HH:mm</string>
     <string name="history_empty_cta">去导入</string>
@@ -201,8 +195,7 @@
 
     <string name="import_back_to_roi">返回框选</string>
 
-    <string name="report_save_overlay">保存叠加视频</string>
-    <string name="report_preview_overlay">预览叠加视频</string>
+    <string name="report_save_overlay">保存视频</string>
     <string name="report_action_stages">阶段</string>
     <string name="report_action_details">详情</string>
     <string name="report_rep_index">第 %1$d / %2$d 次</string>
@@ -212,4 +205,5 @@
     <string name="report_hud_stage">第 %1$d/%2$d · %3$s</string>
 
     <string name="report_mini_reps">有效次</string>
+    <string name="report_overlay_unavailable">叠加视频不可用</string>
 </resources>

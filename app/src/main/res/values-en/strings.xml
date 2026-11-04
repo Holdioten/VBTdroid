@@ -41,11 +41,6 @@
     <string name="report_no_warnings">No quality warnings</string>
     <string name="report_no_data">No data to display</string>
     <string name="report_value_missing">—</string>
-    <string name="report_export_overlay_video">Export overlay video</string>
-    <string name="report_export_overlay_progress">Rendering %1$d%%</string>
-    <string name="report_export_overlay_succeeded">Overlay video exported</string>
-    <string name="report_export_overlay_failed">Render failed: %1$s</string>
-    <string name="report_export_overlay_no_data">No plate detected; cannot render</string>
     <string name="report_save_failed">Save failed</string>
 
     <string name="metric_mcv">Mean concentric velocity (MCV, m/s)</string>
@@ -115,7 +110,6 @@
     <string name="report_quality_meter_occlusion">Occlusion</string>
     <string name="report_quality_meter_rep">Segmentation confidence</string>
     <string name="report_quality_meter_calibration">Calibration confidence</string>
-    <string name="report_export_title">Export</string>
 
     <string name="history_date_format">MM-dd HH:mm</string>
     <string name="history_empty_cta">Go to import</string>
@@ -198,8 +192,7 @@
     <string name="analysis_notification_text">Analysis continues in the background</string>
     <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
 
-    <string name="report_save_overlay">Save overlay video</string>
-    <string name="report_preview_overlay">Preview overlay video</string>
+    <string name="report_save_overlay">Save video</string>
     <string name="report_action_stages">Stages</string>
     <string name="report_action_details">Details</string>
     <string name="report_rep_index">Rep %1$d / %2$d</string>
@@ -209,4 +202,5 @@
     <string name="report_hud_stage">Rep %1$d/%2$d · %3$s</string>
 
     <string name="report_mini_reps">Valid reps</string>
+    <string name="report_overlay_unavailable">Overlay video unavailable</string>
 </resources>

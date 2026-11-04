@@ -1,85 +1,20 @@
 package com.vbtdroid.app.ui.report
 
-import android.content.Context
-import android.net.Uri
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.vbtdroid.app.analysis.AnalysisResult
-import com.vbtdroid.app.overlay.VideoOverlayExporter
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * Generates the overlay MP4 into app cache for in-app preview.
- *
- * Each start gets a generation number and its own output file. Closing or restarting bumps the
- * generation, so a render that finishes late deletes its own file and never shows up in the UI.
+ * The analysis service writes the overlay MP4 to cache and records its absolute path on the result.
+ * Returns the file only when it can actually be played back; otherwise null (first-frame fallback).
  */
-class OverlayPreviewController(
-    private val scope: CoroutineScope,
-    private val cacheRoot: File,
-) {
-    var open by mutableStateOf(false)
-        private set
-    var busy by mutableStateOf(false)
-        private set
-    var progress by mutableFloatStateOf(0f)
-        private set
-    var file by mutableStateOf<File?>(null)
-        private set
-    var error by mutableStateOf<String?>(null)
-        private set
-
-    private var generation = 0
-    private var job: Job? = null
-
-    fun start(context: Context, source: Uri, result: AnalysisResult) {
-        generation++
-        val mine = generation
-        job?.cancel()
-        file?.delete()
-        open = true
-        busy = true
-        progress = 0f
-        file = null
-        error = null
-        val output = File(cacheRoot, "overlay-preview/vbtdroid-overlay-preview-$mine.mp4")
-        job = scope.launch {
-            val failure = runCatching {
-                VideoOverlayExporter().exportToFile(context, source, output, result) { value ->
-                    if (mine == generation) progress = value
-                }
-            }.exceptionOrNull()
-            if (mine != generation) {
-                output.delete()
-                return@launch
-            }
-            busy = false
-            if (failure == null) {
-                file = output
-            } else {
-                output.delete()
-                error = failure.message ?: failure::class.java.simpleName
-            }
-        }
-    }
-
-    /** Closes the preview and removes the cached file (spec: 关闭 deletes the cache). */
-    fun close() {
-        generation++
-        job?.cancel()
-        job = null
-        file?.delete()
-        file = null
-        busy = false
-        error = null
-        open = false
-    }
+fun overlayVideoFile(path: String?): File? {
+    if (path.isNullOrBlank()) return null
+    val file = File(path)
+    return file.takeIf { it.isFile && it.canRead() && it.length() > 0L }
 }
 
 /**
@@ -93,6 +28,8 @@ class OverlayPlayback {
     var playing by mutableStateOf(false)
     var positionMs by mutableFloatStateOf(0f)
     var durationMs by mutableFloatStateOf(0f)
+    /** Set when the player reports an error; the report then falls back to the first frame. */
+    var failed by mutableStateOf(false)
 
     fun togglePlay() {
         val v = view ?: return

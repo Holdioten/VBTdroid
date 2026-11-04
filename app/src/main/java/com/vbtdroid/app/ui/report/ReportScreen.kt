@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.runtime.DisposableEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material3.Icon
@@ -58,7 +57,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
-import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
 import com.vbtdroid.app.ui.components.BannerTone
@@ -94,24 +92,16 @@ fun ReportScreen(
     var persistFailed by remember(result) { mutableStateOf(false) }
     val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
-    var overlayExporting by remember(result) { mutableStateOf(false) }
-    var overlayProgress by remember(result) { mutableStateOf(0f) }
-    var overlaySucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
-    var overlayError by remember(result) { mutableStateOf<String?>(null) }
     val exportScope = rememberCoroutineScope()
-    val overlayPreview = remember(context) {
-        OverlayPreviewController(scope = exportScope, cacheRoot = context.cacheDir)
-    }
-    var previewSaving by remember(result) { mutableStateOf(false) }
-    // Leaving the report (or the Activity) always removes the cached preview file.
-    DisposableEffect(overlayPreview) {
-        onDispose { overlayPreview.close() }
-    }
+    // The analysis service renders the overlay MP4 into cache; the report only plays or copies it.
+    val playback = remember(result) { OverlayPlayback() }
+    val overlayFile = remember(current.overlayVideoPath) { overlayVideoFile(current.overlayVideoPath) }
+    val videoFile = overlayFile?.takeUnless { playback.failed }
+    var saving by remember(result) { mutableStateOf(false) }
 
     // UI-only state (spec §4.1).
     var selectedPosition by rememberSaveable(result) { mutableStateOf(0) }
     var compareWithBest by rememberSaveable(result) { mutableStateOf(false) }
-    var exportSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(current, persistPending) {
@@ -134,12 +124,12 @@ fun ReportScreen(
         }
     }
 
-    val previewSaveLauncher = rememberLauncherForActivityResult(
+    val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4"),
     ) { uri ->
-        val source = overlayPreview.file
+        val source = videoFile
         if (uri != null && source != null) {
-            previewSaving = true
+            saving = true
             exportScope.launch {
                 val ok = withContext(Dispatchers.IO) {
                     runCatching {
@@ -148,47 +138,10 @@ fun ReportScreen(
                         } ?: error("Could not open export destination")
                     }.isSuccess
                 }
-                previewSaving = false
+                saving = false
                 flash(
                     context.getString(
                         if (ok) R.string.report_export_succeeded else R.string.report_export_failed,
-                    ),
-                )
-            }
-        }
-    }
-
-    val overlayLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("video/mp4"),
-    ) { uri ->
-        if (uri != null) {
-            overlayExporting = true
-            overlayProgress = 0f
-            overlaySucceeded = null
-            overlayError = null
-            val source = android.net.Uri.parse(current.videoUri)
-            exportScope.launch {
-                val failure = runCatching {
-                    VideoOverlayExporter().export(
-                        context = context,
-                        sourceUri = source,
-                        outputUri = uri,
-                        result = current,
-                        onProgress = { value -> overlayProgress = value },
-                    )
-                }.exceptionOrNull()
-                overlayExporting = false
-                overlaySucceeded = failure == null
-                overlayError = failure?.message
-                flash(
-                    context.getString(
-                        when {
-                            failure == null -> R.string.report_export_overlay_succeeded
-                            failure.message == VideoOverlayExporter.ERROR_NO_OBSERVATIONS ->
-                                R.string.report_export_overlay_no_data
-                            else -> R.string.report_export_overlay_failed
-                        },
-                        failure?.message ?: "",
                     ),
                 )
             }
@@ -217,22 +170,14 @@ fun ReportScreen(
     val bestRep = reps.filter { it.mcvMps != null }.maxByOrNull { it.mcvMps ?: Double.NEGATIVE_INFINITY }
     val bestSlice = bestRep?.let { best -> current.repSlices.firstOrNull { it.index == best.repIndex } }
     val subtitle = buildSubtitle(current.loadKg, current.lift, current.variant)
-    val playback = remember(result) { OverlayPlayback() }
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     var stageSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
     var detailSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
 
-    // No overlay render on open: the first frame plus the static cards are enough. The MP4 is
-    // generated lazily only when the user taps preview/export in the sheet.
-    fun startOverlayPreview() {
-        if (current.observations.isEmpty() || current.videoUri.isBlank()) return
-        overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current)
-    }
-    val overlayFile = overlayPreview.file
     // Playback drives the rep: the card set switches only when the playhead crosses into another
     // rep, so a manual pick while paused is not overwritten (time does not change while paused).
-    val playbackSec: Double? = if (overlayFile != null && playback.durationMs > 0f) {
+    val playbackSec: Double? = if (videoFile != null && playback.durationMs > 0f) {
         playback.positionMs / 1000.0
     } else {
         null
@@ -286,9 +231,7 @@ fun ReportScreen(
             status = {
                 when {
                     persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
-                    overlayPreview.busy -> StatusChip(
-                        text = stringResource(R.string.report_export_overlay_progress, (overlayPreview.progress * 100f).toInt()),
-                    )
+                    videoFile == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
                     else -> Unit
                 }
             },
@@ -355,13 +298,14 @@ fun ReportScreen(
         ReportActions(
             onStages = { stageSheetOpen = true },
             onDetails = { detailSheetOpen = true },
-            onExport = { exportSheetOpen = true },
+            onSave = { saveLauncher.launch("vbtdroid-overlay.mp4") },
+            saveEnabled = videoFile != null && !saving,
             modifier = modifier,
         )
     }
     val backgroundLayer: @Composable (Modifier) -> Unit = { modifier ->
-        if (overlayFile != null) {
-            CoverVideo(file = overlayFile, playback = playback, modifier = modifier)
+        if (videoFile != null) {
+            CoverVideo(file = videoFile, playback = playback, modifier = modifier)
         } else {
             ReportPreview(
                 videoUri = current.videoUri,
@@ -388,7 +332,7 @@ fun ReportScreen(
                     }
                     Spacer(Modifier.weight(0.64f))
                 }
-                if (overlayFile != null) {
+                if (videoFile != null) {
                     PlaybackBar(
                         playback = playback,
                         modifier = Modifier.padding(horizontal = VbtSpacing.m),
@@ -403,7 +347,7 @@ fun ReportScreen(
                 Box(Modifier.weight(0.5f).fillMaxWidth()) {
                     backgroundLayer(Modifier.fillMaxSize())
                 }
-                if (overlayFile != null) {
+                if (videoFile != null) {
                     PlaybackBar(playback = playback, modifier = Modifier.padding(horizontal = VbtSpacing.m))
                 }
                 Row(
@@ -441,21 +385,6 @@ fun ReportScreen(
             quality = current.quality,
             fps = current.fps,
             reps = reps,
-        )
-    }
-    if (exportSheetOpen) {
-        ExportSheet(
-            onDismiss = { exportSheetOpen = false },
-            onExportOverlay = { overlayLauncher.launch("vbtdroid-overlay.mp4") },
-            onSaveOverlay = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
-            onPreviewOverlay = ::startOverlayPreview,
-            overlayReady = overlayFile != null,
-            overlayPreviewBusy = overlayPreview.busy,
-            overlayPreviewProgress = overlayPreview.progress,
-            overlayExporting = overlayExporting,
-            overlayProgress = overlayProgress,
-            overlaySucceeded = overlaySucceeded,
-            overlayError = overlayError,
         )
     }
 }

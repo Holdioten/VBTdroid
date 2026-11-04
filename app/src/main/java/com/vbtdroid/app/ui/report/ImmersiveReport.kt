@@ -92,6 +92,10 @@ internal fun CoverVideo(file: File, playback: OverlayPlayback, modifier: Modifie
             CoverFrame(context).also { frame ->
                 val view = VideoView(context)
                 frame.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                view.setOnErrorListener { _, _, _ ->
+                    playback.failed = true
+                    true
+                }
                 view.setOnPreparedListener { player ->
                     frame.setVideoSize(player.videoWidth, player.videoHeight)
                     player.isLooping = true
@@ -503,12 +507,13 @@ internal fun RepBarsCard(
     }
 }
 
-/** Bottom action strip: stage correction, details, export (spec: compact action bar). */
+/** Bottom action strip: stage correction, details, save the cached overlay video. */
 @Composable
 internal fun ReportActions(
     onStages: () -> Unit,
     onDetails: () -> Unit,
-    onExport: () -> Unit,
+    onSave: () -> Unit,
+    saveEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -523,8 +528,12 @@ internal fun ReportActions(
             OutlinedButton(onClick = onDetails, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
                 Text(stringResource(R.string.report_action_details), maxLines = 1)
             }
-            OutlinedButton(onClick = onExport, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
-                Text(stringResource(R.string.report_export_title), maxLines = 1)
+            OutlinedButton(
+                onClick = onSave,
+                enabled = saveEnabled,
+                modifier = Modifier.weight(1.3f).heightIn(min = MinTouchTarget),
+            ) {
+                Text(stringResource(R.string.report_save_overlay), maxLines = 1)
             }
         }
     }

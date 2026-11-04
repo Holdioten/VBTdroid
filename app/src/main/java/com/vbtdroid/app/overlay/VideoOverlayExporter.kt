@@ -29,18 +29,6 @@ import kotlin.math.roundToLong
  * plate/pose pixel coordinates line up with the encoded frames.
  */
 class VideoOverlayExporter {
-    /** Writes the overlay MP4 to a SAF destination chosen by the user. */
-    suspend fun export(
-        context: Context,
-        sourceUri: Uri,
-        outputUri: Uri,
-        result: AnalysisResult,
-        onProgress: (Float) -> Unit = {},
-    ): Unit = render(context, sourceUri, result, onProgress) { appContext ->
-        appContext.contentResolver.openFileDescriptor(outputUri, "w")
-            ?: error("Could not open the selected output file")
-    }
-
     /** Writes the overlay MP4 to an app-private file (used for in-app preview). */
     suspend fun exportToFile(
         context: Context,
