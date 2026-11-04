@@ -38,7 +38,7 @@ fun RepBarsContent(
     val maxValue = values.filterNotNull().maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
     val bestPosition = values.indexOfFirst { it != null && it == values.filterNotNull().maxOrNull() }
     Row(
-        Modifier.fillMaxWidth().height(128.dp),
+        Modifier.fillMaxWidth().height(56.dp),
             horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -74,7 +74,7 @@ fun RepBarsContent(
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .height((96f * fraction).dp.coerceAtLeast(4.dp))
+                                .height((40f * fraction).dp.coerceAtLeast(3.dp))
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(barColor)
                                 .then(

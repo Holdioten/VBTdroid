@@ -41,8 +41,6 @@
     <string name="report_no_warnings">No quality warnings</string>
     <string name="report_no_data">No data to display</string>
     <string name="report_value_missing">—</string>
-    <string name="report_export_json">Export JSON</string>
-    <string name="report_export_csv">Export CSV</string>
     <string name="report_export_overlay_video">Export overlay video</string>
     <string name="report_export_overlay_progress">Rendering %1$d%%</string>
     <string name="report_export_overlay_succeeded">Overlay video exported</string>
@@ -84,7 +82,6 @@
     <string name="unit_cm">cm</string>
     <string name="import_camera_label">Camera angle</string>
     <string name="unit_kg">kg</string>
-    <string name="unit_m">m</string>
     <string name="unit_deg">°</string>
     <string name="unit_mps">m/s</string>
     <string name="import_camera_preset_side">Side 90°</string>
@@ -210,4 +207,6 @@
     <string name="report_card_rep_mcv">This rep MCV</string>
     <string name="report_mini_set_mean">Set mean</string>
     <string name="report_hud_stage">Rep %1$d/%2$d · %3$s</string>
+
+    <string name="report_mini_reps">Valid reps</string>
 </resources>

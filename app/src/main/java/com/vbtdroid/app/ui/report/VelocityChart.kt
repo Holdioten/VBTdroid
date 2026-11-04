@@ -40,8 +40,11 @@ fun VelocityChart(
     modifier: Modifier = Modifier,
     height: Dp = 140.dp,
     chartBackground: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    /** Playback time in seconds; draws a vertical cursor when inside the plotted rep. */
+    cursorSec: Double? = null,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
+    val cursorColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
     val axisColor = VbtTheme.colors.outline
     val phaseColors = phaseColors()
     val points = samples.filter {
@@ -100,6 +103,11 @@ fun VelocityChart(
                 if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             drawPath(path, lineColor, style = Stroke(width = 3.dp.toPx()))
+            cursorSec?.let { t ->
+                timeToX(t, minTime, maxTime, size.width)?.let { x ->
+                    drawLine(cursorColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.5.dp.toPx())
+                }
+            }
         }
         peak?.let {
             Text(

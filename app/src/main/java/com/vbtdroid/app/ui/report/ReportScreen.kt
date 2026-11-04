@@ -58,8 +58,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
-import com.vbtdroid.app.export.CsvExporter
-import com.vbtdroid.app.export.ExportMapper
 import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
@@ -74,7 +72,6 @@ import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
-import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.phases.RepTimeline
 import kotlinx.coroutines.delay
@@ -97,7 +94,6 @@ fun ReportScreen(
     var persistFailed by remember(result) { mutableStateOf(false) }
     val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
-    var exportSucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
     var overlayExporting by remember(result) { mutableStateOf(false) }
     var overlayProgress by remember(result) { mutableStateOf(0f) }
     var overlaySucceeded by remember(result) { mutableStateOf<Boolean?>(null) }
@@ -162,31 +158,6 @@ fun ReportScreen(
         }
     }
 
-    fun writeExport(uri: android.net.Uri?, content: () -> String) {
-        if (uri == null) return
-        val succeeded = runCatching {
-            val stream = context.contentResolver.openOutputStream(uri, "wt")
-                ?: error("Could not open export destination")
-            stream.bufferedWriter(Charsets.UTF_8).use { it.write(content()) }
-        }.isSuccess
-        exportSucceeded = succeeded
-        flash(
-            context.getString(
-                if (succeeded) R.string.report_export_succeeded else R.string.report_export_failed,
-            ),
-        )
-    }
-
-    val jsonLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json"),
-    ) { uri ->
-        writeExport(uri) { JsonExport.encode(ExportMapper.toSetExport(current)) }
-    }
-    val csvLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv"),
-    ) { uri ->
-        writeExport(uri) { CsvExporter.export(current) }
-    }
     val overlayLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4"),
     ) { uri ->
@@ -266,6 +237,10 @@ fun ReportScreen(
     } else {
         null
     }
+    // Cursor for the time-series charts: only while the playhead is inside the selected rep.
+    val cursorInRep = playbackSec?.takeIf { t ->
+        selectedSlice?.let { t >= it.startSec && t <= it.endSec } == true
+    }
     val timeRep = playbackSec?.let { RepTimeline.currentRepAt(current.repSlices, it) }
     LaunchedEffect(timeRep?.index) {
         val target = timeRep ?: return@LaunchedEffect
@@ -331,9 +306,16 @@ fun ReportScreen(
                 setMeanMcv = current.summary.mcvAvgMps,
                 bestMcv = current.summary.bestMcvMps,
                 velocityLossPct = current.summary.velocityLossPct,
+                repCount = current.summary.repCount,
             )
             selectedSlice?.let { slice ->
-                VelocityCard(cardModifier, current.motionSamples, slice, selectedRep?.mcvMps)
+                VelocityCard(
+                    cardModifier,
+                    current.motionSamples,
+                    slice,
+                    selectedRep?.mcvMps,
+                    cursorSec = cursorInRep,
+                )
                 if (current.analyzePose) {
                     selectedRep?.let { rep ->
                         AngleCard(
@@ -343,6 +325,7 @@ fun ReportScreen(
                             samples = current.motionSamples,
                             angles = current.frameAnglesByRep[rep.repIndex].orEmpty(),
                             lift = current.lift,
+                            cursorSec = cursorInRep,
                         )
                     }
                 }
@@ -398,12 +381,12 @@ fun ReportScreen(
                     Modifier.weight(1f).fillMaxWidth().padding(start = VbtSpacing.m, end = VbtSpacing.m, top = VbtSpacing.s),
                 ) {
                     Column(
-                        Modifier.weight(0.46f).verticalScroll(rememberScrollState()),
+                        Modifier.weight(0.36f).verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
                     ) {
                         cardsContent(Modifier.fillMaxWidth())
                     }
-                    Spacer(Modifier.weight(0.54f))
+                    Spacer(Modifier.weight(0.64f))
                 }
                 if (overlayFile != null) {
                     PlaybackBar(
@@ -463,8 +446,6 @@ fun ReportScreen(
     if (exportSheetOpen) {
         ExportSheet(
             onDismiss = { exportSheetOpen = false },
-            onExportJson = { jsonLauncher.launch("vbtdroid-set.json") },
-            onExportCsv = { csvLauncher.launch("vbtdroid-set.csv") },
             onExportOverlay = { overlayLauncher.launch("vbtdroid-overlay.mp4") },
             onSaveOverlay = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
             onPreviewOverlay = ::startOverlayPreview,
@@ -473,7 +454,6 @@ fun ReportScreen(
             overlayPreviewProgress = overlayPreview.progress,
             overlayExporting = overlayExporting,
             overlayProgress = overlayProgress,
-            exportSucceeded = exportSucceeded,
             overlaySucceeded = overlaySucceeded,
             overlayError = overlayError,
         )

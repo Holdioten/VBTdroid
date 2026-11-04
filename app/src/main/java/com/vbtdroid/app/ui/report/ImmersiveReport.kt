@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,6 +46,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -252,7 +257,7 @@ private fun RoundGlassButton(onClick: () -> Unit, label: String, icon: androidx.
     }
 }
 
-/** Translucent floating card over the video (spec §1.7 overlay cards). */
+/** Translucent floating card over the video (spec §1.7). Compact: 10dp padding, tight spacing. */
 @Composable
 internal fun GlassCard(
     modifier: Modifier = Modifier,
@@ -262,18 +267,20 @@ internal fun GlassCard(
 ) {
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.shapes.medium,
         color = GlassColor,
         border = BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.5f)),
     ) {
-        Column(Modifier.padding(VbtSpacing.m), verticalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (title != null || trailing != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (title != null) {
                         Text(
                             title,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
                             color = VbtTheme.colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
                     } else {
@@ -287,6 +294,7 @@ internal fun GlassCard(
     }
 }
 
+/** This rep's MCV as the hero number, with a 2×2 grid of set-level figures. */
 @Composable
 internal fun MainMcvCard(
     modifier: Modifier,
@@ -294,10 +302,11 @@ internal fun MainMcvCard(
     setMeanMcv: Double?,
     bestMcv: Double?,
     velocityLossPct: Double?,
+    repCount: Int,
 ) {
     val missing = stringResource(R.string.report_value_missing)
     GlassCard(modifier = modifier, title = stringResource(R.string.report_card_rep_mcv)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.xs)) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 formatMcv(repMcv) ?: missing,
                 style = VbtTheme.numbers.displayMetricSm,
@@ -306,43 +315,55 @@ internal fun MainMcvCard(
             )
             Text(
                 stringResource(R.string.unit_mps),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = VbtTheme.colors.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp),
+                modifier = Modifier.padding(bottom = 4.dp),
             )
         }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            MiniRow(stringResource(R.string.report_mini_set_mean), formatMcv(setMeanMcv) ?: missing)
-            MiniRow(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing)
-            MiniRow(
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MiniCell(stringResource(R.string.report_mini_set_mean), formatMcv(setMeanMcv) ?: missing, Modifier.weight(1f))
+            MiniCell(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing, Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MiniCell(
                 stringResource(R.string.report_mini_vl),
                 formatMetricValue(velocityLossPct, MetricId.SET_VELOCITY_LOSS),
+                Modifier.weight(1f),
             )
+            MiniCell(stringResource(R.string.report_mini_reps), repCount.toString(), Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun MiniRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = VbtTheme.colors.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+private fun MiniCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = VbtTheme.colors.onSurfaceVariant, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
     }
 }
 
 @Composable
-internal fun VelocityCard(modifier: Modifier, samples: List<MotionSample>, slice: RepSlice?, mean: Double?) {
+internal fun VelocityCard(
+    modifier: Modifier,
+    samples: List<MotionSample>,
+    slice: RepSlice?,
+    mean: Double?,
+    cursorSec: Double?,
+) {
     GlassCard(modifier = modifier, title = stringResource(R.string.report_velocity_chart)) {
         VelocityChart(
             samples = samples,
             rep = slice,
             meanVelocityMps = mean,
-            height = 96.dp,
+            height = 56.dp,
             chartBackground = Color.Transparent,
+            cursorSec = cursorSec,
         )
     }
 }
 
+/** Joint angle over the rep (curve + playback cursor) and the key-frame values in a 2×2 grid. */
 @Composable
 internal fun AngleCard(
     modifier: Modifier,
@@ -351,24 +372,40 @@ internal fun AngleCard(
     samples: List<MotionSample>,
     angles: List<FrameAngles>,
     lift: Lift,
+    cursorSec: Double?,
 ) {
     val frames = selectKeyFrameAngles(rep, slice, samples, angles)
     if (frames.isEmpty()) return
     val key = headlineKey(lift)
     GlassCard(modifier = modifier, title = stringResource(R.string.report_key_frame_angles)) {
-        frames.forEach { frame ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    stringResource(keyFrameLabel(frame.kind)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VbtTheme.colors.onSurfaceVariant,
-                )
-                val value = angleValue(frame.angles, key)
-                Text(
-                    value?.let { stringResource(R.string.report_angle_value, it) } ?: stringResource(R.string.report_value_missing),
-                    style = VbtTheme.numbers.headlineMetric,
-                    color = confidenceColorFor(frame.angles, key),
-                )
+        JointAngleChart(
+            angles = angles,
+            key = key,
+            rep = slice,
+            cursorSec = cursorSec,
+            height = 40.dp,
+        )
+        frames.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                pair.forEach { frame ->
+                    val value = angleValue(frame.angles, key)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(keyFrameLabel(frame.kind)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VbtTheme.colors.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        Text(
+                            value?.let { stringResource(R.string.report_angle_value, it) }
+                                ?: stringResource(R.string.report_value_missing),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = confidenceColorFor(frame.angles, key),
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -377,6 +414,39 @@ internal fun AngleCard(
 @Composable
 private fun confidenceColorFor(angles: FrameAngles, key: String) =
     com.vbtdroid.app.ui.components.confidenceColor(angles.confidenceByJoint[key] ?: angles.confidence)
+
+/** Joint/key-frame angle over the rep; a vertical cursor marks the playback time. */
+@Composable
+internal fun JointAngleChart(
+    angles: List<FrameAngles>,
+    key: String,
+    rep: RepSlice,
+    cursorSec: Double?,
+    height: Dp,
+) {
+    val series = angles.filter { it.tSec >= rep.startSec && it.tSec <= rep.endSec }
+        .mapNotNull { frame -> angleValue(frame, key)?.takeIf { it.isFinite() }?.let { frame.tSec to it } }
+    val lineColor = VbtTheme.colors.skeleton
+    val cursorColor = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.fillMaxWidth().height(height)) {
+        if (series.size < 2) return@Canvas
+        val minV = series.minOf { it.second } - 2.0
+        val maxV = series.maxOf { it.second } + 2.0
+        val span = (maxV - minV).takeIf { it > 1e-6 } ?: 1.0
+        val path = Path()
+        series.forEachIndexed { index, (t, v) ->
+            val x = timeToX(t, rep.startSec, rep.endSec, size.width) ?: return@forEachIndexed
+            val y = 4f + (size.height - 8f) * (1f - ((v - minV) / span).toFloat())
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, lineColor.copy(alpha = 0.9f), style = Stroke(width = 1.5.dp.toPx()))
+        cursorSec?.let { t ->
+            timeToX(t, rep.startSec, rep.endSec, size.width)?.let { x ->
+                drawLine(cursorColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.5.dp.toPx())
+            }
+        }
+    }
+}
 
 /** Joint shown as the headline angle: elbow for bench, knee for squat and deadlift. */
 private fun headlineKey(lift: Lift): String = if (lift == Lift.BENCH) "elbow_angle_deg" else "knee_angle_deg"
@@ -404,7 +474,7 @@ internal fun BarPathCard(
             rep = slice,
             comparisonRep = if (compare) comparison else null,
             progressSec = progressSec,
-            height = 150.dp,
+            height = 96.dp,
             chartBackground = Color.Transparent,
         )
         if (comparison != null) {

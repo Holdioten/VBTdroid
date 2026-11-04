@@ -116,6 +116,12 @@ fun BarPathChart(
                 }
                 drawPath(path, stageColor(run.type), style = Stroke(width = 3.dp.toPx()))
             }
+            // Playback cursor: vertical line at the playhead on the rep's time axis.
+            progressSec?.let { t ->
+                timeToX(t, rep.startSec, rep.endSec, size.width)?.let { x ->
+                    drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.5.dp.toPx())
+                }
+            }
             val drawn = drawnRuns.flatMap { it.samples }
             if (drawn.isNotEmpty()) {
                 drawCircle(lineColor, radius = 5.dp.toPx(), center = point(drawn.first()), style = Stroke(width = 2.dp.toPx()))

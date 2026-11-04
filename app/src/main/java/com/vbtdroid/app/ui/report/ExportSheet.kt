@@ -31,8 +31,6 @@ import kotlin.math.roundToInt
 @Composable
 fun ExportSheet(
     onDismiss: () -> Unit,
-    onExportJson: () -> Unit,
-    onExportCsv: () -> Unit,
     onExportOverlay: () -> Unit,
     onSaveOverlay: () -> Unit,
     onPreviewOverlay: () -> Unit,
@@ -41,7 +39,6 @@ fun ExportSheet(
     overlayPreviewProgress: Float,
     overlayExporting: Boolean,
     overlayProgress: Float,
-    exportSucceeded: Boolean?,
     overlaySucceeded: Boolean?,
     overlayError: String?,
 ) {
@@ -55,16 +52,6 @@ fun ExportSheet(
                 stringResource(R.string.report_export_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = VbtSpacing.s),
-            )
-            ExportRow(
-                title = stringResource(R.string.report_export_json),
-                enabled = !overlayExporting,
-                onClick = onExportJson,
-            )
-            ExportRow(
-                title = stringResource(R.string.report_export_csv),
-                enabled = !overlayExporting,
-                onClick = onExportCsv,
             )
             ExportRow(
                 title = stringResource(R.string.report_preview_overlay),
@@ -89,12 +76,6 @@ fun ExportSheet(
                 )
             }
 
-            exportSucceeded?.let { succeeded ->
-                ResultLine(
-                    if (succeeded) R.string.report_export_succeeded else R.string.report_export_failed,
-                    succeeded,
-                )
-            }
             overlaySucceeded?.let { succeeded ->
                 if (succeeded) {
                     ResultLine(R.string.report_export_overlay_succeeded, true)

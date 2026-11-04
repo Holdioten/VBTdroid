@@ -78,8 +78,6 @@
     <string name="import_roi_reset">重置选区</string>
     <string name="import_first_frame_preview">视频首帧，拖动以框选杠铃片</string>
 
-    <string name="report_export_json">导出 JSON</string>
-    <string name="report_export_csv">导出 CSV</string>
     <string name="report_export_overlay_video">导出叠加视频</string>
     <string name="report_export_overlay_progress">生成中 %1$d%%</string>
     <string name="report_export_overlay_succeeded">叠加视频已导出</string>
@@ -137,7 +135,6 @@
     <string name="unit_cm">cm</string>
     <string name="import_camera_label">机位角度</string>
     <string name="unit_kg">kg</string>
-    <string name="unit_m">m</string>
     <string name="unit_deg">°</string>
     <string name="unit_mps">m/s</string>
     <string name="import_camera_preset_side">侧拍 90°</string>
@@ -213,4 +210,6 @@
     <string name="report_card_rep_mcv">本次 MCV</string>
     <string name="report_mini_set_mean">组平均</string>
     <string name="report_hud_stage">第 %1$d/%2$d · %3$s</string>
+
+    <string name="report_mini_reps">有效次</string>
 </resources>
