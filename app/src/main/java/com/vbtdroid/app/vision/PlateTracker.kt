@@ -92,12 +92,23 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 reference.majorAxisPx,
                 predictedX,
                 predictedY,
+                dt,
             )
             val seedX = circle?.centerX ?: predictedX
             val seedY = circle?.centerY ?: predictedY
             val roi = RectF(seedX - radius, seedY - radius, seedX + radius, seedY + radius)
-            val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, seedX, seedY)
+            val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, predictedX, predictedY)
                 ?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
+                ?.takeIf { fit ->
+                    withinInnovationGate(
+                        fit.ellipse.center.x.toFloat(),
+                        fit.ellipse.center.y.toFloat(),
+                        predictedX,
+                        predictedY,
+                        reference,
+                        dt,
+                    )
+                }
             if (fitted != null) {
                 updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec, currentGray)
                 return observation(tSec, fitted)
@@ -232,6 +243,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         expectedAxisPx: Float,
         predictedX: Float,
         predictedY: Float,
+        dtSec: Float,
     ): HoughCircle? {
         val left = requestedRoi.left.toInt().coerceIn(0, gray.cols() - 1)
         val top = requestedRoi.top.toInt().coerceIn(0, gray.rows() - 1)
@@ -275,9 +287,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 val dx = centerX - predictedX
                 val dy = centerY - predictedY
                 val distance = sqrt(dx * dx + dy * dy)
-                if (distance > expectedRadius * HOUGH_MAX_JUMP_FACTOR) continue
+                val maxJump = PlateRoi.maxInnovationPx(expectedAxisPx, dtSec.toDouble())
+                if (maxJump <= 0f || distance > maxJump) continue
                 val radiusScore = (1f - radiusDeviation / HOUGH_MAX_RADIUS_DEVIATION).coerceIn(0f, 1f)
-                val distanceScore = (1f - distance / (expectedRadius * HOUGH_MAX_JUMP_FACTOR)).coerceIn(0f, 1f)
+                val distanceScore = (1f - distance / maxJump).coerceIn(0f, 1f)
                 val confidence = (0.5f + 0.5f * radiusScore) * (0.5f + 0.5f * distanceScore)
                 val candidate = HoughCircle(centerX, centerY, radiusPx, confidence, distance)
                 if (best == null || candidate.confidence > best.confidence ||
@@ -294,6 +307,21 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             blurred.release()
             circles.release()
         }
+    }
+
+    private fun withinInnovationGate(
+        measuredX: Float,
+        measuredY: Float,
+        predictedX: Float,
+        predictedY: Float,
+        reference: PlateAxisReference,
+        dtSec: Float,
+    ): Boolean {
+        val maxJump = PlateRoi.maxInnovationPx(reference.majorAxisPx, dtSec.toDouble())
+        if (maxJump <= 0f) return false
+        val dx = measuredX - predictedX
+        val dy = measuredY - predictedY
+        return dx * dx + dy * dy <= maxJump * maxJump
     }
 
     private fun findEllipse(
@@ -384,7 +412,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     )
 
     private companion object {
-        const val MAX_AXIS_DEVIATION = 0.25f
+        const val MAX_AXIS_DEVIATION = 0.15f
         const val MIN_TRACK_CONFIDENCE = 0.25f
 
         // Hough circle fallback tuned on the 720x1280 side-view PC videos (plate r ~130 px).
@@ -395,6 +423,5 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val HOUGH_MIN_RADIUS_FACTOR = 0.85f
         const val HOUGH_MAX_RADIUS_FACTOR = 1.15f
         const val HOUGH_MAX_RADIUS_DEVIATION = 0.15f
-        const val HOUGH_MAX_JUMP_FACTOR = 2.0f
     }
 }

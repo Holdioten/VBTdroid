@@ -22,6 +22,7 @@ import com.vbtdroid.core.phases.PhaseSegmenter
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.Quality
 import com.vbtdroid.core.quality.QualityFlags
+import com.vbtdroid.core.signal.TrackSmoother
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
@@ -175,12 +176,16 @@ class AnalysisPipeline(
         }
 
         check(observations.size >= 2) { "At least two ordered plate observations are required" }
+        // The videos are purpose-shot with one unobstructed plate, so the whole track can be
+        // cleaned offline: radius/innovation gates remove wrong-object frames, then a zero-phase
+        // Savitzky-Golay pass smooths the bar path before any metric is derived.
+        val cleanedObservations = TrackSmoother.smooth(observations)
         val calibration = Calibration.fromPlate(
             plateDiameterM = request.plateDiameterM,
-            majorAxisPx = observations.first().majorAxisPx,
+            majorAxisPx = cleanedObservations.first().majorAxisPx,
             cameraAngleDeg = request.cameraAngleDeg,
         ).copy(cameraLevel = request.cameraLevel)
-        val barSamples = observations.map(calibration::toMeters)
+        val barSamples = cleanedObservations.map(calibration::toMeters)
         val motionSamples = Kinematics.derive(barSamples, window = MEAN_FILTER_WINDOW, polyOrder = FILTER_ORDER)
         val peakMotionSamples = Kinematics.derive(barSamples, window = PEAK_FILTER_WINDOW, polyOrder = FILTER_ORDER)
         val segmentation = PhaseSegmenter.segmentDetailed(motionSamples, request.lift)
@@ -214,6 +219,7 @@ class AnalysisPipeline(
             }
         } ?: 0.0
         val fps = metadataFps.takeIf { it > 0.0 } ?: measuredFps
+        // Quality stays honest about the raw track; metrics use the cleaned one.
         val trackConfidence = observations.map { it.confidence.coerceIn(0.0, 1.0) }.average()
         val lowConfidenceFrames = observations.count { it.confidence < 0.6 }
         val occlusionPct = if (decodedFrames > 0) {
@@ -272,7 +278,7 @@ class AnalysisPipeline(
                 peakAppliesTo = listOf("peak_velocity_mps", "peak_acceleration_mps2", "peak_force_n", "peak_power_w"),
             ),
             frameAnglesByRep = anglesByRep,
-            observations = observations.toList(),
+            observations = cleanedObservations.toList(),
             poseFrames = poseFrames.toList(),
             frameAngles = smoothedFrameAngles,
             analyzePose = request.analyzePose,

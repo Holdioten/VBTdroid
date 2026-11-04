@@ -24,8 +24,9 @@ class PlateRoiTest {
     fun `accepted observations never move the initialization diameter reference`() {
         val reference = PlateAxisReference(180f)
 
-        assertTrue(reference.accepts(220f))
-        assertFalse(reference.accepts(230f))
+        // Radius/axis gate is 15%: 205 px (13.9%) passes, 210 px (16.7%) is another object.
+        assertTrue(reference.accepts(205f))
+        assertFalse(reference.accepts(210f))
         assertEquals(180f, reference.majorAxisPx)
     }
 
@@ -46,5 +47,16 @@ class PlateRoiTest {
         assertEquals(0f, PlateRoi.localSearchRadiusPx(0f), 0f)
         assertEquals(0f, PlateRoi.localSearchRadiusPx(-10f), 0f)
         assertEquals(0f, PlateRoi.localSearchRadiusPx(Float.NaN), 0f)
+    }
+
+    @Test
+    fun `innovation gate scales with frame gap but never below half a plate`() {
+        val diameter = 260f
+
+        // 30 fps: the 8 diameters/s term is smaller than the half-diameter floor.
+        assertEquals(130f, PlateRoi.maxInnovationPx(diameter, 1.0 / 30.0), 1e-3f)
+        // 0.5 s gap: a fast bar may legitimately move 4 diameters (1.04 m at 260 px/plate).
+        assertEquals(1040f, PlateRoi.maxInnovationPx(diameter, 0.5), 1e-3f)
+        assertEquals(0f, PlateRoi.maxInnovationPx(0f, 1.0 / 30.0), 0f)
     }
 }
