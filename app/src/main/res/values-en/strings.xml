@@ -2,7 +2,6 @@
     <string name="app_name">VBTdroid</string>
     <string name="import_title">Import video</string>
     <string name="import_choose_video">Choose video</string>
-    <string name="import_error">Unable to read this video</string>
     <string name="import_file_name">File: %1$s</string>
     <string name="import_duration">Duration: %1$.2f s</string>
     <string name="import_resolution">Resolution: %1$d × %2$d</string>
@@ -12,62 +11,47 @@
     <string name="lift_squat">Squat</string>
     <string name="lift_bench">Bench press</string>
     <string name="lift_deadlift">Deadlift</string>
-    <string name="import_load_kg">Load (kg, optional)</string>
-    <string name="import_plate_diameter_m">Plate diameter (m)</string>
-    <string name="import_camera_angle_deg">Camera azimuth (°)</string>
     <string name="import_default_plate_diameter">0.45</string>
     <string name="import_default_camera_angle">90</string>
     <string name="import_camera_level">Camera is level</string>
     <string name="import_analyze_pose">Analyze joint angles</string>
     <string name="import_start_analysis">Start analysis</string>
     <string name="import_analysis_progress">Analysis progress: %1$d%%</string>
-    <string name="import_analysis_failed">Analysis failed. Check the video, plate region, and settings.</string>
     <string name="import_invalid_settings">Enter a valid load, plate diameter, and camera angle</string>
-    <string name="import_roi_title">Plate region in the first frame</string>
-    <string name="import_roi_confirm_hint">A region was suggested; adjust it if needed, then confirm.</string>
-    <string name="import_roi_manual_required">No automatic region available; draw a box around the plate in the first frame, then confirm.</string>
     <string name="import_roi_edit_hint">Drag inside to move, drag a corner to resize, drag outside to draw a new box</string>
-    <string name="import_roi_confirm">Confirm plate region</string>
-    <string name="import_roi_confirmed">Plate region confirmed</string>
     <string name="import_roi_reset">Reset selection</string>
     <string name="import_first_frame_preview">First video frame; drag to select the plate</string>
 
     <string name="report_title">Analysis report</string>
     <string name="report_back">Back</string>
-    <string name="report_set_summary">Set summary</string>
     <string name="report_total_reps">Valid repetitions</string>
-    <string name="report_average_of">Average %1$s</string>
-    <string name="report_best_of">Best %1$s</string>
     <string name="report_repetitions">Metrics by repetition</string>
     <string name="report_rep">Rep</string>
     <string name="report_rep_number">Rep %1$d</string>
     <string name="report_velocity_chart">Bar vertical velocity</string>
     <string name="report_bar_path_chart">Bar path</string>
     <string name="report_phase_timeline">Stages</string>
-    <string name="report_phase_help">Stages differ by lift. Split automatically and read-only by default; tap Manual correction to adjust.</string>
     <string name="report_phase_edit">Manual correction</string>
     <string name="report_phase_done">Done</string>
     <string name="report_phase_edit_hint">Drag stage boundaries to correct them, then tap Done.</string>
     <string name="report_manual_phases">Manual stages</string>
     <string name="report_manual_invalid">Not enough valid samples in these stages; metrics were not updated</string>
     <string name="report_joint_angles_disabled_title">Joint-angle analysis is off</string>
-    <string name="report_joint_angles_disabled_hint">Pose estimation did not run. Turn on “Analyze joint angles” when re-analyzing to see joint angles.</string>
+    <string name="report_joint_angles_disabled_hint">Turn on “Analyze joint angles” when re-analysing</string>
     <string name="report_joint_angles_unavailable">No joint-angle data for this rep</string>
     <string name="report_quality">Quality and warnings</string>
     <string name="report_fps">Effective frame rate: %1$.2f fps</string>
-    <string name="report_quality_values">Track confidence %1$.2f; occlusion %2$.1f%%; segmentation confidence %3$.2f; calibration confidence %4$.2f</string>
     <string name="report_no_warnings">No quality warnings</string>
-    <string name="report_warning_item">• %1$s</string>
     <string name="report_no_data">No data to display</string>
     <string name="report_value_missing">—</string>
     <string name="report_external_load_assumption">Force, power, and work use external load only; body mass is excluded.</string>
     <string name="report_export_json">Export JSON</string>
     <string name="report_export_csv">Export CSV</string>
     <string name="report_export_overlay_video">Export overlay video</string>
-    <string name="report_export_overlay_progress">Exporting overlay video: %1$d%%</string>
+    <string name="report_export_overlay_progress">Rendering %1$d%%</string>
     <string name="report_export_overlay_succeeded">Overlay video exported</string>
-    <string name="report_export_overlay_failed">Overlay video export failed: %1$s</string>
-    <string name="report_export_overlay_no_data">No plate track is available, so the overlay video cannot be exported.</string>
+    <string name="report_export_overlay_failed">Render failed: %1$s</string>
+    <string name="report_export_overlay_no_data">No plate detected; cannot render</string>
     <string name="report_saved_automatically">This set was saved to history</string>
     <string name="report_save_failed">Could not save the edit. Check storage space and try again.</string>
 
@@ -83,9 +67,6 @@
     <string name="metric_volume_load">Volume load (kg·reps)</string>
     <string name="metric_work">Total work (J)</string>
 
-    <string name="phase_eccentric">Eccentric</string>
-    <string name="phase_pause">Pause</string>
-    <string name="phase_concentric">Concentric</string>
     <string name="phase_lockout">Lockout</string>
 
     <string name="quality_low_track_confidence">Low tracking confidence</string>
@@ -115,7 +96,6 @@
     <string name="import_pose_hint">Off: no joint angles or key frames</string>
     <string name="import_status_suggested">Auto suggested</string>
     <string name="import_status_manual">Draw manually</string>
-    <string name="import_status_confirmed">Confirmed</string>
     <string name="import_replace_video">Replace video</string>
     <string name="import_empty_title">Choose a training video</string>
     <string name="import_empty_hint">Squat, bench, or deadlift; up to 10 minutes</string>
@@ -149,31 +129,20 @@
     <string name="report_quality_meter_rep">Segmentation confidence</string>
     <string name="report_quality_meter_calibration">Calibration confidence</string>
     <string name="report_export_title">Export</string>
-    <string name="report_export_hint">Files are saved to the location you choose</string>
 
     <string name="history_date_format">MM-dd HH:mm</string>
-    <string name="history_empty_hint">Completed analyses appear here</string>
-    <string name="history_empty_cta">Back to import</string>
+    <string name="history_empty_cta">Go to import</string>
 
     <string name="import_action_confirm_roi">Confirm region</string>
-    <string name="import_cta_confirm_roi_hint">Confirm the plate region to enable analysis</string>
-    <string name="import_guide_title">Steps</string>
-    <string name="import_guide_step_frame">Frame the plate region</string>
-    <string name="import_guide_format">Squat, bench, or deadlift videos up to 10 minutes. Analysed on this device only; nothing is uploaded.</string>
 
-    <string name="import_cta_draw_roi_hint">Drag on the frame to frame the plate first</string>
 
     <string name="import_next">Next</string>
     <string name="import_step_video">Video</string>
     <string name="import_step_params">Settings</string>
     <string name="import_step_roi">Region</string>
-    <string name="import_summary_title">Summary</string>
-    <string name="import_summary_line">%1$s · Load %2$s kg · Plate %3$s m · Camera %4$s°</string>
-    <string name="import_summary_line_no_load">%1$s · No load · Plate %2$s m · Camera %3$s°</string>
 
     <string name="import_status_locked">Locked</string>
     <string name="import_roi_modify">Edit region</string>
-    <string name="import_roi_locked_hint">Region locked; dragging is off. Tap Edit region to adjust, then confirm again.</string>
 
     <string name="phase_squat_eccentric">Descent</string>
     <string name="phase_squat_pause">Bottom pause</string>
@@ -191,10 +160,58 @@
     <string name="report_overlay_pause">Pause</string>
     <string name="report_overlay_save">Save video</string>
     <string name="report_overlay_close">Close</string>
-    <string name="report_export_overlay_direct">Export overlay video directly</string>
 
     <string name="phase_eccentric_not_counted">Not counted as a rep</string>
-    <string name="report_deadlift_stage_help">Deadlift reps count from the floor to lockout; the lowering is an eccentric finish and is not counted.</string>
 
     <string name="import_back_to_roi">Back to region</string>
+
+    <string name="import_error_reason">Cannot read this video: %1$s</string>
+    <string name="import_analysis_failed_reason">Analysis failed: %1$s</string>
+    <string name="import_cancel_analysis">Cancel</string>
+    <string name="import_variant">Variant</string>
+    <string name="variant_high_bar">High bar</string>
+    <string name="variant_low_bar">Low bar</string>
+    <string name="variant_conventional">Conventional</string>
+    <string name="variant_sumo">Sumo</string>
+    <string name="variant_paused">Paused</string>
+    <string name="variant_touch_and_go">Touch and go</string>
+    <string name="variant_default">Default</string>
+    <string name="report_export_succeeded">Export complete</string>
+    <string name="report_export_failed">Export failed; choose a location again</string>
+    <string name="report_lvp_title">1RM estimate</string>
+    <string name="report_lvp_points">%1$d / 3 load points</string>
+    <string name="report_lvp_fit">Slope %1$.5f; intercept %2$.3f; R² %3$.3f</string>
+    <string name="report_lvp_unavailable">1RM unavailable: %1$s</string>
+    <string name="history_title">History</string>
+    <string name="history_empty">No saved analyses yet</string>
+    <string name="history_set_identity">%1$s / %2$s</string>
+    <string name="history_set_load">Load %1$s kg</string>
+    <string name="history_open_detail">Open details</string>
+    <string name="history_close_detail">Back to list</string>
+    <string name="history_detail_title">Set details</string>
+    <string name="history_camera_geometry">Plate %1$.1f mm · camera %2$.1f°</string>
+    <string name="history_rep_rom">ROM %1$s m</string>
+    <string name="history_phase">%1$s %2$.2f–%3$.2f s</string>
+    <string name="history_export_unavailable">This record has no displayable export data</string>
+    <string name="report_key_frame_angles">Key-frame joint angles</string>
+    <string name="report_key_frame_start">Start</string>
+    <string name="report_key_frame_bottom">Bottom / chest</string>
+    <string name="report_key_frame_sticking">Sticking point</string>
+    <string name="report_key_frame_lockout">Lockout</string>
+    <string name="metric_hip_angle">Hip</string>
+    <string name="metric_knee_angle">Knee</string>
+    <string name="metric_ankle_angle">Ankle</string>
+    <string name="metric_trunk_angle">Trunk</string>
+    <string name="metric_shoulder_angle">Shoulder</string>
+    <string name="metric_elbow_angle">Elbow</string>
+    <string name="metric_wrist_angle">Wrist</string>
+    <string name="quality_angles_unavailable_occlusion">Occlusion above 20%; joint angles unavailable</string>
+    <string name="quality_camera_estimate">Camera not level; vertical velocity is an estimate and excluded from PRs</string>
+    <string name="quality_load_required">No load entered; force, power, work and 1RM unavailable</string>
+    <string name="quality_acceleration_unavailable">Too few valid samples; acceleration metrics unavailable</string>
+    <string name="quality_non_monotonic">Concentric path is not monotonic; review this rep</string>
+    <string name="analysis_notification_channel">Offline video analysis</string>
+    <string name="analysis_notification_title">Analysing training video</string>
+    <string name="analysis_notification_text">Analysis continues in the background</string>
+    <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
 </resources>

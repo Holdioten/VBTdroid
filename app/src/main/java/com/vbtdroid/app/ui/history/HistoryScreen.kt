@@ -41,6 +41,7 @@ import com.vbtdroid.app.ui.components.MessageBanner
 import com.vbtdroid.app.ui.components.BannerTone
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
+import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
@@ -116,7 +117,6 @@ private fun HistoryList(
     if (history.isEmpty()) {
         EmptyState(
             title = stringResource(R.string.history_empty),
-            body = stringResource(R.string.history_empty_hint),
             actionLabel = stringResource(R.string.history_empty_cta),
             onAction = onBack,
             modifier = modifier.fillMaxSize(),
@@ -180,17 +180,7 @@ private fun HistoryHeader(export: SetExport, detail: HistoryDetail, missing: Str
                 ),
             )
         }
-        Text(
-            stringResource(R.string.history_video_uri, export.videoUri.ifBlank { missing }),
-            style = MaterialTheme.typography.labelSmall,
-            color = VbtTheme.colors.onSurfaceVariant,
-            maxLines = 1,
-        )
         export.lvp?.let { lvp ->
-            Text(
-                stringResource(R.string.report_lvp_points, lvp.pointCount),
-                style = MaterialTheme.typography.bodyMedium,
-            )
             val oneRm = lvp.estimated1RmKg
             if (oneRm != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -254,20 +244,23 @@ private fun RepHistoryRow(rep: com.vbtdroid.core.io.RepExport, lift: Lift, maxMc
             )
         }
         rep.phases.forEach { phase ->
-            StatusChip(
-                stringResource(
-                    R.string.history_phase,
-                    phaseLabel(lift, phase.type),
-                    phase.startSec,
-                    phase.endSec,
-                    phase.manual,
-                ),
-                maxWidth = null,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s), verticalAlignment = Alignment.CenterVertically) {
+                StatusChip(
+                    stringResource(
+                        R.string.history_phase,
+                        phaseLabel(lift, phase.type),
+                        phase.startSec,
+                        phase.endSec,
+                    ),
+                )
+                if (phase.manual) {
+                    StatusChip(stringResource(R.string.report_manual_phases), tone = ChipTone.WARNING)
+                }
+            }
         }
         rep.warnings.forEach { warning ->
             Text(
-                stringResource(R.string.report_warning_item, qualityWarningText(warning)),
+                qualityWarningText(warning),
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.warning,
             )

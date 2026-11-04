@@ -36,7 +36,6 @@ import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
-import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.LvpEstimate
 import com.vbtdroid.core.quality.QualityFlags
 
@@ -83,11 +82,6 @@ fun LvpCard(estimate: LvpEstimate, modifier: Modifier = Modifier) {
                 color = VbtTheme.colors.onSurfaceVariant,
             )
         }
-        Text(
-            stringResource(R.string.report_v1rm_source, estimate.v1rmMps, estimate.v1rmSource),
-            style = MaterialTheme.typography.labelSmall,
-            color = VbtTheme.colors.onSurfaceVariant,
-        )
     }
 }
 
@@ -109,7 +103,6 @@ fun JointAnglesDisabledCard(modifier: Modifier = Modifier) {
 fun QualityCard(
     quality: QualityFlags,
     fps: Double,
-    filterConfig: FilterConfigExport?,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -163,20 +156,6 @@ fun QualityCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )
-            filterConfig?.let { filter ->
-                Text(
-                    stringResource(
-                        R.string.report_filter_config,
-                        filter.method,
-                        filter.meanWindow,
-                        filter.meanPolyOrder,
-                        filter.peakWindow,
-                        filter.peakPolyOrder,
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = VbtTheme.colors.onSurfaceVariant,
-                )
-            }
             quality.warnings.forEach { warning ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(VbtTheme.colors.warning))

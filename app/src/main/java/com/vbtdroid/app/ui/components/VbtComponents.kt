@@ -337,7 +337,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean, modifier:
 @Composable
 fun EmptyState(
     title: String,
-    body: String,
+    body: String? = null,
     actionLabel: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
@@ -348,7 +348,9 @@ fun EmptyState(
         verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-        Text(body, style = MaterialTheme.typography.bodyMedium, color = VbtTheme.colors.onSurfaceVariant)
+        if (body != null) {
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = VbtTheme.colors.onSurfaceVariant)
+        }
         OutlinedButton(
             onClick = onAction,
             modifier = Modifier.defaultMinSize(minHeight = MinTouchTarget),

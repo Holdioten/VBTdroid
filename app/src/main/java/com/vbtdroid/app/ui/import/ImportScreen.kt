@@ -398,7 +398,6 @@ fun ImportScreen(
                             analyzePose = analyzePose,
                             onAnalyzePose = { analyzePose = it },
                             validSettings = validSettings,
-                            summary = summaryText(lift, variant, loadText, plateDiameterText, cameraAngleText),
                         )
                         PAGE_ROI -> RoiPage(
                             preview = preview,
@@ -421,22 +420,6 @@ fun ImportScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun summaryText(
-    lift: Lift,
-    variant: LiftVariant,
-    loadText: String,
-    plateText: String,
-    angleText: String,
-): String {
-    val identity = "${liftDisplayName(lift)} · ${variantDisplayName(variant)}"
-    return if (loadText.isBlank()) {
-        stringResource(R.string.import_summary_line_no_load, identity, plateText, angleText)
-    } else {
-        stringResource(R.string.import_summary_line, identity, loadText, plateText, angleText)
     }
 }
 
@@ -491,7 +474,6 @@ private fun VideoPage(
 ) {
     if (selectedUri == null) {
         EmptyDropZone(enabled = enabled, onChooseVideo = onChoose)
-        ImportGuideCard()
         return
     }
     when {
@@ -571,7 +553,6 @@ private fun SettingsPage(
     analyzePose: Boolean,
     onAnalyzePose: (Boolean) -> Unit,
     validSettings: Boolean,
-    summary: String,
 ) {
     SectionLabel(stringResource(R.string.import_lift))
     SegmentedPicker(
@@ -657,17 +638,6 @@ private fun SettingsPage(
             description = stringResource(R.string.import_pose_hint),
         )
     }
-    if (!validSettings) {
-        Text(
-            stringResource(R.string.import_invalid_settings),
-            style = MaterialTheme.typography.bodySmall,
-            color = VbtTheme.colors.warning,
-        )
-    }
-    SectionCard(padding = VbtSpacing.m) {
-        SectionLabel(stringResource(R.string.import_summary_title))
-        Text(summary, style = MaterialTheme.typography.bodyMedium)
-    }
 }
 
 @Composable
@@ -683,16 +653,13 @@ private fun RoiPage(
     onGoVideo: () -> Unit,
 ) {
     if (preview == null) {
-        SectionCard {
-            SectionLabel(stringResource(R.string.import_roi_title))
-            Text(
-                stringResource(R.string.import_cta_need_video),
-                style = MaterialTheme.typography.bodyMedium,
-                color = VbtTheme.colors.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = onGoVideo, modifier = Modifier.heightIn(min = MinTouchTarget)) {
-                Text(stringResource(R.string.import_step_video))
-            }
+        Text(
+            stringResource(R.string.import_cta_need_video),
+            style = MaterialTheme.typography.bodyMedium,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
+        OutlinedButton(onClick = onGoVideo, modifier = Modifier.heightIn(min = MinTouchTarget)) {
+            Text(stringResource(R.string.import_step_video))
         }
         return
     }
@@ -716,37 +683,29 @@ private fun RoiPage(
             modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
         )
     }
-    SectionCard(padding = VbtSpacing.m) {
-        SectionLabel(stringResource(R.string.import_roi_title))
-        if (roiConfirmed) {
-            Text(
-                stringResource(R.string.import_roi_locked_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = VbtTheme.colors.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                OutlinedButton(
-                    onClick = onModify,
-                    modifier = Modifier.heightIn(min = MinTouchTarget),
-                    colors = secondaryOutlinedColors(),
-                ) {
-                    Text(stringResource(R.string.import_roi_modify))
-                }
-                OutlinedButton(
-                    onClick = onReset,
-                    modifier = Modifier.heightIn(min = MinTouchTarget),
-                    colors = secondaryOutlinedColors(),
-                ) {
-                    Text(stringResource(R.string.import_roi_reset))
-                }
+    if (roiConfirmed) {
+        Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            OutlinedButton(
+                onClick = onModify,
+                modifier = Modifier.heightIn(min = MinTouchTarget),
+                colors = secondaryOutlinedColors(),
+            ) {
+                Text(stringResource(R.string.import_roi_modify))
             }
-        } else {
-            Text(
-                stringResource(R.string.import_roi_edit_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = VbtTheme.colors.onSurfaceVariant,
-            )
+            OutlinedButton(
+                onClick = onReset,
+                modifier = Modifier.heightIn(min = MinTouchTarget),
+                colors = secondaryOutlinedColors(),
+            ) {
+                Text(stringResource(R.string.import_roi_reset))
+            }
         }
+    } else {
+        Text(
+            stringResource(R.string.import_roi_edit_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
     }
 }
 
@@ -789,11 +748,6 @@ private fun ImportActionBar(
                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             )
-            Text(
-                stringResource(R.string.analysis_notification_text),
-                style = MaterialTheme.typography.bodySmall,
-                color = VbtTheme.colors.onSurfaceVariant,
-            )
             OutlinedButton(
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
@@ -818,11 +772,7 @@ private fun ImportActionBar(
             !hasFrame -> PrimaryActionBar(
                 hint = stringResource(if (loading) R.string.import_loading_frame else R.string.import_cta_need_video),
             ) {}
-            !roiConfirmed -> PrimaryActionBar(
-                hint = stringResource(
-                    if (!hasRoi) R.string.import_cta_draw_roi_hint else R.string.import_cta_confirm_roi_hint,
-                ),
-            ) {
+            !roiConfirmed -> PrimaryActionBar {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
                     OutlinedButton(
                         onClick = onReset,
@@ -872,41 +822,6 @@ private fun ImportActionBar(
                 )
             }
         }
-    }
-}
-
-/** Compact three-step guide shown under the empty drop zone (fills dead space, one card). */
-@Composable
-private fun ImportGuideCard() {
-    SectionCard(padding = VbtSpacing.m) {
-        SectionLabel(stringResource(R.string.import_guide_title))
-        listOf(
-            R.string.import_choose_video,
-            R.string.import_guide_step_frame,
-            R.string.import_start_analysis,
-        ).forEachIndexed { index, step ->
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.m)) {
-                Box(
-                    Modifier
-                        .size(24.dp)
-                        .clip(ShapePill)
-                        .background(VbtTheme.colors.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "${index + 1}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Text(stringResource(step), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        Text(
-            stringResource(R.string.import_guide_format),
-            style = MaterialTheme.typography.bodySmall,
-            color = VbtTheme.colors.onSurfaceVariant,
-        )
     }
 }
 

@@ -46,22 +46,18 @@ fun ExportSheet(
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(Modifier.padding(horizontal = VbtSpacing.l).padding(bottom = VbtSpacing.xl)) {
-            Text(stringResource(R.string.report_export_title), style = MaterialTheme.typography.titleLarge)
             Text(
-                stringResource(R.string.report_export_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = VbtTheme.colors.onSurfaceVariant,
-                modifier = Modifier.padding(top = VbtSpacing.xs, bottom = VbtSpacing.s),
+                stringResource(R.string.report_export_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = VbtSpacing.s),
             )
             ExportRow(
                 title = stringResource(R.string.report_export_json),
-                subtitle = "vbtdroid-set.json",
                 enabled = !overlayExporting,
                 onClick = onExportJson,
             )
             ExportRow(
                 title = stringResource(R.string.report_export_csv),
-                subtitle = "vbtdroid-set.csv",
                 enabled = !overlayExporting,
                 onClick = onExportCsv,
             )
@@ -80,7 +76,6 @@ fun ExportSheet(
             } else {
                 ExportRow(
                     title = stringResource(R.string.report_export_overlay_video),
-                    subtitle = "vbtdroid-overlay.mp4",
                     enabled = true,
                     onClick = onExportOverlay,
                 )
@@ -106,16 +101,13 @@ fun ExportSheet(
 }
 
 @Composable
-private fun ExportRow(title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
+private fun ExportRow(title: String, enabled: Boolean, onClick: () -> Unit) {
     ListItem(
         headlineContent = {
             Text(
                 title,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else VbtTheme.colors.onSurfaceVariant,
             )
-        },
-        supportingContent = {
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = VbtTheme.colors.onSurfaceVariant)
         },
         colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         modifier = Modifier

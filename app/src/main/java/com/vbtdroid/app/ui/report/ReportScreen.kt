@@ -388,7 +388,6 @@ fun ReportScreen(
                 QualityCard(
                     quality = current.quality,
                     fps = current.fps,
-                    filterConfig = current.filterConfig,
                 )
             }
             if (reps.isNotEmpty()) {

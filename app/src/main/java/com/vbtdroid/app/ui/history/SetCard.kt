@@ -103,14 +103,9 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
-                Text(
-                    stringResource(R.string.history_open_detail),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
                 Icon(
                     Icons.Filled.KeyboardArrowRight,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.history_open_detail),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
