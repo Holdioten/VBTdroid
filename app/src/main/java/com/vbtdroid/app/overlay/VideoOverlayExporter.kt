@@ -8,7 +8,9 @@ import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import java.io.File
 import android.net.Uri
 import com.vbtdroid.app.analysis.AnalysisResult
@@ -299,24 +301,44 @@ class VideoOverlayExporter {
 
         private fun selectEncoder(): Pair<MediaCodecInfo, Int> {
             val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-            for (info in codecList.codecInfos) {
-                if (!info.isEncoder || MIME_TYPE !in info.supportedTypes) continue
-                val formats = info.getCapabilitiesForType(MIME_TYPE).colorFormats
-                when {
-                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar in formats ->
-                        return info to MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-
-                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar in formats ->
-                        return info to MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
-                }
+            val infos = codecList.codecInfos
+            val candidates = infos.map { info ->
+                val isAvcEncoder = info.isEncoder && MIME_TYPE in info.supportedTypes
+                EncoderCandidate(
+                    name = info.name,
+                    isEncoder = info.isEncoder,
+                    supportsAvc = isAvcEncoder,
+                    colorFormats = if (isAvcEncoder) {
+                        runCatching { info.getCapabilitiesForType(MIME_TYPE).colorFormats.toList() }
+                            .getOrDefault(emptyList())
+                    } else {
+                        emptyList()
+                    },
+                    isHardwareAccelerated = hardwareFlag { info.isHardwareAccelerated },
+                    isSoftwareOnly = hardwareFlag { info.isSoftwareOnly },
+                )
             }
-            error("No H.264 encoder with YUV420 support was found")
+            val selection = selectPreferredEncoder(candidates)
+                ?: error("No H.264 encoder with YUV420 support was found")
+            val info = infos.first { it.name == selection.name }
+            Log.i(
+                TAG,
+                "Overlay encoder: ${selection.name} " +
+                    "(hardware=${hardwareFlag { info.isHardwareAccelerated }}, " +
+                    "softwareOnly=${hardwareFlag { info.isSoftwareOnly }})",
+            )
+            return info to selection.colorFormat
         }
+
+        /** Platform flags only exist on API 29+; older devices fall back to the name heuristic. */
+        private inline fun hardwareFlag(read: () -> Boolean): Boolean? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) runCatching(read).getOrNull() else null
     }
 
     companion object {
         const val ERROR_NO_OBSERVATIONS = "No plate observations available"
 
+        private const val TAG = "VideoOverlayExporter"
         private const val MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val OUTPUT_FPS = 30
         private const val I_FRAME_INTERVAL_SEC = 1
@@ -326,3 +348,73 @@ class VideoOverlayExporter {
         private val EMPTY = ByteArray(0)
     }
 }
+
+/** One H.264 encoder as seen by [VideoOverlayExporter], reduced to what selection needs. */
+internal data class EncoderCandidate(
+    val name: String,
+    val isEncoder: Boolean = true,
+    val supportsAvc: Boolean = true,
+    /** YUV420 formats reported by the codec, best first is not implied. */
+    val colorFormats: List<Int> = emptyList(),
+    /** API 29+ flag; null when unknown or unavailable. */
+    val isHardwareAccelerated: Boolean? = null,
+    /** API 29+ flag; null when unknown or unavailable. */
+    val isSoftwareOnly: Boolean? = null,
+)
+
+internal data class EncoderSelection(val name: String, val colorFormat: Int)
+
+/**
+ * Picks the fastest usable H.264 encoder.
+ *
+ * Hardware acceleration wins over color-format convenience: a software encoder that happens to
+ * accept semi-planar input must not shadow a vendor encoder. When the platform flags are missing
+ * (API < 29) a conservative codec-name heuristic is used, and a software encoder is still selected
+ * if nothing else exists.
+ */
+internal fun selectPreferredEncoder(candidates: List<EncoderCandidate>): EncoderSelection? {
+    fun formatRank(formats: List<Int>): Int = when {
+        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar in formats -> 0
+        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar in formats -> 1
+        else -> Int.MAX_VALUE
+    }
+
+    fun hardwareRank(candidate: EncoderCandidate): Int {
+        if (candidate.isHardwareAccelerated == true && candidate.isSoftwareOnly != true) return 0
+        if (candidate.isHardwareAccelerated == false || candidate.isSoftwareOnly == true) return 2
+        // Unknown flags: trust vendor naming, but keep true software codecs last.
+        return if (looksSoftwareEncoder(candidate.name)) 2 else 1
+    }
+
+    return candidates
+        .filter { it.isEncoder && it.supportsAvc && formatRank(it.colorFormats) != Int.MAX_VALUE }
+        .withIndex()
+        .minWithOrNull(
+            compareBy(
+                { hardwareRank(it.value) },
+                { formatRank(it.value.colorFormats) },
+                { it.index },
+            ),
+        )
+        ?.value
+        ?.let { candidate ->
+            val colorFormat =
+                if (MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar in candidate.colorFormats) {
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
+                } else {
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
+                }
+            EncoderSelection(candidate.name, colorFormat)
+        }
+}
+
+/** Names used by Google/ffmpeg/software-only AVC encoders; excludes vendor hardware names. */
+private fun looksSoftwareEncoder(name: String): Boolean {
+    val lower = name.lowercase()
+    return lower.startsWith("omx.google") ||
+        lower.startsWith("c2.android") ||
+        lower.startsWith("omx.ffmpeg") ||
+        lower.contains(".sw.") ||
+        lower.contains("software")
+}
+
