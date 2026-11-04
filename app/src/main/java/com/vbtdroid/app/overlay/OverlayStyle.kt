@@ -31,4 +31,16 @@ object OverlayStyle {
 
     /** Speed capsule: #14110A at 78%. */
     const val SPEED_BUBBLE = 0xC714110AL
+
+    /** Data card background: #0A0E11 at 82%, translucent enough to keep the lifter visible. */
+    const val CARD_BACKGROUND = 0xD10A0E11L
+
+    /** Data card hairline border: #F5F8FA at 18%. */
+    const val CARD_BORDER = 0x2EF5F8FAL
+
+    /** Card labels and secondary values: #C3CCD4. */
+    const val CARD_MUTED = 0xFFC3CCD4L
+
+    /** Card title / primary text: #F5F8FA. */
+    const val CARD_TEXT = 0xFFF5F8FAL
 }

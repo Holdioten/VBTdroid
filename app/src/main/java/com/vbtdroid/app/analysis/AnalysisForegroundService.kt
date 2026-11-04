@@ -12,11 +12,13 @@ import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.vbtdroid.app.MainActivity
 import com.vbtdroid.app.R
 import com.vbtdroid.app.data.AnalysisRepository
 import com.vbtdroid.app.data.AppDatabase
+import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.vision.MediaPipePoseEstimator
 import com.vbtdroid.app.vision.PlateTracker
@@ -33,6 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Result of trying to start an analysis; re-entry is reported, never thrown. */
 enum class AnalysisStartResult { STARTED, ALREADY_RUNNING }
@@ -73,6 +76,7 @@ class AnalysisForegroundService : Service() {
     private val plateTracker by lazy { PlateTracker(plateDetector) }
     private val pipelineDelegate = lazy { AnalysisPipeline(decoder, plateTracker, poseEstimator) }
     private val pipeline by pipelineDelegate
+    private val overlayExporter by lazy { VideoOverlayExporter() }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -90,9 +94,15 @@ class AnalysisForegroundService : Service() {
             serviceScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     val analyzed = pipeline.analyze(request) { progress ->
-                        mainHandler.post { callbacks.onProgress(progress) }
+                        mainHandler.post {
+                            callbacks.onProgress(AnalysisOverlayJob.analysisProgress(progress))
+                        }
                     }
-                    val saved = repository.saveAnalysis(analyzed, request)
+                    // One background job owns both passes: analysis 0..0.75, overlay 0.75..1.0.
+                    mainHandler.post { callbacks.onProgress(AnalysisOverlayJob.ANALYSIS_SHARE) }
+                    val withOverlay = attachOverlay(request, analyzed, callbacks)
+                    val saved = repository.saveAnalysis(withOverlay, request)
+                    mainHandler.post { callbacks.onProgress(1f) }
                     withContext(Dispatchers.Main.immediate) { callbacks.onResult(saved) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -113,6 +123,59 @@ class AnalysisForegroundService : Service() {
         startForeground(NOTIFICATION_ID, analysisNotification())
         job.start()
         return AnalysisStartResult.STARTED
+    }
+
+    /**
+     * Renders the overlay MP4 into app cache and returns the result carrying its path. A failed or
+     * cancelled export never fails the analysis: the failure is turned into a quality warning and
+     * the partial file is removed.
+     */
+    private suspend fun attachOverlay(
+        request: AnalysisRequest,
+        analyzed: AnalysisResult,
+        callbacks: Callbacks,
+    ): AnalysisResult {
+        val output = File(cacheDir, AnalysisOverlayJob.overlayFileName(analyzed.createdAtEpochMs))
+        try {
+            overlayExporter.exportToFile(
+                context = applicationContext,
+                sourceUri = request.uri,
+                outputFile = output,
+                result = analyzed,
+            ) { progress ->
+                mainHandler.post {
+                    callbacks.onProgress(AnalysisOverlayJob.overlayProgress(progress))
+                }
+            }
+            return analyzed.copy(overlayVideoPath = output.absolutePath)
+        } catch (cancelled: CancellationException) {
+            output.delete()
+            throw cancelled
+        } catch (error: Exception) {
+            output.delete()
+            Log.w(TAG, "Overlay export failed; delivering analysis without video", error)
+            return analyzed.copy(
+                overlayVideoPath = null,
+                quality = analyzed.quality.copy(
+                    warnings = (analyzed.quality.warnings + AnalysisOverlayJob.OVERLAY_FAILED_WARNING)
+                        .distinct(),
+                ),
+            )
+        } finally {
+            cleanupOverlayCache(current = output)
+        }
+    }
+
+    /** Keeps the newest few overlay MP4s so repeated analyses cannot grow cache without bound. */
+    private fun cleanupOverlayCache(current: File? = null) {
+        val files = cacheDir.listFiles { file ->
+            file.isFile && file.name.startsWith("overlay-") && file.name.endsWith(".mp4")
+        }?.sortedByDescending { it.lastModified() } ?: return
+        AnalysisOverlayJob.staleOverlayFiles(files.map { it.name })
+            .filterNot { it == current?.name }
+            .forEach { name ->
+                runCatching { File(cacheDir, name).delete() }
+            }
     }
 
     private fun cancelAnalysis() {
@@ -163,5 +226,6 @@ class AnalysisForegroundService : Service() {
     private companion object {
         const val CHANNEL_ID = "offline_analysis"
         const val NOTIFICATION_ID = 41
+        const val TAG = "AnalysisService"
     }
 }

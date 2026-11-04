@@ -73,6 +73,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
         null to trailPaintOf(OverlayStyle.PAUSE, 120),
     )
     private val bubbleRect = RectF()
+    private val cards = OverlayCards(result)
 
     private var referenceWidth = 0
 
@@ -94,8 +95,11 @@ class OverlayRenderer(private val result: AnalysisResult) {
         if (pose != null) {
             drawPose(canvas, pose, dotRadius, scale, height)
         }
+        val hudBottom = drawHud(canvas, tSec, width, height, scale)
+        cards.draw(canvas, width, height, tSec, hudBottom)
+        // Speed and HUD are drawn after the cards so the readouts stay legible even if the bar
+        // travels through the card strip.
         drawSpeed(canvas, tSec, width, height, scale)
-        drawHud(canvas, tSec, width, height, scale)
     }
 
     /**
@@ -213,7 +217,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
         )
     }
 
-    private fun drawHud(canvas: Canvas, tSec: Double, width: Int, height: Int, scale: Float) {
+    private fun drawHud(canvas: Canvas, tSec: Double, width: Int, height: Int, scale: Float): Float {
         val slice = result.repSlices.firstOrNull { tSec >= it.startSec && tSec <= it.endSec }
         val rep = slice?.let { current -> result.reps.firstOrNull { it.repIndex == current.index } }
         val lines = buildList {
@@ -240,6 +244,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
             canvas.drawText(line, left + padding, baseline.coerceAtMost(height.toFloat() - padding), hudTextPaint)
             baseline += lineHeight
         }
+        return bubbleRect.bottom
     }
 
     private fun liftLabel(): String {

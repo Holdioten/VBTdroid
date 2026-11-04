@@ -77,6 +77,11 @@ data class AnalysisResult(
     val lvp: LvpEstimate? = null,
     val createdAtEpochMs: Long = System.currentTimeMillis(),
     val savedSetId: String? = null,
+    /**
+     * Absolute path of the overlay MP4 burned by the analysis background job, or null when the
+     * export failed/was skipped. Report reads it directly; it never triggers a second export.
+     */
+    val overlayVideoPath: String? = null,
 )
 
 /**
