@@ -50,6 +50,11 @@ data class PhaseSegmentation(
  * eccentric/concentric, too short, or too little vertical travel) are dropped and counted as
  * [INCOMPLETE_REP]. Once a set has several reps, candidates whose vertical travel is under half
  * the set median are dropped as partial pulls and reported as [REP_ROM_OUTLIER].
+ *
+ * Deadlift sets do not have a clean eccentric/concentric alternation (the pull starts from the
+ * floor), so they are detected from positive vertical-velocity runs instead: each pull is one
+ * contiguous `vy > vEps` run, starting at the local bottom just before the run. Squat and bench
+ * keep the phase-run based detector.
  */
 object PhaseSegmenter {
     const val NO_LOCKOUT = "NO_LOCKOUT"
@@ -102,6 +107,18 @@ object PhaseSegmenter {
             }
         }
 
+        if (lift == Lift.DEADLIFT) {
+            val detected = segmentDeadliftsByVelocity(samples, config)
+            // Relative ROM gate: a deliberate quarter pull can clear the absolute floor but is far
+            // below the set's typical travel, so drop it once there are enough reps for a median.
+            val (finalReps, droppedRomOutliers) = dropRomOutliers(detected.reps, samples, config)
+            val warnings = buildList {
+                if (detected.incompleteCount > 0) add(INCOMPLETE_REP)
+                if (droppedRomOutliers > 0) add(REP_ROM_OUTLIER)
+                if (finalReps.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) add(NO_LOCKOUT)
+            }
+            return PhaseSegmentation(finalReps, warnings)
+        }
         // Pauses between two runs in the same direction are tracking noise, not rep boundaries.
         // Merge them before detecting lockouts so a short concentric hiccup cannot end a rep.
         val sameDirectionMerged = mergePausesBetweenSameDirection(
@@ -110,10 +127,7 @@ object PhaseSegmenter {
         )
         val runsWithLockouts = detectLockouts(sameDirectionMerged, config.lockoutSec)
         val runs = mergeShortRuns(runsWithLockouts, config.minPhaseSec)
-        val result = when (lift) {
-            Lift.SQUAT, Lift.BENCH -> segmentEccentricLifts(runs, samples, config)
-            Lift.DEADLIFT -> segmentDeadlifts(runs, samples, config)
-        }
+        val result = segmentEccentricLifts(runs, samples, config)
         // A noisy track can split one rep into two adjacent candidates separated by a tiny gap
         // with no real travel. Merge only those; reps separated by actual displacement stay split.
         val reps = mergeNoiseFragments(result.reps, samples, config)
@@ -149,6 +163,12 @@ object PhaseSegmenter {
     ) {
         val durationSec: Double get() = endSec - startSec
     }
+
+    /** A contiguous positive vertical-velocity run; indices point into the sample list. */
+    private data class VelocityRun(
+        val startIndex: Int,
+        val endIndex: Int,
+    )
 
     private data class MutableSegmentation(
         val reps: List<RepSlice>,
@@ -318,47 +338,147 @@ object PhaseSegmenter {
         return MutableSegmentation(reps, incomplete, noLockout)
     }
 
-    /** Deadlift starts with the pull; the descent is the separator between reps. */
-    private fun segmentDeadlifts(
-        runs: List<Run>,
+    /**
+     * Deadlift reps are positive-velocity runs. The bar starts on the floor, so a pull has no
+     * eccentric phase to pair; the descent between reps is the separator. Entering a run needs
+     * `vy > vEps`, leaving it only needs `vy <= vEps / 2` so a small dip mid-pull cannot split a
+     * rep. Very short dips between two positive runs are also merged when the bar has not dropped
+     * meaningfully.
+     */
+    private fun segmentDeadliftsByVelocity(
         samples: List<MotionSample>,
         config: PhaseConfig,
     ): MutableSegmentation {
+        val runs = mergeDeadliftVelocityRuns(
+            positiveVelocityRuns(samples, config.vEps),
+            samples,
+            config,
+        )
         val reps = mutableListOf<RepSlice>()
-        var phases = mutableListOf<Phase>()
         var incomplete = 0
         var noLockout = 0
-
-        fun finish() {
-            if (phases.isEmpty()) return
-            val candidate = validRep(phases, samples, config, requireEccentric = false)
+        runs.forEachIndexed { runIndex, run ->
+            // Never let the bottom lookback reach into the previous pull's samples.
+            val lookbackFloor = runs.getOrNull(runIndex - 1)?.endIndex?.plus(1) ?: 0
+            val candidate = deadliftRunToRep(run, samples, config, lookbackFloor)
             if (candidate == null) {
                 incomplete++
             } else {
                 reps += candidate.copy(index = reps.size + 1)
                 if (candidate.phases.none { it.type == PhaseType.LOCKOUT }) noLockout++
             }
-            phases = mutableListOf()
         }
+        return MutableSegmentation(reps, incomplete, noLockout)
+    }
 
-        for (run in runs) {
-            when (run.type) {
-                PhaseType.CONCENTRIC -> {
-                    if (phases.any { it.type == PhaseType.CONCENTRIC }) finish()
-                    phases += run.toPhase()
-                }
-                PhaseType.ECCENTRIC -> if (phases.any { it.type == PhaseType.CONCENTRIC }) finish()
-                PhaseType.PAUSE -> if (phases.isNotEmpty()) phases += run.toPhase()
-                PhaseType.LOCKOUT -> {
-                    if (phases.any { it.type == PhaseType.CONCENTRIC }) {
-                        appendLockout(phases, run, config.lockoutSec)
-                        finish()
-                    }
-                }
+    private fun positiveVelocityRuns(samples: List<MotionSample>, vEps: Double): List<VelocityRun> {
+        val exitEps = vEps * DEADLIFT_EXIT_EPS_FRACTION
+        val runs = mutableListOf<VelocityRun>()
+        var index = 0
+        while (index < samples.size) {
+            if (samples[index].vyMps <= vEps) {
+                index++
+                continue
+            }
+            var end = index
+            var next = index + 1
+            while (next < samples.size && samples[next].vyMps > exitEps) {
+                end = next
+                next++
+            }
+            runs += VelocityRun(index, end)
+            index = next
+        }
+        return runs
+    }
+
+    /**
+     * Joins two positive runs separated by a short non-positive gap when the bar barely dropped
+     * across it. A real floor-to-top cycle loses about a full ROM, far above the fraction gate.
+     */
+    private fun mergeDeadliftVelocityRuns(
+        runs: List<VelocityRun>,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): List<VelocityRun> {
+        if (runs.size < 2) return runs
+        val merged = mutableListOf(runs.first())
+        for (run in runs.drop(1)) {
+            val previous = merged.last()
+            val gapSec = samples[run.startIndex].tSec - samples[previous.endIndex].tSec
+            val gapSamples = samples.subList(previous.endIndex, run.startIndex + 1)
+            // Only the drop below the previous rep's top matters; noise inside the gap does not.
+            val yDrop = samples[previous.endIndex].yM - gapSamples.minOf { it.yM }
+            if (gapSec + 1e-9 <= DEADLIFT_GAP_MERGE_SEC &&
+                yDrop + 1e-9 < config.minRomM * DEADLIFT_GAP_MERGE_ROM_FRACTION
+            ) {
+                merged[merged.lastIndex] = VelocityRun(previous.startIndex, run.endIndex)
+            } else {
+                merged += run
             }
         }
-        finish()
-        return MutableSegmentation(reps, incomplete, noLockout)
+        return merged
+    }
+
+    private fun deadliftRunToRep(
+        run: VelocityRun,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+        lookbackFloorIndex: Int,
+    ): RepSlice? {
+        // The bottom is the local y minimum in the half second before the pull starts.
+        var bottomIndex = run.startIndex
+        var index = run.startIndex - 1
+        while (index >= lookbackFloorIndex &&
+            samples[run.startIndex].tSec - samples[index].tSec <= DEADLIFT_BOTTOM_LOOKBACK_SEC + 1e-9
+        ) {
+            // Ties go to the earliest sample so a floor plateau is fully included.
+            if (samples[index].yM <= samples[bottomIndex].yM) bottomIndex = index
+            index--
+        }
+        val startSec = samples[bottomIndex].tSec
+        // Include the boundary sample that ended the run: it holds the top of the pull.
+        val repEndIndex = (run.endIndex + 1).coerceAtMost(samples.lastIndex)
+        val endSec = samples[repEndIndex].tSec
+        val repSamples = samples.subList(bottomIndex, repEndIndex + 1)
+        val romM = repSamples.maxOf { it.yM } - repSamples.minOf { it.yM }
+        if (endSec - startSec + 1e-9 < config.minRepSec) return null
+
+        // The pull itself is the part above the velocity threshold, not the bottom lookback.
+        val concentricSec = endSec - samples[run.startIndex].tSec
+        if (concentricSec + 1e-9 < config.minConcentricSec) return null
+
+        if (romM + 1e-9 < config.minRomM) return null
+        val phases = mutableListOf(Phase(PhaseType.CONCENTRIC, startSec, endSec))
+        deadliftLockout(repEndIndex, samples, config)?.let { phases += it }
+        return RepSlice(index = 0, startSec = startSec, endSec = endSec, phases = phases)
+    }
+
+    /**
+     * Optional lockout: the first near-zero-velocity pause after the pull, capped to
+     * [PhaseConfig.lockoutSec]. Deadlift reps stay valid without it, so callers only get a hint.
+     */
+    private fun deadliftLockout(
+        fromIndex: Int,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): Phase? {
+        var pauseStart = fromIndex
+        while (pauseStart < samples.size && kotlin.math.abs(samples[pauseStart].vyMps) > config.vEps) {
+            pauseStart++
+        }
+        if (pauseStart >= samples.size) return null
+        var pauseEnd = pauseStart
+        var index = pauseStart + 1
+        while (index < samples.size && kotlin.math.abs(samples[index].vyMps) <= config.vEps) {
+            pauseEnd = index
+            index++
+        }
+        val startSec = samples[pauseStart].tSec
+        val availableSec = samples[pauseEnd].tSec - startSec
+        if (availableSec + 1e-9 < config.lockoutSec) return null
+        val endSec = minOf(samples[pauseEnd].tSec, startSec + config.lockoutSec)
+        return if (endSec > startSec) Phase(PhaseType.LOCKOUT, startSec, endSec) else null
     }
 
     private fun appendLockout(phases: MutableList<Phase>, run: Run, lockoutSec: Double) {
@@ -374,6 +494,7 @@ object PhaseSegmenter {
         samples: List<MotionSample>,
         config: PhaseConfig,
         requireEccentric: Boolean,
+        requireTurnaround: Boolean = true,
     ): RepSlice? {
         if ((requireEccentric && phases.none { it.type == PhaseType.ECCENTRIC }) ||
             phases.none { it.type == PhaseType.CONCENTRIC }
@@ -396,7 +517,7 @@ object PhaseSegmenter {
         val romM = repSamples.maxOf { it.yM } - repSamples.minOf { it.yM }
         if (romM + 1e-9 < config.minRomM) return null
 
-        if (!hasTurnaround(repSamples, ordered, config)) return null
+        if (requireTurnaround && !hasTurnaround(repSamples, ordered, config)) return null
 
         return RepSlice(
             index = 0,
@@ -550,4 +671,16 @@ object PhaseSegmenter {
 
     /** A rep under half the set's median ROM is treated as a partial pull. */
     private const val ROM_OUTLIER_MEDIAN_FRACTION = 0.5
+
+    /** Hysteresis: a running pull only ends once velocity falls below this fraction of vEps. */
+    private const val DEADLIFT_EXIT_EPS_FRACTION = 0.5
+
+    /** Two positive runs closer than this are candidates for the same rep. */
+    private const val DEADLIFT_GAP_MERGE_SEC = 0.18
+
+    /** ...but only when the bar dropped less than this fraction of minRomM across the gap. */
+    private const val DEADLIFT_GAP_MERGE_ROM_FRACTION = 0.25
+
+    /** How far before a pull to look for the floor (bottom) sample. */
+    private const val DEADLIFT_BOTTOM_LOOKBACK_SEC = 0.5
 }

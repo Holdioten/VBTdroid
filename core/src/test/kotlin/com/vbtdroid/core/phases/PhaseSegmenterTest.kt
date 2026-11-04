@@ -410,6 +410,60 @@ class PhaseSegmenterTest {
     }
 
     @Test
+    fun `six positive velocity runs plus a quarter pull infer six deadlift reps`() {
+        val smallPull = arrayOf(
+            Move(0.0, 4),
+            Move(0.5, 6, 0.02),
+            Move(0.0, 6),
+        )
+        val samples = sequence(
+            *smallPull,
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+            *deadliftRep(),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertEquals(6, result.reps.size)
+        assertEquals((1..6).toList(), result.reps.map { it.index })
+        assertTrue(result.warnings.contains(PhaseSegmenter.INCOMPLETE_REP))
+        result.reps.forEach { rep -> assertEquals(PhaseType.CONCENTRIC, rep.phases.first().type) }
+    }
+
+    @Test
+    fun `velocity dip inside a deadlift rep does not split it`() {
+        val samples = sequence(
+            Move(0.0, 4),
+            Move(0.5, 5, 0.05),
+            Move(0.0, 2),
+            Move(0.5, 5, 0.05),
+            Move(0.0, 6),
+        )
+
+        val reps = PhaseSegmenter.segment(samples, Lift.DEADLIFT)
+
+        assertEquals(1, reps.size)
+        assertEquals(PhaseType.CONCENTRIC, reps.single().phases.first().type)
+        assertEquals(0.8, reps.single().endSec - reps.single().startSec, 1e-9)
+    }
+
+    @Test
+    fun `deadlift with no positive velocity runs infers no reps`() {
+        val samples = sequence(
+            Move(-0.5, 10, -0.05),
+            Move(0.0, 6),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertTrue(result.reps.isEmpty())
+    }
+
+    @Test
     fun `phase and rep durations are always positive`() {
         val samples = sequence(
             *eccentricRep(),
