@@ -2,7 +2,6 @@ package com.vbtdroid.app.ui.report
 
 import android.graphics.Bitmap
 import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -23,12 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -36,27 +31,20 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
-import com.vbtdroid.app.ui.components.ChipTone
-import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.app.video.VideoDecoder
-import com.vbtdroid.core.metrics.MotionSample
-import com.vbtdroid.core.phases.RepSlice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Report header image: first frame (decoded off the main thread) with a schematic bar path for the
- * selected rep (primary) and optional best rep (comparison orange). Falls back to a gradient when
- * the frame cannot be read.
+ * Report header image: the video's first frame (decoded off the main thread), with a gradient
+ * fallback when the frame cannot be read. No bar trail is drawn here: before the first rep starts
+ * there is no trail, and playback only exists once the overlay preview has been generated.
  */
 @Composable
 fun ReportPreview(
     videoUri: String,
-    selected: RepSlice?,
-    best: RepSlice?,
-    samples: List<MotionSample>,
     modifier: Modifier = Modifier,
     fill: Boolean = false,
 ) {
@@ -77,8 +65,6 @@ fun ReportPreview(
         onDispose { current?.takeIf { !it.isRecycled }?.recycle() }
     }
     val description = stringResource(R.string.report_preview_description)
-    val compare = VbtTheme.colors.comparison
-    val primary = MaterialTheme.colorScheme.primary
 
     Box(
         modifier
@@ -99,39 +85,6 @@ fun ReportPreview(
                 modifier = Modifier.fillMaxSize(),
             )
             Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.4f)))
-        }
-        Canvas(Modifier.fillMaxSize()) {
-            fun trail(rep: RepSlice?): List<Offset> {
-                val points = samples.filter { rep != null && it.tSec >= rep.startSec && it.tSec <= rep.endSec }
-                return points.map { Offset(it.xM.toFloat(), it.yM.toFloat()) }
-            }
-            val all = trail(selected) + trail(best)
-            if (all.size < 2) return@Canvas
-            val minX = all.minOf { it.x }
-            val maxX = all.maxOf { it.x }
-            val minY = all.minOf { it.y }
-            val maxY = all.maxOf { it.y }
-            val pad = 28.dp.toPx()
-            val spanX = (maxX - minX).takeIf { it > 1e-6f } ?: 1f
-            val spanY = (maxY - minY).takeIf { it > 1e-6f } ?: 1f
-            val scale = minOf((size.width - 2 * pad) / spanX, (size.height - 2 * pad) / spanY)
-            val offsetX = (size.width - spanX * scale) / 2f
-            val offsetY = (size.height - spanY * scale) / 2f
-            fun map(p: Offset) = Offset(
-                offsetX + (p.x - minX) * scale,
-                size.height - (offsetY + (p.y - minY) * scale),
-            )
-            fun draw(points: List<Offset>, color: Color, width: Float) {
-                if (points.size < 2) return
-                val path = Path()
-                points.map(::map).forEachIndexed { index, p ->
-                    if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-                }
-                drawPath(path, color, style = Stroke(width = width.dp.toPx()))
-            }
-            if (best != null && best.index != selected?.index) draw(trail(best), compare.copy(alpha = 0.7f), 2f)
-            draw(trail(selected), primary, 3f)
-            trail(selected).lastOrNull()?.let { drawCircle(primary, radius = 5.dp.toPx(), center = map(it)) }
         }
         if (current == null) {
             Text(

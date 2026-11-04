@@ -382,9 +382,6 @@ fun ReportScreen(
         } else {
             ReportPreview(
                 videoUri = current.videoUri,
-                selected = selectedSlice,
-                best = bestSlice.takeIf { compareWithBest },
-                samples = current.motionSamples,
                 modifier = modifier,
                 fill = true,
             )

@@ -79,6 +79,25 @@ class RepTimelineTest {
     }
 
     @Test
+    fun noTrailBeforeFirstRepAndOnlyFirstRepAtItsStart() {
+        val samples = (0..60).map { sample(it * 0.05) } // 0.00 .. 3.00
+
+        // Report open (t = 0) is before rep 1 starts at 1.0 s: no trail at all.
+        val before = RepTimeline.trailRepAt(reps, 0.0)
+        assertNull(before)
+
+        // At the first rep start only rep 1 samples are eligible.
+        val atStart = RepTimeline.trailRepAt(reps, 1.0)!!
+        assertEquals(1, atStart.index)
+        val startTrail = RepTimeline.trailRuns(samples, atStart, upToSec = 1.0)
+        assertTrue(startTrail.flatMap { it.samples }.all { it.tSec in 1.0..1.0 })
+
+        // Between reps the previous rep is still returned.
+        val gapped = listOf(rep1, rep2.copy(startSec = 2.5))
+        assertEquals(1, RepTimeline.trailRepAt(gapped, 2.2)?.index)
+    }
+
+    @Test
     fun phaseAtFollowsRepBoundaries() {
         assertEquals(PhaseType.ECCENTRIC, RepTimeline.phaseAt(rep1, 1.2)?.type)
         assertEquals(PhaseType.CONCENTRIC, RepTimeline.phaseAt(rep1, 1.4)?.type)

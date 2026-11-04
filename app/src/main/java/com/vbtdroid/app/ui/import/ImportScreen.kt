@@ -240,10 +240,10 @@ fun ImportScreen(
     }
 
     val loadKg = loadText.toDoubleOrNull()
-    val plateDiameter = plateDiameterText.toDoubleOrNull()
+    val plateDiameterM = plateDiameterMeters(plateDiameterText.toDoubleOrNull())
     val cameraAngle = cameraAngleText.toDoubleOrNull()
     val validLoad = loadText.isBlank() || (loadKg != null && loadKg.isFinite() && loadKg > 0.0)
-    val validPlate = plateDiameter != null && plateDiameter.isFinite() && plateDiameter > 0.0
+    val validPlate = plateDiameterM != null
     val validAngle = cameraAngle != null && cameraAngle.isFinite() &&
         cameraAngle > 0.0 && cameraAngle <= 90.0
     val validSettings = validLoad && validPlate && validAngle
@@ -265,7 +265,7 @@ fun ImportScreen(
                     lift = lift,
                     variant = variant,
                     cameraAngleDeg = cameraAngle ?: return@let,
-                    plateDiameterM = plateDiameter ?: return@let,
+                    plateDiameterM = plateDiameterM ?: return@let,
                     loadKg = if (loadText.isBlank()) null else loadKg,
                     cameraLevel = cameraLevel,
                     analyzePose = analyzePose,
@@ -590,7 +590,7 @@ private fun SettingsPage(
                 onValueChange = onPlate,
                 enabled = enabled,
                 label = { Text(stringResource(R.string.import_plate_label)) },
-                suffix = { Text(stringResource(R.string.unit_m)) },
+                suffix = { Text(stringResource(R.string.unit_cm)) },
                 isError = !validPlate,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,

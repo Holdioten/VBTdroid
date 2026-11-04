@@ -11,13 +11,13 @@
     <string name="lift_squat">Squat</string>
     <string name="lift_bench">Bench press</string>
     <string name="lift_deadlift">Deadlift</string>
-    <string name="import_default_plate_diameter">0.45</string>
+    <string name="import_default_plate_diameter">45</string>
     <string name="import_default_camera_angle">90</string>
     <string name="import_camera_level">Camera is level</string>
-    <string name="import_analyze_pose">Analyze joint angles</string>
+    <string name="import_analyze_pose">Pose analysis</string>
     <string name="import_start_analysis">Start analysis</string>
     <string name="import_analysis_progress">Analysis progress: %1$d%%</string>
-    <string name="import_invalid_settings">Enter a valid load, plate diameter, and camera angle</string>
+    <string name="import_invalid_settings">Enter a valid load, plate diameter (cm), and camera angle</string>
     <string name="import_roi_edit_hint">Drag inside to move, drag a corner to resize, drag outside to draw a new box</string>
     <string name="import_roi_reset">Reset selection</string>
     <string name="import_first_frame_preview">First video frame; drag to select the plate</string>
@@ -34,8 +34,8 @@
     <string name="report_phase_edit_hint">Drag stage boundaries to correct them, then tap Done.</string>
     <string name="report_manual_phases">Manual stages</string>
     <string name="report_manual_invalid">Not enough valid samples in these stages; metrics were not updated</string>
-    <string name="report_joint_angles_disabled_title">Joint-angle analysis is off</string>
-    <string name="report_joint_angles_disabled_hint">Turn on “Analyze joint angles” when re-analysing</string>
+    <string name="report_joint_angles_disabled_title">Pose analysis is off</string>
+    <string name="report_joint_angles_disabled_hint">Turn on “Pose analysis” when re-analysing</string>
     <string name="report_quality">Quality and warnings</string>
     <string name="report_fps">Effective frame rate: %1$.2f fps</string>
     <string name="report_no_warnings">No quality warnings</string>
@@ -80,7 +80,8 @@
     <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
 
     <string name="import_load_label">Load (optional)</string>
-    <string name="import_plate_label">Plate diameter</string>
+    <string name="import_plate_label">Plate diameter (cm)</string>
+    <string name="unit_cm">cm</string>
     <string name="import_camera_label">Camera angle</string>
     <string name="unit_kg">kg</string>
     <string name="unit_m">m</string>
@@ -100,8 +101,8 @@
     <string name="import_cta_need_roi">Confirm the plate region</string>
     <string name="analysis_cancelled">Analysis cancelled</string>
 
-    <string name="report_preview_placeholder">First frame unavailable; showing path schematic</string>
-    <string name="report_preview_description">First frame with the bar path of the selected rep</string>
+    <string name="report_preview_placeholder">First frame unavailable</string>
+    <string name="report_preview_description">First video frame</string>
     <string name="report_mini_best_mcv">Best MCV</string>
     <string name="report_mini_vl">Velocity loss VL</string>
     <string name="report_per_rep_mcv">Mean velocity per rep</string>

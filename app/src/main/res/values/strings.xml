@@ -11,13 +11,13 @@
     <string name="lift_squat">深蹲</string>
     <string name="lift_bench">卧推</string>
     <string name="lift_deadlift">硬拉</string>
-    <string name="import_default_plate_diameter">0.45</string>
+    <string name="import_default_plate_diameter">45</string>
     <string name="import_default_camera_angle">90</string>
     <string name="import_camera_level">相机保持水平</string>
-    <string name="import_analyze_pose">分析关节角</string>
+    <string name="import_analyze_pose">姿态分析</string>
     <string name="import_start_analysis">开始分析</string>
     <string name="import_analysis_progress">分析进度：%1$d%%</string>
-    <string name="import_invalid_settings">请输入有效的负荷、片径和机位角度</string>
+    <string name="import_invalid_settings">请输入有效的负荷、片径（cm）和机位角度</string>
 
     <string name="report_back">返回</string>
     <string name="report_repetitions">逐次指标</string>
@@ -106,8 +106,8 @@
     <string name="history_export_unavailable">此历史记录缺少可显示的导出数据</string>
 
     <string name="report_key_frame_angles">关键帧关节角</string>
-    <string name="report_joint_angles_disabled_title">关节角分析已关闭</string>
-    <string name="report_joint_angles_disabled_hint">重新分析时开启“分析关节角”</string>
+    <string name="report_joint_angles_disabled_title">姿态分析已关闭</string>
+    <string name="report_joint_angles_disabled_hint">重新分析时开启“姿态分析”</string>
     <string name="report_key_frame_start">起始</string>
     <string name="report_key_frame_bottom">底部/触胸</string>
     <string name="report_key_frame_sticking">粘滞点</string>
@@ -133,7 +133,8 @@
     <string name="analysis_already_running">已有分析正在进行，请等待完成或取消后再试</string>
 
     <string name="import_load_label">负荷（可选）</string>
-    <string name="import_plate_label">杠铃片直径</string>
+    <string name="import_plate_label">杠铃片直径（cm）</string>
+    <string name="unit_cm">cm</string>
     <string name="import_camera_label">机位角度</string>
     <string name="unit_kg">kg</string>
     <string name="unit_m">m</string>
@@ -154,7 +155,7 @@
     <string name="analysis_cancelled">分析已取消</string>
 
     <string name="report_preview_placeholder">首帧不可用</string>
-    <string name="report_preview_description">视频首帧与当前次的杠铃轨迹示意</string>
+    <string name="report_preview_description">视频首帧</string>
     <string name="report_mini_best_mcv">最佳 MCV</string>
     <string name="report_mini_vl">速度损失 VL</string>
     <string name="report_per_rep_mcv">逐次平均速度</string>
