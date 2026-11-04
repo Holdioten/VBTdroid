@@ -35,7 +35,6 @@ object JointAngleExtractor {
     private val left = Side(11, 13, 15, 19, 23, 25, 27, 31)
     private val right = Side(12, 14, 16, 20, 24, 26, 28, 32)
 
-    @Suppress("UNUSED_PARAMETER")
     fun extract(
         pose: PoseFrame,
         lift: Lift,
@@ -63,31 +62,44 @@ object JointAngleExtractor {
             return JointAngles.correctAzimuth(raw, cameraAngleDeg)
         }
 
-        val hip = angle("hip_angle_deg", side.shoulder, side.hip, side.knee)
-        val knee = angle("knee_angle_deg", side.hip, side.knee, side.ankle)
-        val ankle = angle("ankle_angle_deg", side.knee, side.ankle, side.footIndex)
-        val shoulder = angle("shoulder_angle_deg", side.hip, side.shoulder, side.elbow)
-        val elbow = angle("elbow_angle_deg", side.shoulder, side.elbow, side.wrist)
-        val wrist = angle("wrist_angle_deg", side.elbow, side.wrist, side.index)
+        fun trunkAngle(): Double? {
+            val shoulderPoint = point(side.shoulder) ?: return null
+            val hipPoint = point(side.hip) ?: return null
+            val raw = JointAngles.angle(
+                Point2(hipPoint.x, hipPoint.y - 1.0),
+                hipPoint,
+                shoulderPoint,
+            ) ?: return null
+            val visibility = minOf(
+                pose.visibility[side.shoulder] ?: 0f,
+                pose.visibility[side.hip] ?: 0f,
+            )
+            validAngleVisibilities += visibility
+            confidenceByJoint["trunk_angle_deg"] = visibility.toDouble()
+            return JointAngles.correctAzimuth(raw, cameraAngleDeg)
+        }
 
-        val trunk = run {
-            val shoulderPoint = point(side.shoulder)
-            val hipPoint = point(side.hip)
-            if (shoulderPoint == null || hipPoint == null) {
-                null
-            } else {
-                JointAngles.angle(
-                    Point2(hipPoint.x, hipPoint.y - 1.0),
-                    hipPoint,
-                    shoulderPoint,
-                )?.let { raw ->
-                    val visibility = minOf(pose.visibility[side.shoulder] ?: 0f, pose.visibility[side.hip] ?: 0f)
-                    validAngleVisibilities += visibility
-                    confidenceByJoint["trunk_angle_deg"] = visibility.toDouble()
-                    JointAngles.correctAzimuth(raw, cameraAngleDeg)
-                }
+        var hip: Double? = null
+        var knee: Double? = null
+        var ankle: Double? = null
+        var shoulder: Double? = null
+        var elbow: Double? = null
+        var wrist: Double? = null
+
+        when (lift) {
+            Lift.SQUAT, Lift.DEADLIFT -> {
+                hip = angle("hip_angle_deg", side.shoulder, side.hip, side.knee)
+                knee = angle("knee_angle_deg", side.hip, side.knee, side.ankle)
+                ankle = angle("ankle_angle_deg", side.knee, side.ankle, side.footIndex)
+            }
+
+            Lift.BENCH -> {
+                shoulder = angle("shoulder_angle_deg", side.hip, side.shoulder, side.elbow)
+                elbow = angle("elbow_angle_deg", side.shoulder, side.elbow, side.wrist)
             }
         }
+
+        val trunk = trunkAngle()
 
         val confidence = validAngleVisibilities.minOrNull()?.toDouble() ?: 0.0
         return FrameAngles(

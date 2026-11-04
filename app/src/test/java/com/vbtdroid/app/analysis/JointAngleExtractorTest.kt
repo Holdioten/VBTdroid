@@ -5,6 +5,7 @@ import com.vbtdroid.core.metrics.JointAngles
 import com.vbtdroid.core.metrics.Point2
 import com.vbtdroid.core.model.Lift
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -82,4 +83,82 @@ class JointAngleExtractorTest {
 
         assertEquals(45.0, angles.hipDeg!!, 1e-6)
     }
+
+    @Test
+    fun `squat computes lower body and trunk angles only`() {
+        val pose = lowerBodyPose()
+
+        val angles = JointAngleExtractor.extract(pose, Lift.SQUAT, 90.0)
+
+        assertEquals(90.0, angles.hipDeg!!, 1e-6)
+        assertEquals(90.0, angles.kneeDeg!!, 1e-6)
+        assertNotNull(angles.ankleDeg)
+        assertNotNull(angles.trunkDeg)
+        assertNull(angles.shoulderDeg)
+        assertNull(angles.elbowDeg)
+        assertNull(angles.wristDeg)
+        assertEquals(
+            setOf("hip_angle_deg", "knee_angle_deg", "ankle_angle_deg", "trunk_angle_deg"),
+            angles.confidenceByJoint.keys,
+        )
+    }
+
+    @Test
+    fun `deadlift computes lower body and trunk angles only`() {
+        val pose = lowerBodyPose()
+
+        val angles = JointAngleExtractor.extract(pose, Lift.DEADLIFT, 90.0)
+
+        assertEquals(90.0, angles.hipDeg!!, 1e-6)
+        assertEquals(90.0, angles.kneeDeg!!, 1e-6)
+        assertNotNull(angles.ankleDeg)
+        assertNotNull(angles.trunkDeg)
+        assertNull(angles.shoulderDeg)
+        assertNull(angles.elbowDeg)
+        assertNull(angles.wristDeg)
+        assertEquals(
+            setOf("hip_angle_deg", "knee_angle_deg", "ankle_angle_deg", "trunk_angle_deg"),
+            angles.confidenceByJoint.keys,
+        )
+    }
+
+    @Test
+    fun `bench computes torso and arm angles only`() {
+        val pose = PoseFrame(
+            tSec = 0.0,
+            landmarks = mapOf(
+                11 to Point2(0.0, 0.0),
+                13 to Point2(0.0, 1.0),
+                15 to Point2(1.0, 1.0),
+                23 to Point2(0.0, 2.0),
+            ),
+            visibility = mapOf(11 to 0.9f, 13 to 0.9f, 15 to 0.9f, 23 to 0.9f),
+        )
+
+        val angles = JointAngleExtractor.extract(pose, Lift.BENCH, 90.0)
+
+        assertNotNull(angles.shoulderDeg)
+        assertNotNull(angles.elbowDeg)
+        assertNotNull(angles.trunkDeg)
+        assertNull(angles.hipDeg)
+        assertNull(angles.kneeDeg)
+        assertNull(angles.ankleDeg)
+        assertNull(angles.wristDeg)
+        assertEquals(
+            setOf("shoulder_angle_deg", "elbow_angle_deg", "trunk_angle_deg"),
+            angles.confidenceByJoint.keys,
+        )
+    }
+
+    private fun lowerBodyPose() = PoseFrame(
+        tSec = 0.0,
+        landmarks = mapOf(
+            11 to Point2(0.0, 0.0),
+            23 to Point2(0.0, 1.0),
+            25 to Point2(1.0, 1.0),
+            27 to Point2(1.0, 2.0),
+            31 to Point2(2.0, 2.0),
+        ),
+        visibility = mapOf(11 to 0.9f, 23 to 0.9f, 25 to 0.9f, 27 to 0.9f, 31 to 0.9f),
+    )
 }
