@@ -153,6 +153,8 @@ fun ReportScreen(
                 when {
                     persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
                     overlayVideo == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
+                    current.analyzePose && "POSE_UNAVAILABLE" in current.quality.warnings ->
+                        StatusChip(text = stringResource(R.string.report_pose_unavailable), tone = ChipTone.WARNING)
                     trackLostFromSec != null -> StatusChip(
                         text = stringResource(
                             if ("CAMERA_MOVED" in current.quality.warnings) {

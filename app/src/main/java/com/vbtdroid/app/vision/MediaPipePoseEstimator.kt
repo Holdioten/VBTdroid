@@ -9,9 +9,10 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.vbtdroid.core.metrics.Point2
 
-class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
-    private val landmarker: PoseLandmarker
+class MediaPipePoseEstimator(private val context: Context) : PoseEstimator, AutoCloseable {
+    private var landmarker: PoseLandmarker
     private var lastTimestampMs = -1L
+    private var cpuFallbackTried = false
 
     init {
         try {
@@ -26,6 +27,7 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
         landmarker = try {
             createLandmarker(context, Delegate.GPU)
         } catch (_: Exception) {
+            cpuFallbackTried = true
             createLandmarker(context, Delegate.CPU)
         }
     }
@@ -37,7 +39,23 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
         val timestampMs = maxOf(requestedTimestampMs, lastTimestampMs + 1L)
         lastTimestampMs = timestampMs
 
-        val result = landmarker.detectForVideo(BitmapImageBuilder(bitmap).build(), timestampMs)
+        val image = BitmapImageBuilder(bitmap).build()
+        val result = try {
+            try {
+                landmarker.detectForVideo(image, timestampMs)
+            } catch (error: Exception) {
+                // GPU delegates can fail on specific frames/devices. Rebuild on CPU once and
+                // retry instead of silently losing every pose in the clip.
+                if (cpuFallbackTried) throw error
+                cpuFallbackTried = true
+                android.util.Log.w("VBTDebug", "Pose GPU delegate failed, retrying on CPU", error)
+                runCatching { landmarker.close() }
+                landmarker = createLandmarker(context, Delegate.CPU)
+                landmarker.detectForVideo(image, timestampMs)
+            }
+        } finally {
+            image.close()
+        }
         val candidates = result.landmarks().map { pose ->
             val points = LinkedHashMap<Int, Point2>(pose.size)
             val visibility = LinkedHashMap<Int, Float>(pose.size)

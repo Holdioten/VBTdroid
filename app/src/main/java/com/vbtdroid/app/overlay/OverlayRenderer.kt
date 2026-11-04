@@ -18,6 +18,7 @@ import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepTimeline
 import com.vbtdroid.core.phases.RepSlice
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -100,7 +101,10 @@ class OverlayRenderer(private val context: Context, private val result: Analysis
         val dotRadius = max(1.5f, 4.0f * scale)
 
         drawTrail(canvas, tSec, dotRadius)
+        // Only draw a pose that belongs to this moment. A sparse/failed pose track must not
+        // freeze a later frame over the whole first half of the clip.
         val pose = OverlayTimeline.nearestPoseFrame(result.poseFrames, tSec)
+            ?.takeIf { abs(it.tSec - tSec) <= MAX_POSE_GAP_SEC }
         if (pose != null) {
             drawPose(canvas, pose, dotRadius, scale, height)
         }
@@ -322,6 +326,8 @@ class OverlayRenderer(private val context: Context, private val result: Analysis
     }
 
     private companion object {
+        /** Pose is estimated every third frame (~0.1 s at 30 fps); allow two frames of slack. */
+        const val MAX_POSE_GAP_SEC = 0.25
         const val MIN_VISIBILITY = 0.35f
 
         val LEFT_SIDE = intArrayOf(11, 13, 15, 19, 23, 25, 27, 31)

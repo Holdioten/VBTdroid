@@ -204,4 +204,5 @@
     <string name="report_track_lost">%1$.1f 秒后跟踪中断</string>
     <string name="quality_camera_moved">机位移动，后续次数未计入</string>
     <string name="quality_track_lost">跟踪中断，后续次数未计入</string>
+    <string name="report_pose_unavailable">姿态不可用</string>
 </resources>

@@ -62,6 +62,7 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
     private val velocityTitle = context.getString(R.string.report_velocity_chart)
     private val poseTitle = context.getString(R.string.report_card_pose)
     private val poseOffText = context.getString(R.string.report_pose_off)
+    private val poseUnavailableText = context.getString(R.string.report_pose_unavailable)
     private val barPathTitle = context.getString(R.string.report_bar_path_chart)
     private val repBarsTitle = context.getString(R.string.report_per_rep_mcv)
     private val unitMps = context.getString(R.string.unit_mps)
@@ -481,6 +482,12 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
 
         val nearest = OverlayTimeline.nearestFrameAngles(result.frameAngles, cueSec)
         val current = nearest?.takeIf { abs(it.tSec - cueSec) <= MAX_FRAME_GAP_SEC }
+        if (current == null) {
+            drawTextFitted(
+                canvas, poseUnavailableText, rect.left + pad, firstBaseline, valuePaint, contentWidth,
+            )
+            return
+        }
         val rows = poseJoints.chunked(2)
         val cellWidth = contentWidth / 2f
         rows.forEachIndexed { row, pair ->
@@ -507,12 +514,13 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         }
     }
 
-    private fun angleValue(frame: FrameAngles?, joint: JointSpec): Double? {
-        if (frame == null) return null
-        val value = joint.value(frame)?.takeIf { it.isFinite() } ?: return null
-        val confidence = frame.confidenceByJoint[joint.key] ?: frame.confidence
-        return value.takeIf { confidence.isFinite() && confidence >= MIN_POSE_CONFIDENCE }
-    }
+    /**
+     * The burned angle labels on the skeleton are the source of truth: the card mirrors them and
+     * only hides a value when the joint is genuinely missing. A low overall confidence no longer
+     * blanks every cell while the same number is visible on the lifter.
+     */
+    private fun angleValue(frame: FrameAngles?, joint: JointSpec): Double? =
+        frame?.let { joint.value(it) }?.takeIf { it.isFinite() }
 
     private fun drawBarPathCard(
         canvas: Canvas,
@@ -594,16 +602,22 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
             return
         }
 
-        val gap = 8f * uiScale
-        val columnWidth = ((contentWidth - gap * (reps.size - 1)) / reps.size).coerceAtLeast(1f)
-        val labelHeight = LABEL * uiScale
-        val chartBottom = rect.bottom - pad - labelHeight
+        // At most three bars: the current rep stays centered and the window slides as playback
+        // advances. All bars are drawn on the same scale, with the rep number inside the block.
+        val activePosition = reps.indexOfFirst { it.repIndex == active?.index }.takeIf { it >= 0 } ?: 0
+        val windowSize = min(3, reps.size)
+        val start = (activePosition - 1).coerceIn(0, (reps.size - windowSize).coerceAtLeast(0))
+        val visible = reps.subList(start, start + windowSize)
+
+        val gap = 10f * uiScale
+        val columnWidth = ((contentWidth - gap * (visible.size - 1)) / visible.size).coerceAtLeast(1f)
+        val chartBottom = rect.bottom - pad
         val chartTop = titleBaseline + 6f * uiScale
         val maxValue = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return
         val bestIndex = reps.first { it.mcvMps == maxValue }.repIndex
         val barMaxHeight = (chartBottom - chartTop).coerceAtLeast(3f)
 
-        reps.forEachIndexed { index, rep ->
+        visible.forEachIndexed { index, rep ->
             val selected = rep.repIndex == active?.index
             val fraction = (rep.mcvMps / maxValue).coerceIn(0.0, 1.0).toFloat()
             val height = max(3f * uiScale, (barMaxHeight - 4f * uiScale) * fraction)
@@ -621,14 +635,23 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
                 canvas.drawRoundRect(barRect, 6f * uiScale, 6f * uiScale, selectionPaint)
             }
             val centerX = (left + right) / 2f
-            drawTextCenteredFitted(
-                canvas,
-                rep.repIndex.toString(),
-                centerX,
-                rect.bottom - pad,
-                if (selected) valuePaint else labelPaint,
-                columnWidth,
-            )
+            val numberPaint = if (selected) valuePaint else labelPaint
+            val numberBaseline = top + numberPaint.textSize + 3f * uiScale
+            if (height >= numberPaint.textSize + 3f * uiScale) {
+                drawTextCenteredFitted(
+                    canvas, rep.repIndex.toString(), centerX, numberBaseline, numberPaint, columnWidth,
+                )
+            } else {
+                // Too short for an inside label: put the number just above the block.
+                drawTextCenteredFitted(
+                    canvas,
+                    rep.repIndex.toString(),
+                    centerX,
+                    (top - 3f * uiScale).coerceAtLeast(chartTop + numberPaint.textSize),
+                    numberPaint,
+                    columnWidth,
+                )
+            }
         }
     }
 
@@ -734,7 +757,6 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         const val LABEL = 11f
         const val BODY = 16f
         const val CONTENT_MULTIPLIER = 2.75f
-        const val MIN_POSE_CONFIDENCE = 0.5
         const val MAX_FRAME_GAP_SEC = 0.3
 
         fun textPaint(color: Long, align: Paint.Align): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

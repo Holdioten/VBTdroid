@@ -31,6 +31,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var velocityX = 0f
     private var velocityY = 0f
     private var axisReference: PlateAxisReference? = null
+    private var consecutiveMisses = 0
 
     open fun initialRoi(bitmap: Bitmap): RectF? {
         val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
@@ -47,6 +48,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         velocityX = 0f
         velocityY = 0f
         axisReference = null
+        consecutiveMisses = 0
     }
 
     override fun close() = reset()
@@ -69,6 +71,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val fitted = if (circle == null) findEllipse(gray, roi, null, null, null) else null
             velocityX = 0f
             velocityY = 0f
+            consecutiveMisses = 0
             return when {
                 circle != null -> {
                     axisReference = PlateAxisReference(circle.radiusPx * 2f)
@@ -171,8 +174,38 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 return observation(tSec, fitted)
             }
 
+            // Full-frame Hough recovery: after a fast concentric the plate can be far from the
+            // local window even though its size is unchanged. The reference radius is known, so
+            // a global search is both cheap and unambiguous; the detector is the last resort.
+            val recoveredCircle = if (consecutiveMisses >= 1) {
+                findCircle(
+                    currentGray,
+                    RectF(0f, 0f, currentGray.cols().toFloat(), currentGray.rows().toFloat()),
+                    reference.majorAxisPx / 2f,
+                    predictedX,
+                    predictedY,
+                    maxDistancePx = maxOf(bitmap.width, bitmap.height).toFloat(),
+                )
+            } else {
+                null
+            }
+            if (recoveredCircle != null) {
+                updatePosition(recoveredCircle.centerX, recoveredCircle.centerY, tSec, currentGray)
+                return PlateObservation(
+                    tSec = tSec,
+                    xPx = recoveredCircle.centerX.toDouble(),
+                    yPx = recoveredCircle.centerY.toDouble(),
+                    majorAxisPx = reference.majorAxisPx.toDouble(),
+                    confidence = recoveredCircle.confidence.toDouble(),
+                )
+            }
+
             // 检测器只在跟踪丢失时调用，用于恢复而非逐帧主信号。
-            val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) }
+            val detection = if (consecutiveMisses >= DETECTOR_RECOVERY_MISSES) {
+                detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) }
+            } else {
+                null
+            }
             if (detection != null) {
                 val detectedDiameter = max(detection.widthPx, detection.heightPx)
                 val box = RectF(
@@ -203,7 +236,11 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                     )
                 }
             }
-            // A failed frame is never paired with the last successful center.
+            // A failed frame is never paired with the last successful center. Decay the
+            // prediction so it cannot run away while the plate is briefly unobservable.
+            consecutiveMisses++
+            velocityX *= MISS_VELOCITY_DECAY
+            velocityY *= MISS_VELOCITY_DECAY
             successfulPair.failed()
             return null
         } finally {
@@ -250,9 +287,16 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         val previousTime = lastTimeSec
         if (previousTime != null && tSec > previousTime) {
             val elapsed = (tSec - previousTime).toFloat()
-            velocityX = (nextX - centerX) / elapsed
-            velocityY = (nextY - centerY) / elapsed
+            val maxSpeed = (axisReference?.majorAxisPx ?: 0f) *
+                PlateRoi.MAX_BAR_SPEED_DIAMETERS_PER_SEC.toFloat()
+            velocityX = ((nextX - centerX) / elapsed).let {
+                if (maxSpeed > 0f) it.coerceIn(-maxSpeed, maxSpeed) else it
+            }
+            velocityY = ((nextY - centerY) / elapsed).let {
+                if (maxSpeed > 0f) it.coerceIn(-maxSpeed, maxSpeed) else it
+            }
         }
+        consecutiveMisses = 0
         commitSuccessfulFrame(currentGray, nextX, nextY, tSec)
     }
 
@@ -285,6 +329,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         expectedRadius: Float,
         predictedX: Float,
         predictedY: Float,
+        maxDistancePx: Float = -1f,
     ): HoughCircle? {
         if (!expectedRadius.isFinite() || expectedRadius <= 1f) return null
         val left = requestedRoi.left.toInt().coerceIn(0, gray.cols() - 1)
@@ -322,7 +367,11 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                     radiusPx = values[2].toFloat(),
                 )
             }
-            val maxDistance = min(requestedRoi.width(), requestedRoi.height()) / 2f
+            val maxDistance = if (maxDistancePx > 0f) {
+                maxDistancePx
+            } else {
+                min(requestedRoi.width(), requestedRoi.height()) / 2f
+            }
             val accepted = PlateRoi.selectCircle(
                 candidates = candidates,
                 expectedRadiusPx = expectedRadius,
@@ -468,6 +517,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         // An accepted Hough circle is the primary signal; keep it above the 0.6 quality warning
         // threshold so a clean plate is not flagged LOW_CALIBRATION/LOW_TRACK_CONFIDENCE.
         const val HOUGH_ACCEPT_CONFIDENCE = 0.75f
+        const val DETECTOR_RECOVERY_MISSES = 3
+        const val MISS_VELOCITY_DECAY = 0.5f
         const val HOUGH_ACCEPT_BONUS = 0.15f
     }
 }

@@ -201,4 +201,5 @@
     <string name="report_track_lost">Tracking lost after %1$.1f s</string>
     <string name="quality_camera_moved">Camera moved; later reps were not counted</string>
     <string name="quality_track_lost">Tracking lost; later reps were not counted</string>
+    <string name="report_pose_unavailable">Pose unavailable</string>
 </resources>
