@@ -1,11 +1,15 @@
 package com.vbtdroid.app.overlay
 
+import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
+import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.analysis.FrameAngles
 import com.vbtdroid.core.metrics.MotionSample
@@ -15,22 +19,22 @@ import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.phases.RepTimeline
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Arcus-style data cards burned into the overlay video.
+ * Burns the same cards the Compose report preview draws into the overlay video.
  *
- * Portrait frames get one measured left column below the HUD; landscape frames get an equal-gap
- * bottom strip. Heights come from the same text metrics the card draws with, and when the column
- * does not fit the secondary metrics compact and the whole column scales down. Every card is
- * clipped to its own rounded rect, so text and charts can never spill into a neighbour.
+ * Layout is measured from the report's dp/sp values: portrait gets a 36%-wide left column below
+ * the HUD, landscape an equal-gap bottom strip. When the column is too tall the whole card block
+ * scales down; rectangles never cross. Every card is clipped to its own rounded rect.
  *
- * The renderer is allocated once per export. Layout rectangles and per-rep sample slices are
- * cached, so the hot path only builds one [Path] per chart per frame.
+ * Colours/labels come from the shared theme and string resources, so the burned video matches the
+ * report style and has no duplicate English labels.
  */
-internal class OverlayCards(private val result: AnalysisResult) {
-    private enum class CardKind { MAIN, VELOCITY, ANGLES, BAR_PATH }
+internal class OverlayCards(context: Context, private val result: AnalysisResult) {
+    private enum class CardKind { MAIN, VELOCITY, POSE, BAR_PATH, REP_BARS }
 
     private data class BarBounds(
         val minX: Double,
@@ -42,8 +46,48 @@ internal class OverlayCards(private val result: AnalysisResult) {
     private data class LayoutResult(
         val slots: List<Pair<CardKind, RectF>>,
         val contentScale: Float,
-        val compact: Boolean,
     )
+
+    private data class JointSpec(
+        val key: String,
+        val label: String,
+        val value: (FrameAngles) -> Double?,
+    )
+
+    private val mainTitle = context.getString(R.string.report_card_rep_mcv)
+    private val setMeanLabel = context.getString(R.string.report_mini_set_mean)
+    private val bestLabel = context.getString(R.string.report_mini_best_mcv)
+    private val velocityLossLabel = context.getString(R.string.report_mini_vl)
+    private val repCountLabel = context.getString(R.string.report_mini_reps)
+    private val velocityTitle = context.getString(R.string.report_velocity_chart)
+    private val poseTitle = context.getString(R.string.report_card_pose)
+    private val poseOffText = context.getString(R.string.report_pose_off)
+    private val barPathTitle = context.getString(R.string.report_bar_path_chart)
+    private val repBarsTitle = context.getString(R.string.report_per_rep_mcv)
+    private val unitMps = context.getString(R.string.unit_mps)
+    private val missing = context.getString(R.string.report_value_missing)
+    private val peakLabelFormat = context.getString(R.string.report_peak_velocity_label)
+    private val angleFormat = context.getString(R.string.report_angle_value)
+
+    private val poseJoints: List<JointSpec> = when (result.lift) {
+        Lift.SQUAT -> listOf(
+            JointSpec("trunk_angle_deg", context.getString(R.string.metric_trunk_angle)) { it.trunkDeg },
+            JointSpec("hip_angle_deg", context.getString(R.string.metric_hip_angle)) { it.hipDeg },
+            JointSpec("knee_angle_deg", context.getString(R.string.metric_knee_angle)) { it.kneeDeg },
+            JointSpec("ankle_angle_deg", context.getString(R.string.metric_ankle_angle)) { it.ankleDeg },
+        )
+
+        Lift.DEADLIFT -> listOf(
+            JointSpec("trunk_angle_deg", context.getString(R.string.metric_trunk_angle)) { it.trunkDeg },
+            JointSpec("hip_angle_deg", context.getString(R.string.metric_hip_angle)) { it.hipDeg },
+            JointSpec("knee_angle_deg", context.getString(R.string.metric_knee_angle)) { it.kneeDeg },
+        )
+
+        Lift.BENCH -> listOf(
+            JointSpec("shoulder_angle_deg", context.getString(R.string.metric_shoulder_angle)) { it.shoulderDeg },
+            JointSpec("elbow_angle_deg", context.getString(R.string.metric_elbow_angle)) { it.elbowDeg },
+        )
+    }
 
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -54,48 +98,56 @@ internal class OverlayCards(private val result: AnalysisResult) {
         color = OverlayStyle.CARD_BORDER.toInt()
     }
     private val titlePaint = textPaint(OverlayStyle.CARD_MUTED, Paint.Align.LEFT)
-    private val valuePaint = textPaint(OverlayStyle.TRAIL, Paint.Align.LEFT).apply {
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    private val heroPaint = textPaint(OverlayStyle.TRAIL, Paint.Align.LEFT).apply {
+        typeface = ResourcesCompat.getFont(context, R.font.barlow_condensed_semibold)
+            ?: Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val unitPaint = textPaint(OverlayStyle.CARD_MUTED, Paint.Align.LEFT)
     private val labelPaint = textPaint(OverlayStyle.CARD_MUTED, Paint.Align.LEFT)
-    private val miniValuePaint = textPaint(OverlayStyle.CARD_TEXT, Paint.Align.LEFT)
-    private val angleLabelPaint = textPaint(OverlayStyle.CARD_MUTED, Paint.Align.CENTER)
-    private val angleValuePaint = textPaint(OverlayStyle.CARD_TEXT, Paint.Align.CENTER)
+    private val valuePaint = textPaint(OverlayStyle.CARD_TEXT, Paint.Align.LEFT)
     private val emptyPaint = textPaint(OverlayStyle.CARD_MUTED, Paint.Align.CENTER)
-    private val sparkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = OverlayStyle.TRAIL.toInt()
+    private val linePaint = chartPaint(OverlayStyle.TRAIL)
+    private val axisPaint = chartPaint(OverlayStyle.CARD_BORDER).apply {
+        strokeWidth = 1f
     }
-    private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = OverlayStyle.PAUSE.toInt()
-        alpha = 90
+    private val meanPaint = chartPaint(OverlayStyle.TRAIL).apply {
+        alpha = 102
     }
-    private val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = OverlayStyle.SPEED.toInt()
+    private val cursorPaint = chartPaint(OverlayStyle.CARD_TEXT).apply {
+        alpha = 230
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         color = OverlayStyle.TRAIL.toInt()
     }
+    private val dotRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = OverlayStyle.TRAIL.toInt()
+    }
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
-    private val path = Path()
-    private val clipPath = Path()
-    private val barRect = RectF()
-
+    private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = OverlayStyle.SKELETON.toInt()
+    }
+    private val bandPaints: Map<PhaseType, Paint> = mapOf(
+        PhaseType.ECCENTRIC to bandPaint(OverlayStyle.ECCENTRIC),
+        PhaseType.PAUSE to bandPaint(OverlayStyle.PAUSE),
+        PhaseType.CONCENTRIC to bandPaint(OverlayStyle.TRAIL),
+        PhaseType.LOCKOUT to bandPaint(OverlayStyle.LOCKOUT),
+    )
     private val barPathPaints: Map<PhaseType?, Paint> = mapOf(
         PhaseType.ECCENTRIC to chartPaint(OverlayStyle.ECCENTRIC),
         PhaseType.CONCENTRIC to chartPaint(OverlayStyle.TRAIL),
-        PhaseType.PAUSE to chartPaint(OverlayStyle.PAUSE, alpha = 180),
-        PhaseType.LOCKOUT to chartPaint(OverlayStyle.LOCKOUT, alpha = 180),
-        null to chartPaint(OverlayStyle.PAUSE, alpha = 120),
+        PhaseType.PAUSE to chartPaint(OverlayStyle.PAUSE).apply { alpha = 179 },
+        PhaseType.LOCKOUT to chartPaint(OverlayStyle.LOCKOUT).apply { alpha = 179 },
+        null to chartPaint(OverlayStyle.PAUSE).apply { alpha = 128 },
     )
+    private val path = Path()
+    private val clipPath = Path()
+    private val chartRect = RectF()
+    private val barRect = RectF()
 
     private val metricsByRep: Map<Int, RepMetrics> = result.reps.associateBy { it.repIndex }
     private val velocityByRep: Map<Int, List<MotionSample>> = result.repSlices.associate { rep ->
@@ -118,12 +170,10 @@ internal class OverlayCards(private val result: AnalysisResult) {
     private var lastHeight = 0
     private var lastHudBottom = 0f
     private var lastUiScale = 0f
-    private var layout = LayoutResult(emptyList(), 0f, false)
+    private var layout = LayoutResult(emptyList(), 0f)
 
     fun draw(canvas: Canvas, width: Int, height: Int, tSec: Double, hudBottom: Float) {
         if (width <= 0 || height <= 0) return
-        // Width drives the card scale, but capping with height keeps landscape strips sane on
-        // 16:9 and 20:9 phones where width alone would make the text enormous.
         val baseScale = (min(width.toFloat(), height * 1.25f) / 1080f).coerceAtLeast(0.55f)
         if (width != lastWidth || height != lastHeight || lastHudBottom != hudBottom) {
             layout = buildLayout(width.toFloat(), height.toFloat(), baseScale, hudBottom)
@@ -131,23 +181,22 @@ internal class OverlayCards(private val result: AnalysisResult) {
             lastHeight = height
             lastHudBottom = hudBottom
         }
-        val uiScale = layout.contentScale.takeIf { it > 0f } ?: baseScale
+        val uiScale = layout.contentScale.takeIf { it > 0f } ?: (baseScale * CONTENT_MULTIPLIER)
         ensureSizes(uiScale)
 
         val active = RepTimeline.currentRepAt(result.repSlices, tSec)
             ?: RepTimeline.trailRepAt(result.repSlices, tSec)
-        // In the gap after a rep the previous rep's cursor sits at its end; this mirrors the
-        // trail rule and keeps the angle/velocity cards stable until the next rep starts.
         val cueSec = active?.let { tSec.coerceIn(it.startSec, it.endSec) } ?: tSec
 
         for ((kind, rect) in layout.slots) {
             drawCardBackground(canvas, rect, uiScale)
             clippedToCard(canvas, rect, 12f * uiScale) {
                 when (kind) {
-                    CardKind.MAIN -> drawMainCard(canvas, rect, active, uiScale, layout.compact)
+                    CardKind.MAIN -> drawMainCard(canvas, rect, active, uiScale)
                     CardKind.VELOCITY -> drawVelocityCard(canvas, rect, active, cueSec, uiScale)
-                    CardKind.ANGLES -> drawAngleCard(canvas, rect, cueSec, uiScale)
+                    CardKind.POSE -> drawPoseCard(canvas, rect, cueSec, uiScale)
                     CardKind.BAR_PATH -> drawBarPathCard(canvas, rect, active, cueSec, uiScale)
+                    CardKind.REP_BARS -> drawRepBarsCard(canvas, rect, active, uiScale)
                 }
             }
         }
@@ -157,23 +206,28 @@ internal class OverlayCards(private val result: AnalysisResult) {
         if (uiScale == lastUiScale) return
         lastUiScale = uiScale
         titlePaint.textSize = TITLE * uiScale
-        valuePaint.textSize = VALUE * uiScale
-        unitPaint.textSize = 16f * uiScale
+        heroPaint.textSize = HERO * uiScale
+        unitPaint.textSize = TITLE * uiScale
         labelPaint.textSize = LABEL * uiScale
-        miniValuePaint.textSize = MINI_VALUE * uiScale
-        angleLabelPaint.textSize = LABEL * uiScale
-        angleValuePaint.textSize = ANGLE_VALUE * uiScale
-        emptyPaint.textSize = 14f * uiScale
-        sparkPaint.strokeWidth = max(1f, 2.2f * uiScale)
-        axisPaint.strokeWidth = max(0.8f, 1.0f * uiScale)
+        valuePaint.textSize = BODY * uiScale
+        emptyPaint.textSize = BODY * uiScale
+        linePaint.strokeWidth = 3f * uiScale
+        axisPaint.strokeWidth = max(0.8f, 1f * uiScale)
+        meanPaint.strokeWidth = max(0.8f, 1f * uiScale)
         cursorPaint.strokeWidth = max(1f, 1.5f * uiScale)
-        borderPaint.strokeWidth = max(0.8f, 1.0f * uiScale)
-        barPathPaints.values.forEach { it.strokeWidth = max(1.2f, 2.5f * uiScale) }
+        borderPaint.strokeWidth = max(0.8f, 1f * uiScale)
+        dotRingPaint.strokeWidth = max(1.2f, 2f * uiScale)
+        selectionPaint.strokeWidth = max(1.2f, 1.5f * uiScale)
+        val dash = DashPathEffect(floatArrayOf(6f * uiScale, 6f * uiScale), 0f)
+        axisPaint.pathEffect = dash
+        meanPaint.pathEffect = dash
+        barPathPaints.values.forEach { it.strokeWidth = 3f * uiScale }
     }
 
     /**
-     * Explicit non-overlapping layout. Heights are derived from the paint sizes and only change
-     * when the column has to compact or shrink, never by letting rectangles drift over each other.
+     * Portrait: fixed left column, measured card heights, explicit gaps. Landscape: five equal
+     * cards in a bottom strip. If the column is too tall, text/spacing shrink together so the last
+     * card always ends above the bottom safe margin.
      */
     private fun buildLayout(
         width: Float,
@@ -181,198 +235,140 @@ internal class OverlayCards(private val result: AnalysisResult) {
         baseScale: Float,
         hudBottom: Float,
     ): LayoutResult {
-        val includeAngles = result.analyzePose && result.frameAngles.isNotEmpty()
-        val kinds = buildList {
-            add(CardKind.MAIN)
-            add(CardKind.VELOCITY)
-            if (includeAngles) add(CardKind.ANGLES)
-            add(CardKind.BAR_PATH)
-        }
-        val margin = 14f * baseScale
+        val kinds = CardKind.values().toList()
         if (width > height) {
-            // Landscape: one bottom strip, equal gaps, equal card widths.
-            val gap = 10f * baseScale
-            val cardHeight = min(height * 0.30f, 260f * baseScale).coerceAtLeast(1f)
+            val stripHeight = min(height * 0.32f, 320f * baseScale).coerceAtLeast(1f)
+            val gap = 8f * baseScale
+            val margin = 12f * baseScale
             val cardWidth = (
                 (width - margin * 2f - gap * (kinds.size - 1)) / kinds.size
                 ).coerceAtLeast(1f)
-            val top = (height - margin - cardHeight).coerceAtLeast(0f)
-            val compact = cardHeight < cardHeight(CardKind.MAIN, baseScale, compact = false)
+            val top = (height - margin - stripHeight).coerceAtLeast(0f)
+            val contentScale = min(baseScale * CONTENT_MULTIPLIER, stripHeight / cardHeight(CardKind.MAIN, 1f))
+                .coerceAtLeast(0.4f)
             val slots = kinds.mapIndexed { index, kind ->
-                val left = (margin + index * (cardWidth + gap)).coerceAtLeast(0f)
-                kind to RectF(left, top, left + cardWidth, top + cardHeight)
+                val left = margin + index * (cardWidth + gap)
+                kind to RectF(left, top, left + cardWidth, top + stripHeight)
             }
-            return LayoutResult(slots, baseScale, compact)
+            return LayoutResult(slots, contentScale)
         }
 
-        // Portrait: a single left column. Reserve the HUD area and a bottom safe margin; if the
-        // measured column is too tall, compact secondary metrics first, then scale the whole card
-        // block so the last card always ends above the safe margin.
-        val gap = 8f * baseScale
-        val top = (hudBottom + gap).coerceAtLeast(margin)
-        val columnWidth = min(width * 0.36f, 360f * baseScale).coerceAtLeast(1f)
+        val desiredScale = baseScale * CONTENT_MULTIPLIER
+        val margin = 12f * desiredScale
+        val columnWidth = (width * 0.36f).coerceAtLeast(1f)
+        val top = (hudBottom + 8f * desiredScale).coerceAtLeast(margin)
         val available = (height - top - margin).coerceAtLeast(1f)
-        var compact = false
-        var heights = kinds.map { cardHeight(it, baseScale, compact = false) }
+
+        var contentScale = desiredScale
+        var gap = 8f * contentScale
+        var heights = kinds.map { cardHeight(it, contentScale) }
         var total = heights.sum() + gap * (kinds.size - 1)
         if (total > available) {
-            compact = true
-            heights = kinds.map { cardHeight(it, baseScale, compact = true) }
+            contentScale = (desiredScale * (available / total)).coerceIn(0.3f, desiredScale)
+            gap = 8f * contentScale
+            heights = kinds.map { cardHeight(it, contentScale) }
             total = heights.sum() + gap * (kinds.size - 1)
         }
-        var contentScale = baseScale
         if (total > available) {
-            val ratio = (available / total).coerceIn(0.25f, 1f)
-            contentScale = (baseScale * ratio).coerceAtLeast(0.25f)
-            heights = kinds.map { cardHeight(it, contentScale, compact) }
+            val squeeze = (available / total).coerceAtLeast(0.05f)
+            heights = heights.map { (it * squeeze).coerceAtLeast(0.5f) }
+            gap *= squeeze
             total = heights.sum() + gap * (kinds.size - 1)
         }
-        var layoutGap = gap
-        if (layoutGap * (kinds.size - 1) >= available) layoutGap = 0f
-        val heightBudget = (available - layoutGap * (kinds.size - 1)).coerceAtLeast(1f)
-        var heightSum = heights.sum()
-        if (heightSum > heightBudget) {
-            val squeeze = (heightBudget / heightSum).coerceAtLeast(0.01f)
-            heights = heights.map { (it * squeeze).coerceAtLeast(0.5f) }
-            heightSum = heights.sum()
+        if (total > available) {
+            // Extremely short frames: drop inter-card gaps before clipping anything.
+            gap = 0f
+            val heightBudget = available.coerceAtLeast(1f)
+            val sum = heights.sum()
+            if (sum > heightBudget) {
+                val squeeze = heightBudget / sum
+                heights = heights.map { (it * squeeze).coerceAtLeast(0.5f) }
+            }
         }
-        if (heightSum > heightBudget) {
-            val squeeze = (heightBudget / heightSum).coerceAtLeast(0.01f)
-            heights = heights.map { (it * squeeze).coerceAtLeast(0.5f) }
-        }
-
         val slots = ArrayList<Pair<CardKind, RectF>>(kinds.size)
         var cursor = top
         kinds.forEachIndexed { index, kind ->
             val cardHeight = heights[index].coerceAtLeast(0.5f)
             slots += kind to RectF(
-                margin.coerceAtLeast(0f),
-                cursor.coerceAtLeast(0f),
-                (margin + columnWidth).coerceAtLeast(1f),
-                (cursor + cardHeight).coerceAtLeast(1f),
+                margin,
+                cursor,
+                margin + columnWidth,
+                cursor + cardHeight,
             )
-            cursor += cardHeight + layoutGap
+            cursor += cardHeight + gap
         }
-        return LayoutResult(slots, contentScale, compact)
+        return LayoutResult(slots, contentScale)
     }
 
-    /** Measured card height, in the same units as [ensureSizes]. */
-    private fun cardHeight(kind: CardKind, uiScale: Float, compact: Boolean): Float {
-        val pad = 10f * uiScale
-        val title = TITLE * uiScale
-        val gap = 6f * uiScale
+    /** Report-equivalent measured height in sp/dp units. */
+    private fun cardHeight(kind: CardKind, scale: Float): Float {
+        val pad = 10f * scale
+        val title = TITLE * scale
+        val gap = 6f * scale
         return when (kind) {
             CardKind.MAIN -> {
-                val mini = if (compact) {
-                    MINI_VALUE * uiScale
-                } else {
-                    LABEL * uiScale + 3f * uiScale + MINI_VALUE * uiScale
-                }
-                val bars = (if (compact) 16f else 22f) * uiScale
-                pad + title + gap + VALUE * uiScale + gap + mini + gap + bars + pad
+                val miniRow = LABEL * scale + 3f * scale + BODY * scale
+                pad + title + gap + HERO * scale + gap + miniRow + gap + miniRow + pad
             }
 
-            CardKind.VELOCITY -> pad + title + gap + 40f * uiScale + pad
-            CardKind.ANGLES -> pad + title + gap + LABEL * uiScale + 4f * uiScale +
-                ANGLE_VALUE * uiScale + pad
+            CardKind.VELOCITY -> pad + title + gap + 56f * scale + pad
+            CardKind.POSE -> {
+                val rows = if (result.analyzePose) (poseJoints.size + 1) / 2 else 1
+                val row = if (result.analyzePose) {
+                    LABEL * scale + 3f * scale + BODY * scale
+                } else {
+                    BODY * scale
+                }
+                pad + title + gap + rows * row + (rows - 1) * gap + pad
+            }
 
-            CardKind.BAR_PATH -> pad + title + gap + 80f * uiScale + pad
+            CardKind.BAR_PATH -> pad + title + gap + 96f * scale + pad
+            CardKind.REP_BARS -> pad + title + gap + 56f * scale + pad
         }
     }
 
-    private fun drawMainCard(
-        canvas: Canvas,
-        rect: RectF,
-        active: RepSlice?,
-        uiScale: Float,
-        compact: Boolean,
-    ) {
+    private fun drawMainCard(canvas: Canvas, rect: RectF, active: RepSlice?, uiScale: Float) {
         val pad = 10f * uiScale
+        val contentWidth = rect.width() - pad * 2f
         val titleBaseline = rect.top + pad + titlePaint.textSize
-        val contentWidth = (rect.width() - pad * 2f).coerceAtLeast(1f)
-        drawTextFitted(canvas, "MCV", rect.left + pad, titleBaseline, titlePaint, contentWidth)
-        val repPosition = active?.let { slice ->
-            result.repSlices.indexOfFirst { it.index == slice.index } + 1
-        } ?: 0
-        val repText = if (active == null || repPosition <= 0) {
-            "NO REP"
-        } else {
-            "REP $repPosition/${result.repSlices.size}"
-        }
-        val repWidth = (contentWidth - titlePaint.measureText("MCV") - 8f * uiScale)
-            .coerceAtLeast(1f)
-        drawTextRightFitted(canvas, repText, rect.right - pad, titleBaseline, titlePaint, repWidth)
+        drawTextFitted(canvas, mainTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
 
         val metric = active?.let { metricsByRep[it.index] }
-        val valueBaseline = titleBaseline + 6f * uiScale + valuePaint.textSize
-        val mcv = metric?.mcvMps?.takeIf { it > 0.0 && it.isFinite() }
-        val mcvText = mcv?.let { format(it, 2) } ?: "\u2014"
-        val unitWidth = unitPaint.measureText("m/s") + 8f * uiScale
-        val valueWidth = (contentWidth - unitWidth).coerceAtLeast(1f)
-        drawTextFitted(canvas, mcvText, rect.left + pad, valueBaseline, valuePaint, valueWidth)
-        val drawnWidth = min(valuePaint.measureText(mcvText), valueWidth)
+        val heroBaseline = titleBaseline + 6f * uiScale + heroPaint.textSize
+        val heroText = formatMcv(metric?.mcvMps)
+        drawTextFitted(canvas, heroText, rect.left + pad, heroBaseline, heroPaint, contentWidth)
+        val heroWidth = min(heroPaint.measureText(heroText), contentWidth)
         drawTextFitted(
             canvas,
-            "m/s",
-            rect.left + pad + drawnWidth + 5f * uiScale,
-            valueBaseline,
+            unitMps,
+            rect.left + pad + heroWidth + 4f * uiScale,
+            heroBaseline,
             unitPaint,
-            (rect.right - pad - (rect.left + pad + drawnWidth + 5f * uiScale))
-                .coerceAtLeast(1f),
+            (contentWidth - heroWidth - 4f * uiScale).coerceAtLeast(1f),
         )
 
-        val barHeight = (if (compact) 16f else 22f) * uiScale
-        val barsTop = rect.bottom - pad - barHeight
+        val labelBaseline = heroBaseline + 6f * uiScale + labelPaint.textSize
+        val valueBaseline = labelBaseline + 3f * uiScale + valuePaint.textSize
+        val secondLabelBaseline = valueBaseline + 6f * uiScale + labelPaint.textSize
+        val secondValueBaseline = secondLabelBaseline + 3f * uiScale + valuePaint.textSize
+        val cellWidth = contentWidth / 2f
         val summary = result.summary
-        val avgText = summary.mcvAvgMps?.takeIf { it.isFinite() }?.let { format(it, 2) } ?: "\u2014"
-        val bestText = summary.bestMcvMps?.takeIf { it.isFinite() }?.let { format(it, 2) } ?: "\u2014"
-        val vlText = summary.velocityLossPct?.takeIf { it.isFinite() }
-            ?.let { format(it, 1) + "%" } ?: "\u2014"
-        if (compact) {
-            val summaryText = "AVG $avgText   BEST $bestText   VL $vlText"
-            val baseline = valueBaseline + 6f * uiScale + miniValuePaint.textSize
-            drawTextFitted(
-                canvas,
-                summaryText,
-                rect.left + pad,
-                baseline,
-                miniValuePaint,
-                contentWidth,
-            )
-        } else {
-            val miniLabelBaseline = valueBaseline + 6f * uiScale + labelPaint.textSize
-            val miniValueBaseline = miniLabelBaseline + 3f * uiScale + miniValuePaint.textSize
-            val cellWidth = contentWidth / 3f
-            drawMiniCell(
-                canvas,
-                "AVG",
-                avgText,
-                rect.left + pad,
-                miniLabelBaseline,
-                miniValueBaseline,
-                cellWidth,
-            )
-            drawMiniCell(
-                canvas,
-                "BEST",
-                bestText,
-                rect.left + pad + cellWidth,
-                miniLabelBaseline,
-                miniValueBaseline,
-                cellWidth,
-            )
-            drawMiniCell(
-                canvas,
-                "VL",
-                vlText,
-                rect.left + pad + cellWidth * 2f,
-                miniLabelBaseline,
-                miniValueBaseline,
-                cellWidth,
-            )
-        }
-
-        drawRepBars(canvas, rect, pad, barsTop, barHeight, active, uiScale)
+        drawMiniCell(
+            canvas, setMeanLabel, formatMcv(summary.mcvAvgMps),
+            rect.left + pad, labelBaseline, valueBaseline, cellWidth,
+        )
+        drawMiniCell(
+            canvas, bestLabel, formatMcv(summary.bestMcvMps),
+            rect.left + pad + cellWidth, labelBaseline, valueBaseline, cellWidth,
+        )
+        drawMiniCell(
+            canvas, velocityLossLabel, formatOne(summary.velocityLossPct, "%"),
+            rect.left + pad, secondLabelBaseline, secondValueBaseline, cellWidth,
+        )
+        drawMiniCell(
+            canvas, repCountLabel, summary.repCount.toString(),
+            rect.left + pad + cellWidth, secondLabelBaseline, secondValueBaseline, cellWidth,
+        )
     }
 
     private fun drawMiniCell(
@@ -386,46 +382,7 @@ internal class OverlayCards(private val result: AnalysisResult) {
     ) {
         val maxWidth = (cellWidth - 4f * lastUiScale).coerceAtLeast(1f)
         drawTextFitted(canvas, label, left, labelBaseline, labelPaint, maxWidth)
-        drawTextFitted(canvas, value, left, valueBaseline, miniValuePaint, maxWidth)
-    }
-
-    /** One slim bar per rep, current rep mint, best rep amber, the rest muted. */
-    private fun drawRepBars(
-        canvas: Canvas,
-        rect: RectF,
-        pad: Float,
-        top: Float,
-        barHeight: Float,
-        active: RepSlice?,
-        uiScale: Float,
-    ) {
-        val reps = result.reps
-        if (reps.isEmpty()) return
-        val maxMcv = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return
-        val bestIndex = reps.firstOrNull { it.mcvMps == maxMcv }?.repIndex
-        val gap = 2f * uiScale
-        val innerLeft = (rect.left + pad).coerceAtMost(rect.right).coerceAtLeast(rect.left)
-        val innerRight = (rect.right - pad).coerceAtLeast(innerLeft).coerceAtMost(rect.right)
-        val innerWidth = (innerRight - innerLeft).coerceAtLeast(1f)
-        val barWidth = ((innerWidth - gap * (reps.size - 1)) / reps.size).coerceAtLeast(1f)
-        reps.forEachIndexed { index, rep ->
-            val ratio = (rep.mcvMps / maxMcv).coerceIn(0.0, 1.0).toFloat()
-            val height = (barHeight * ratio).coerceAtLeast(2f * uiScale)
-            val left = (innerLeft + index * (barWidth + gap)).coerceIn(innerLeft, innerRight)
-            barRect.set(
-                left,
-                (top + barHeight - height).coerceAtLeast(rect.top),
-                (left + barWidth).coerceAtMost(innerRight),
-                (top + barHeight).coerceAtMost(rect.bottom),
-            )
-            if (barRect.width() <= 0f || barRect.height() <= 0f) return@forEachIndexed
-            barPaint.color = when {
-                rep.repIndex == active?.index -> OverlayStyle.TRAIL.toInt()
-                rep.repIndex == bestIndex -> OverlayStyle.SPEED.toInt()
-                else -> (OverlayStyle.PAUSE.toInt() and 0x00FFFFFF) or (110 shl 24)
-            }
-            canvas.drawRoundRect(barRect, 2f * uiScale, 2f * uiScale, barPaint)
-        }
+        drawTextFitted(canvas, value, left, valueBaseline, valuePaint, maxWidth)
     }
 
     private fun drawVelocityCard(
@@ -436,124 +393,125 @@ internal class OverlayCards(private val result: AnalysisResult) {
         uiScale: Float,
     ) {
         val pad = 10f * uiScale
+        val contentWidth = rect.width() - pad * 2f
         val titleBaseline = rect.top + pad + titlePaint.textSize
-        val contentWidth = (rect.width() - pad * 2f).coerceAtLeast(1f)
-        drawTextFitted(canvas, "VELOCITY", rect.left + pad, titleBaseline, titlePaint, contentWidth)
-        val rep = active
-        val repValue = rep?.let { metricsByRep[it.index]?.mcvMps }?.takeIf { it > 0.0 }
-        val titleWidth = titlePaint.measureText("VELOCITY")
-        if (repValue != null) {
-            drawTextRightFitted(
-                canvas,
-                format(repValue, 2),
-                rect.right - pad,
-                titleBaseline,
-                titlePaint,
-                (contentWidth - titleWidth - 8f * uiScale).coerceAtLeast(1f),
-            )
-        }
+        drawTextFitted(canvas, velocityTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
 
         val chartTop = titleBaseline + 6f * uiScale
         val chartLeft = rect.left + pad
-        val chartWidth = contentWidth
-        val chartHeight = (rect.bottom - pad - chartTop).coerceAtLeast(0f)
-        val samples = rep?.let { velocityByRep[it.index] }.orEmpty()
-        if (rep == null || samples.size < 2 || chartHeight <= 1f) {
+        val chartHeight = rect.bottom - pad - chartTop
+        val samples = active?.let { velocityByRep[it.index] }.orEmpty()
+        if (active == null || samples.size < 2 || chartHeight <= 1f) {
             drawEmpty(canvas, rect)
             return
         }
 
+        val inset = 12f * uiScale
+        val mapLeft = chartLeft + inset
+        val mapWidth = (contentWidth - inset * 2f).coerceAtLeast(1f)
         var minVelocity = min(0.0, samples.minOf { it.vyMps })
         var maxVelocity = max(0.0, samples.maxOf { it.vyMps })
         if (maxVelocity - minVelocity < 1e-9) {
             minVelocity -= 0.5
             maxVelocity += 0.5
         }
-        val span = maxVelocity - minVelocity
-        fun yFor(velocity: Double): Float =
-            chartTop + chartHeight * (1f - ((velocity - minVelocity) / span).toFloat())
+        val velocitySpan = maxVelocity - minVelocity
+        val usableHeight = (chartHeight - inset * 2f).coerceAtLeast(1f)
+        fun xFor(t: Double): Float? =
+            overlayTimeToX(t, active.startSec, active.endSec, mapLeft, mapWidth)
 
-        if (minVelocity <= 0.0 && maxVelocity >= 0.0) {
-            val zeroY = yFor(0.0).coerceIn(chartTop, chartTop + chartHeight)
-            canvas.drawLine(chartLeft, zeroY, chartLeft + chartWidth, zeroY, axisPaint)
+        fun yFor(velocity: Double): Float =
+            chartTop + inset + usableHeight * (1f - ((velocity - minVelocity) / velocitySpan).toFloat())
+
+        // Phase bands behind the curve, 12% alpha, matching the report preview.
+        active.phases.forEach { phase ->
+            val left = xFor(phase.startSec) ?: return@forEach
+            val right = xFor(phase.endSec) ?: return@forEach
+            chartRect.set(left, chartTop, max(left, right), chartTop + chartHeight)
+            bandPaints[phase.type]?.let { canvas.drawRect(chartRect, it) }
+        }
+
+        val zeroY = yFor(0.0).coerceIn(chartTop, chartTop + chartHeight)
+        canvas.drawLine(chartLeft, zeroY, chartLeft + contentWidth, zeroY, axisPaint)
+        active.let { rep ->
+            metricsByRep[rep.index]?.mcvMps?.takeIf { it.isFinite() }?.let { mean ->
+                val meanY = yFor(mean).coerceIn(chartTop, chartTop + chartHeight)
+                canvas.drawLine(chartLeft, meanY, chartLeft + contentWidth, meanY, meanPaint)
+            }
         }
 
         path.reset()
         samples.forEachIndexed { index, sample ->
-            val x = overlayTimeToX(
-                sample.tSec,
-                rep.startSec,
-                rep.endSec,
-                chartLeft,
-                chartWidth,
-            ) ?: return@forEachIndexed
+            val x = xFor(sample.tSec) ?: return@forEachIndexed
             val y = yFor(sample.vyMps).coerceIn(chartTop, chartTop + chartHeight)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        canvas.drawPath(path, sparkPaint)
+        canvas.drawPath(path, linePaint)
 
-        // Only the velocity sparkline keeps a playback cursor.
-        val cursorX = overlayTimeToX(cueSec, rep.startSec, rep.endSec, chartLeft, chartWidth)
+        val cursorX = xFor(cueSec)
         if (cursorX != null) {
-            canvas.drawLine(
-                cursorX.coerceIn(chartLeft, chartLeft + chartWidth),
-                chartTop,
-                cursorX.coerceIn(chartLeft, chartLeft + chartWidth),
-                chartTop + chartHeight,
-                cursorPaint,
+            canvas.drawLine(cursorX, chartTop, cursorX, chartTop + chartHeight, cursorPaint)
+        }
+
+        samples.maxOfOrNull { it.vyMps }?.let { peak ->
+            val text = String.format(Locale.US, peakLabelFormat, String.format(Locale.US, "%.2f", peak))
+            drawTextRightFitted(
+                canvas,
+                text,
+                rect.right - pad - 8f * uiScale,
+                rect.bottom - pad - 8f * uiScale,
+                labelPaint,
+                contentWidth,
             )
         }
     }
 
-    private fun drawAngleCard(canvas: Canvas, rect: RectF, cueSec: Double, uiScale: Float) {
+    private fun drawPoseCard(canvas: Canvas, rect: RectF, cueSec: Double, uiScale: Float) {
         val pad = 10f * uiScale
+        val contentWidth = rect.width() - pad * 2f
         val titleBaseline = rect.top + pad + titlePaint.textSize
-        val contentWidth = (rect.width() - pad * 2f).coerceAtLeast(1f)
-        // Keep the user-facing legend/title.
-        drawTextFitted(canvas, "姿态分析", rect.left + pad, titleBaseline, titlePaint, contentWidth)
-
-        val angles = OverlayTimeline.nearestFrameAngles(result.frameAngles, cueSec)
-        val entries = angleEntries(angles)
-        if (entries.isEmpty()) {
-            drawEmpty(canvas, rect)
+        drawTextFitted(canvas, poseTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
+        val firstBaseline = titleBaseline + 6f * uiScale + valuePaint.textSize
+        if (!result.analyzePose) {
+            drawTextFitted(
+                canvas, poseOffText, rect.left + pad, firstBaseline, valuePaint, contentWidth,
+            )
             return
         }
-        val cellWidth = contentWidth / entries.size
-        val labelBaseline = titleBaseline + 6f * uiScale + angleLabelPaint.textSize
-        val valueBaseline = labelBaseline + 4f * uiScale + angleValuePaint.textSize
-        val lowConfidence = (angles?.confidence ?: 0.0) < 0.6
-        angleValuePaint.color = if (lowConfidence) {
-            OverlayStyle.SPEED.toInt()
-        } else {
-            OverlayStyle.CARD_TEXT.toInt()
-        }
-        val maxTextWidth = (cellWidth - 4f * uiScale).coerceAtLeast(1f)
-        entries.forEachIndexed { index, (label, value) ->
-            val centerX = rect.left + pad + cellWidth * (index + 0.5f)
-            drawTextFitted(canvas, label, centerX, labelBaseline, angleLabelPaint, maxTextWidth)
-            val text = value?.takeIf { it.isFinite() }?.let { format(it, 0) + "\u00B0" } ?: "\u2014"
-            drawTextFitted(canvas, text, centerX, valueBaseline, angleValuePaint, maxTextWidth)
+
+        val nearest = OverlayTimeline.nearestFrameAngles(result.frameAngles, cueSec)
+        val current = nearest?.takeIf { abs(it.tSec - cueSec) <= MAX_FRAME_GAP_SEC }
+        val rows = poseJoints.chunked(2)
+        val cellWidth = contentWidth / 2f
+        rows.forEachIndexed { row, pair ->
+            val labelBaseline = titleBaseline + 6f * uiScale +
+                row * (LABEL * uiScale + 3f * uiScale + BODY * uiScale + 6f * uiScale) +
+                labelPaint.textSize
+            val valueBaseline = labelBaseline + 3f * uiScale + valuePaint.textSize
+            pair.forEachIndexed { index, joint ->
+                val left = rect.left + pad + cellWidth * index
+                val value = angleValue(current, joint)
+                drawTextFitted(
+                    canvas, joint.label, left, labelBaseline, labelPaint,
+                    (cellWidth - 4f * uiScale).coerceAtLeast(1f),
+                )
+                drawTextFitted(
+                    canvas,
+                    value?.let { formatAngle(it) } ?: missing,
+                    left,
+                    valueBaseline,
+                    if (value == null) labelPaint else valuePaint,
+                    (cellWidth - 4f * uiScale).coerceAtLeast(1f),
+                )
+            }
         }
     }
 
-    private fun angleEntries(angles: FrameAngles?): List<Pair<String, Double?>> = when (result.lift) {
-        Lift.SQUAT -> listOf(
-            "背角" to angles?.trunkDeg,
-            "髋角" to angles?.hipDeg,
-            "膝角" to angles?.kneeDeg,
-            "踝角" to angles?.ankleDeg,
-        )
-
-        Lift.DEADLIFT -> listOf(
-            "背角" to angles?.trunkDeg,
-            "髋角" to angles?.hipDeg,
-            "膝角" to angles?.kneeDeg,
-        )
-
-        Lift.BENCH -> listOf(
-            "肩角" to angles?.shoulderDeg,
-            "肘角" to angles?.elbowDeg,
-        )
+    private fun angleValue(frame: FrameAngles?, joint: JointSpec): Double? {
+        if (frame == null) return null
+        val value = joint.value(frame)?.takeIf { it.isFinite() } ?: return null
+        val confidence = frame.confidenceByJoint[joint.key] ?: frame.confidence
+        return value.takeIf { confidence.isFinite() && confidence >= MIN_POSE_CONFIDENCE }
     }
 
     private fun drawBarPathCard(
@@ -564,9 +522,9 @@ internal class OverlayCards(private val result: AnalysisResult) {
         uiScale: Float,
     ) {
         val pad = 10f * uiScale
+        val contentWidth = rect.width() - pad * 2f
         val titleBaseline = rect.top + pad + titlePaint.textSize
-        val contentWidth = (rect.width() - pad * 2f).coerceAtLeast(1f)
-        drawTextFitted(canvas, "BAR PATH", rect.left + pad, titleBaseline, titlePaint, contentWidth)
+        drawTextFitted(canvas, barPathTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
         val bounds = active?.let { barBoundsByRep[it.index] }
         if (active == null || bounds == null) {
             drawEmpty(canvas, rect)
@@ -575,26 +533,31 @@ internal class OverlayCards(private val result: AnalysisResult) {
 
         val chartLeft = rect.left + pad
         val chartTop = titleBaseline + 6f * uiScale
-        val chartWidth = contentWidth
-        val chartHeight = (rect.bottom - pad - chartTop).coerceAtLeast(0f)
-        if (chartWidth <= 1f || chartHeight <= 1f) return
+        val chartHeight = rect.bottom - pad - chartTop
+        if (chartHeight <= 1f) return
         val fit = fitOverlayBarPath(
             minX = bounds.minX,
             maxX = bounds.maxX,
             minY = bounds.minY,
             maxY = bounds.maxY,
-            widthPx = chartWidth,
+            widthPx = contentWidth,
             heightPx = chartHeight,
+            paddingPx = 12f * uiScale,
         )
-        // Equal scale keeps the path honest; the bar path card letterboxes instead of stretching.
         fun point(sample: MotionSample): PointF = PointF(
-            (chartLeft + fit.x(sample.xM)).coerceIn(chartLeft, chartLeft + chartWidth),
+            (chartLeft + fit.x(sample.xM)).coerceIn(chartLeft, chartLeft + contentWidth),
             (chartTop + fit.y(sample.yM)).coerceIn(chartTop, chartTop + chartHeight),
         )
 
-        // Same rule as the report: in the gap after a rep the previous rep's full trail stays.
-        // The trail advances with the frame; this card deliberately has no playback cursor.
+        // Faint equal-scale axes, same as the report chart.
+        val axisX = (chartLeft + fit.leftPx).coerceIn(chartLeft, chartLeft + contentWidth)
+        val axisY = (chartTop + fit.bottomPx).coerceIn(chartTop, chartTop + chartHeight)
+        canvas.drawLine(axisX, chartTop, axisX, chartTop + chartHeight, axisPaint)
+        canvas.drawLine(chartLeft, axisY, chartLeft + contentWidth, axisY, axisPaint)
+
+        // Trail advances by frame; this card intentionally has no playback cursor.
         val runs = RepTimeline.trailRuns(result.motionSamples, active, cueSec)
+        var firstPoint: PointF? = null
         var lastPoint: PointF? = null
         for (run in runs) {
             if (run.samples.size < 2) continue
@@ -604,10 +567,68 @@ internal class OverlayCards(private val result: AnalysisResult) {
                 if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
             }
             canvas.drawPath(path, barPathPaints.getValue(run.type))
+            if (firstPoint == null) firstPoint = point(run.samples.first())
             lastPoint = point(run.samples.last())
         }
+        firstPoint?.let {
+            canvas.drawCircle(it.x, it.y, 5f * uiScale, dotRingPaint)
+        }
         lastPoint?.let {
-            canvas.drawCircle(it.x, it.y, 3.2f * uiScale, dotPaint)
+            canvas.drawCircle(it.x, it.y, 5f * uiScale, dotPaint)
+        }
+    }
+
+    private fun drawRepBarsCard(
+        canvas: Canvas,
+        rect: RectF,
+        active: RepSlice?,
+        uiScale: Float,
+    ) {
+        val pad = 10f * uiScale
+        val contentWidth = rect.width() - pad * 2f
+        val titleBaseline = rect.top + pad + titlePaint.textSize
+        drawTextFitted(canvas, repBarsTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
+        val reps = result.reps
+        if (reps.isEmpty()) {
+            drawEmpty(canvas, rect)
+            return
+        }
+
+        val gap = 8f * uiScale
+        val columnWidth = ((contentWidth - gap * (reps.size - 1)) / reps.size).coerceAtLeast(1f)
+        val labelHeight = LABEL * uiScale
+        val chartBottom = rect.bottom - pad - labelHeight
+        val chartTop = titleBaseline + 6f * uiScale
+        val maxValue = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return
+        val bestIndex = reps.first { it.mcvMps == maxValue }.repIndex
+        val barMaxHeight = (chartBottom - chartTop).coerceAtLeast(3f)
+
+        reps.forEachIndexed { index, rep ->
+            val selected = rep.repIndex == active?.index
+            val fraction = (rep.mcvMps / maxValue).coerceIn(0.0, 1.0).toFloat()
+            val height = max(3f * uiScale, (barMaxHeight - 4f * uiScale) * fraction)
+            val left = rect.left + pad + index * (columnWidth + gap) + 4f * uiScale
+            val right = left + (columnWidth - 8f * uiScale).coerceAtLeast(1f)
+            val top = chartBottom - height
+            barRect.set(left, top, right, chartBottom)
+            barPaint.color = if (rep.repIndex == bestIndex) {
+                OverlayStyle.TRAIL.toInt()
+            } else {
+                (OverlayStyle.TRAIL.toInt() and 0x00FFFFFF) or (115 shl 24)
+            }
+            canvas.drawRoundRect(barRect, 6f * uiScale, 6f * uiScale, barPaint)
+            if (selected) {
+                canvas.drawRoundRect(barRect, 6f * uiScale, 6f * uiScale, selectionPaint)
+            }
+            val centerX = (left + right) / 2f
+            drawTextCenteredFitted(
+                canvas,
+                rep.repIndex.toString(),
+                centerX,
+                rect.bottom - pad,
+                if (selected) valuePaint else labelPaint,
+                columnWidth,
+            )
         }
     }
 
@@ -637,15 +658,9 @@ internal class OverlayCards(private val result: AnalysisResult) {
 
     private fun drawEmpty(canvas: Canvas, rect: RectF) {
         val centerY = rect.centerY() - (emptyPaint.ascent() + emptyPaint.descent()) / 2f
-        canvas.drawText(
-            "\u2014",
-            rect.centerX(),
-            centerY.coerceIn(rect.top, rect.bottom),
-            emptyPaint,
-        )
+        canvas.drawText(missing, rect.centerX(), centerY, emptyPaint)
     }
 
-    /** Draws text scaled horizontally when needed so it always stays inside its card/cell. */
     private fun drawTextFitted(
         canvas: Canvas,
         text: String,
@@ -659,12 +674,12 @@ internal class OverlayCards(private val result: AnalysisResult) {
             canvas.drawText(text, x, baseline, paint)
             return
         }
-        val previousScale = paint.textScaleX
+        val previous = paint.textScaleX
         paint.textScaleX = (maxWidth / textWidth).coerceAtLeast(0.1f)
         try {
             canvas.drawText(text, x, baseline, paint)
         } finally {
-            paint.textScaleX = previousScale
+            paint.textScaleX = previous
         }
     }
 
@@ -685,26 +700,59 @@ internal class OverlayCards(private val result: AnalysisResult) {
         }
     }
 
-    private fun format(value: Double, decimals: Int): String =
-        String.format(Locale.US, "%.${decimals}f", value)
+    private fun drawTextCenteredFitted(
+        canvas: Canvas,
+        text: String,
+        centerX: Float,
+        baseline: Float,
+        paint: Paint,
+        maxWidth: Float,
+    ) {
+        val previous = paint.textAlign
+        paint.textAlign = Paint.Align.CENTER
+        try {
+            drawTextFitted(canvas, text, centerX, baseline, paint, maxWidth)
+        } finally {
+            paint.textAlign = previous
+        }
+    }
+
+    private fun formatMcv(value: Double?): String =
+        value?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.2f", it) } ?: missing
+
+    private fun formatOne(value: Double?, suffix: String = ""): String =
+        value?.takeIf { it.isFinite() }?.let {
+            String.format(Locale.US, "%.1f", it) + suffix
+        } ?: missing
+
+    private fun formatAngle(value: Double): String =
+        String.format(Locale.US, angleFormat, value)
 
     private companion object {
-        const val TITLE = 18f
-        const val VALUE = 46f
-        const val LABEL = 12f
-        const val MINI_VALUE = 20f
-        const val ANGLE_VALUE = 30f
+        const val TITLE = 12f
+        const val HERO = 40f
+        const val LABEL = 11f
+        const val BODY = 16f
+        const val CONTENT_MULTIPLIER = 2.75f
+        const val MIN_POSE_CONFIDENCE = 0.5
+        const val MAX_FRAME_GAP_SEC = 0.3
 
         fun textPaint(color: Long, align: Paint.Align): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = color.toInt()
             textAlign = align
         }
 
-        fun chartPaint(color: Long, alpha: Int = 255): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        fun chartPaint(color: Long): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
-            this.color = (color.toInt() and 0x00FFFFFF) or (alpha shl 24)
+            this.color = color.toInt()
+        }
+
+        fun bandPaint(color: Long): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            this.color = color.toInt()
+            alpha = 31
         }
     }
 }

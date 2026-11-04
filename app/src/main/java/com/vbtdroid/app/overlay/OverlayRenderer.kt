@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
+import android.content.Context
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.metrics.Point2
@@ -24,7 +25,7 @@ import kotlin.math.max
  * output looks consistent on 720p and 1080p frames. All coordinates come from the same decoder
  * settings as the analysis pipeline.
  */
-class OverlayRenderer(private val result: AnalysisResult) {
+class OverlayRenderer(private val context: Context, private val result: AnalysisResult) {
     private val skeletonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = OverlayStyle.SKELETON_LINE.toInt()
@@ -78,7 +79,7 @@ class OverlayRenderer(private val result: AnalysisResult) {
         null to trailPaintOf(OverlayStyle.PAUSE, 120),
     )
     private val bubbleRect = RectF()
-    private val cards = OverlayCards(result)
+    private val cards = OverlayCards(context, result)
 
     private var referenceWidth = 0
 

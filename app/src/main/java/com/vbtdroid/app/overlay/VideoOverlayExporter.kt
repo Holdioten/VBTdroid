@@ -55,7 +55,7 @@ class VideoOverlayExporter {
 
         val appContext = context.applicationContext
         val decoder = VideoDecoder(appContext)
-        val renderer = OverlayRenderer(result)
+        val renderer = OverlayRenderer(appContext, result)
         val meta = runCatching { decoder.readMeta(sourceUri) }.getOrNull()
         val fps = result.fps.takeIf { it > 0.0 }
             ?: meta?.effectiveFps?.takeIf { it > 0.0 }
