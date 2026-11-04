@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.ui.theme.VbtTheme
@@ -37,6 +38,8 @@ fun VelocityChart(
     rep: RepSlice? = null,
     meanVelocityMps: Double? = null,
     modifier: Modifier = Modifier,
+    height: Dp = 140.dp,
+    chartBackground: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
     val axisColor = VbtTheme.colors.outline
@@ -49,8 +52,8 @@ fun VelocityChart(
         R.string.report_velocity_chart_description,
         meanVelocityMps?.let { "%.2f".format(it) } ?: stringResource(R.string.report_value_missing),
     )
-    Box(modifier.fillMaxWidth().height(140.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        Canvas(Modifier.fillMaxWidth().height(140.dp).semantics { contentDescription = description }) {
+    Box(modifier.fillMaxWidth().height(height).background(chartBackground)) {
+        Canvas(Modifier.fillMaxWidth().height(height).semantics { contentDescription = description }) {
             if (points.size < 2) return@Canvas
             val minTime = points.minOf { it.tSec }
             val maxTime = points.maxOf { it.tSec }

@@ -34,6 +34,8 @@ fun ExportSheet(
     onExportJson: () -> Unit,
     onExportCsv: () -> Unit,
     onExportOverlay: () -> Unit,
+    onSaveOverlay: () -> Unit,
+    overlayReady: Boolean,
     overlayExporting: Boolean,
     overlayProgress: Float,
     exportSucceeded: Boolean?,
@@ -60,6 +62,11 @@ fun ExportSheet(
                 title = stringResource(R.string.report_export_csv),
                 enabled = !overlayExporting,
                 onClick = onExportCsv,
+            )
+            ExportRow(
+                title = stringResource(R.string.report_save_overlay),
+                enabled = overlayReady && !overlayExporting,
+                onClick = onSaveOverlay,
             )
             if (overlayExporting) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.s), verticalArrangement = Arrangement.spacedBy(VbtSpacing.xs)) {

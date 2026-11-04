@@ -22,9 +22,7 @@
     <string name="import_roi_reset">Reset selection</string>
     <string name="import_first_frame_preview">First video frame; drag to select the plate</string>
 
-    <string name="report_title">Analysis report</string>
     <string name="report_back">Back</string>
-    <string name="report_total_reps">Valid repetitions</string>
     <string name="report_repetitions">Metrics by repetition</string>
     <string name="report_rep">Rep</string>
     <string name="report_rep_number">Rep %1$d</string>
@@ -38,13 +36,11 @@
     <string name="report_manual_invalid">Not enough valid samples in these stages; metrics were not updated</string>
     <string name="report_joint_angles_disabled_title">Joint-angle analysis is off</string>
     <string name="report_joint_angles_disabled_hint">Turn on “Analyze joint angles” when re-analysing</string>
-    <string name="report_joint_angles_unavailable">No joint-angle data for this rep</string>
     <string name="report_quality">Quality and warnings</string>
     <string name="report_fps">Effective frame rate: %1$.2f fps</string>
     <string name="report_no_warnings">No quality warnings</string>
     <string name="report_no_data">No data to display</string>
     <string name="report_value_missing">—</string>
-    <string name="report_external_load_assumption">Force, power, and work use external load only; body mass is excluded.</string>
     <string name="report_export_json">Export JSON</string>
     <string name="report_export_csv">Export CSV</string>
     <string name="report_export_overlay_video">Export overlay video</string>
@@ -52,8 +48,7 @@
     <string name="report_export_overlay_succeeded">Overlay video exported</string>
     <string name="report_export_overlay_failed">Render failed: %1$s</string>
     <string name="report_export_overlay_no_data">No plate detected; cannot render</string>
-    <string name="report_saved_automatically">This set was saved to history</string>
-    <string name="report_save_failed">Could not save the edit. Check storage space and try again.</string>
+    <string name="report_save_failed">Save failed</string>
 
     <string name="metric_mcv">Mean concentric velocity (MCV, m/s)</string>
     <string name="metric_mpv">Mean propulsive velocity (MPV, m/s)</string>
@@ -105,7 +100,6 @@
     <string name="import_cta_need_roi">Confirm the plate region</string>
     <string name="analysis_cancelled">Analysis cancelled</string>
 
-    <string name="report_best_of_short">Best MCV</string>
     <string name="report_trajectory_schematic">Bar path schematic</string>
     <string name="report_preview_placeholder">First frame unavailable; showing path schematic</string>
     <string name="report_preview_description">First frame with the bar path of the selected rep</string>
@@ -115,12 +109,9 @@
     <string name="report_per_rep_mcv">Mean velocity per rep</string>
     <string name="report_rep_bar_description">Rep %1$d mean velocity %2$s metres per second</string>
     <string name="report_angle_value">%1$.1f°</string>
-    <string name="report_confidence_chip">Conf. %1$.2f</string>
-    <string name="report_concentric_duration">Concentric %1$.2f s</string>
     <string name="report_peak_velocity_label">Peak %1$s m/s</string>
     <string name="report_velocity_chart_description">Vertical bar velocity curve</string>
     <string name="report_bar_path_chart_description">Bar path, horizontal and vertical</string>
-    <string name="report_compare_none">This rep only</string>
     <string name="report_compare_best">Compare with best</string>
     <string name="report_quality_summary_warnings">%1$d to review</string>
     <string name="report_estimated_badge">Estimate</string>
@@ -154,12 +145,8 @@
     <string name="phase_deadlift_pause">Start pause</string>
     <string name="phase_deadlift_concentric">Pull</string>
 
-    <string name="report_overlay_preview_button">Preview overlay video</string>
-    <string name="report_overlay_preview_title">Overlay preview</string>
     <string name="report_overlay_play">Play</string>
     <string name="report_overlay_pause">Pause</string>
-    <string name="report_overlay_save">Save video</string>
-    <string name="report_overlay_close">Close</string>
 
     <string name="phase_eccentric_not_counted">Not counted as a rep</string>
 
@@ -214,4 +201,10 @@
     <string name="analysis_notification_title">Analysing training video</string>
     <string name="analysis_notification_text">Analysis continues in the background</string>
     <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
+
+    <string name="report_save_overlay">Save overlay video</string>
+    <string name="report_card_mcv">Mean MCV</string>
+    <string name="report_action_stages">Stages</string>
+    <string name="report_action_details">Details</string>
+    <string name="report_rep_index">Rep %1$d / %2$d</string>
 </resources>

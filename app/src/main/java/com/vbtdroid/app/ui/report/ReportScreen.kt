@@ -2,7 +2,26 @@ package com.vbtdroid.app.ui.report
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.Text
+import com.vbtdroid.app.ui.components.ChipTone
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,25 +43,19 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.export.CsvExporter
@@ -56,7 +69,6 @@ import com.vbtdroid.app.ui.components.PrimaryActionBar
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
 import com.vbtdroid.app.ui.components.StatusChip
-import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.reveal
 import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
@@ -232,187 +244,200 @@ fun ReportScreen(
     }
     val bestRep = reps.filter { it.mcvMps != null }.maxByOrNull { it.mcvMps ?: Double.NEGATIVE_INFINITY }
     val bestSlice = bestRep?.let { best -> current.repSlices.firstOrNull { it.index == best.repIndex } }
-    val lift = current.lift
-    val variant = current.variant
-    val subtitle = buildSubtitle(current.loadKg, lift, variant)
+    val subtitle = buildSubtitle(current.loadKg, current.lift, current.variant)
+    val playback = remember(result) { OverlayPlayback() }
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    var stageSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
+    var detailSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Bg,
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.report_back))
-                    }
-                },
-                title = {
-                    Column {
-                        Text(
-                            stringResource(R.string.report_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = VbtTheme.colors.onSurfaceVariant,
-                        )
-                    }
-                },
-                actions = {
-                    TextButton(onClick = onShowHistory, modifier = Modifier.heightIn(min = MinTouchTarget)) {
-                        Text(stringResource(R.string.history_title))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg),
+    // Overlay video is generated in the background as soon as the report opens; the first-frame
+    // fallback shows until it is ready. Cache is removed when the report leaves composition.
+    LaunchedEffect(result) {
+        if (current.observations.isNotEmpty() && current.videoUri.isNotBlank()) {
+            overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current)
+        }
+    }
+    // Selecting a rep seeks the overlay video to that rep's start.
+    LaunchedEffect(selectedSlice) {
+        selectedSlice?.let { playback.seekTo((it.startSec * 1000).toInt()) }
+    }
+
+    val overlayFile = overlayPreview.file
+    val identity = subtitle
+    val repLabel = if (reps.isEmpty()) {
+        stringResource(R.string.report_value_missing)
+    } else {
+        stringResource(R.string.report_rep_index, position + 1, reps.size)
+    }
+    val header: @Composable (Modifier) -> Unit = { modifier ->
+        ReportHeader(
+            identity = identity,
+            repLabel = repLabel,
+            canPrev = position > 0,
+            canNext = position < reps.size - 1,
+            onPrev = { selectedPosition = position - 1 },
+            onNext = { selectedPosition = position + 1 },
+            onBack = onBack,
+            onHistory = onShowHistory,
+            status = {
+                when {
+                    persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
+                    overlayPreview.busy -> StatusChip(
+                        text = stringResource(R.string.report_export_overlay_progress, (overlayPreview.progress * 100f).toInt()),
+                    )
+                    else -> Unit
+                }
+            },
+        )
+    }
+    val cardsContent: @Composable (Modifier) -> Unit = { cardModifier ->
+        if (reps.isEmpty()) {
+            GlassCard(modifier = cardModifier) {
+                Text(stringResource(R.string.report_no_data), style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            MainMcvCard(
+                modifier = cardModifier,
+                mcv = current.summary.mcvAvgMps,
+                bestMcv = current.summary.bestMcvMps,
+                velocityLossPct = current.summary.velocityLossPct,
+                repCount = current.summary.repCount,
             )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            PrimaryActionBar {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-                    OutlinedButton(
-                        onClick = onShowHistory,
-                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
-                    ) {
-                        Text(stringResource(R.string.history_title), maxLines = 1)
-                    }
-                    OutlinedButton(
-                        onClick = { exportSheetOpen = true },
-                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
-                    ) {
-                        Text(stringResource(R.string.report_export_title), maxLines = 1)
-                    }
-                    // Primary action: preview first, save from the preview dialog.
-                    Button(
-                        onClick = { overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current) },
-                        modifier = Modifier.weight(1.6f).heightIn(min = MinTouchTarget),
-                    ) {
-                        Text(stringResource(R.string.report_overlay_preview_button), maxLines = 1)
-                    }
-                }
-            }
-        },
-    ) { inner ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(inner),
-            contentPadding = PaddingValues(horizontal = VbtSpacing.l, vertical = VbtSpacing.m),
-            verticalArrangement = Arrangement.spacedBy(VbtSpacing.l),
-        ) {
-            item(key = "preview") {
-                ReportPreview(
-                    videoUri = current.videoUri,
-                    selected = selectedSlice,
-                    best = bestSlice.takeIf { compareWithBest },
-                    samples = current.motionSamples,
-                    modifier = Modifier.reveal(0),
-                )
-            }
-            item(key = "hero") {
-                MetricHero(
-                    mcv = current.summary.mcvAvgMps,
-                    bestMcv = current.summary.bestMcvMps,
-                    velocityLossPct = current.summary.velocityLossPct,
-                    repCount = current.summary.repCount,
-                    loadKg = current.loadKg,
-                    modifier = Modifier.reveal(1),
-                )
-            }
-            item(key = "save") {
-                if (persistFailed) {
-                    MessageBanner(stringResource(R.string.report_save_failed), tone = BannerTone.ERROR)
-                } else {
-                    StatusChip(text = stringResource(R.string.report_saved_automatically), tone = ChipTone.PRIMARY)
-                }
-            }
-            item(key = "grid") {
-                SetMetricGrid(
-                    repCount = current.summary.repCount,
-                    volumeKg = current.summary.totalVolumeKg,
-                    workJ = current.summary.totalWorkJ,
-                    bestMcv = current.summary.bestMcvMps,
-                    modifier = Modifier.reveal(2),
-                )
-            }
-            if (reps.isEmpty()) {
-                item(key = "empty") {
-                    SectionCard {
-                        SectionLabel(stringResource(R.string.report_repetitions))
-                        Text(stringResource(R.string.report_no_data), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            } else {
-                item(key = "bars") {
-                    RepMcvBars(
-                        reps = reps,
-                        selectedPosition = position,
-                        onSelect = { selectedPosition = it },
-                    )
-                }
-                item(key = "rep-selector") {
-                    RepSelectorRow(
-                        count = reps.size,
-                        selectedPosition = position,
-                        onSelect = { selectedPosition = it },
-                        repIndexOf = { reps[it].repIndex },
-                    )
-                }
-                if (selectedRep != null) {
-                    item(key = "rep-detail-$position") {
-                        RepDetailCard(
-                            rep = selectedRep,
-                            slice = selectedSlice,
+            selectedSlice?.let { slice ->
+                VelocityCard(cardModifier, current.motionSamples, slice, selectedRep?.mcvMps)
+                if (current.analyzePose) {
+                    selectedRep?.let { rep ->
+                        AngleCard(
+                            modifier = cardModifier,
+                            rep = rep,
+                            slice = slice,
                             samples = current.motionSamples,
-                            bestSlice = bestSlice,
-                            compareWithBest = compareWithBest,
-                            onCompareChange = { compareWithBest = it },
-                            editing = editingPhases,
-                            onToggleEditing = { editingPhases = !editingPhases },
-                            onRepChange = ::updateSlice,
-                            manualEditRejected = manualEditRejected,
-                            analyzePose = current.analyzePose,
-                            frameAngles = current.frameAnglesByRep[selectedRep.repIndex].orEmpty(),
-                            lift = lift,
+                            angles = current.frameAnglesByRep[rep.repIndex].orEmpty(),
+                            lift = current.lift,
                         )
                     }
                 }
-            }
-            current.lvp?.let { estimate ->
-                item(key = "lvp") { LvpCard(estimate) }
-            }
-            if (!current.analyzePose) {
-                item(key = "angles-off") { JointAnglesDisabledCard() }
-            }
-            item(key = "quality") {
-                QualityCard(
-                    quality = current.quality,
-                    fps = current.fps,
+                BarPathCard(
+                    modifier = cardModifier,
+                    samples = current.motionSamples,
+                    slice = slice,
+                    bestSlice = bestSlice,
+                    compare = compareWithBest,
+                    onCompare = { compareWithBest = it },
                 )
             }
-            if (reps.isNotEmpty()) {
-                item(key = "table") {
-                    SectionCard(padding = VbtSpacing.s) {
-                        SectionLabel(stringResource(R.string.report_repetitions))
-                        RepTable(reps)
-                    }
-                }
-            }
+            RepBarsCard(
+                modifier = cardModifier,
+                reps = reps,
+                position = position,
+                onSelect = { selectedPosition = it },
+            )
+        }
+    }
+    val actions: @Composable (Modifier) -> Unit = { modifier ->
+        ReportActions(
+            onStages = { stageSheetOpen = true },
+            onDetails = { detailSheetOpen = true },
+            onExport = { exportSheetOpen = true },
+            modifier = modifier,
+        )
+    }
+    val backgroundLayer: @Composable (Modifier) -> Unit = { modifier ->
+        if (overlayFile != null) {
+            CoverVideo(file = overlayFile, playback = playback, modifier = modifier)
+        } else {
+            ReportPreview(
+                videoUri = current.videoUri,
+                selected = selectedSlice,
+                best = bestSlice.takeIf { compareWithBest },
+                samples = current.motionSamples,
+                modifier = modifier,
+                fill = true,
+            )
         }
     }
 
-    OverlayPreviewDialog(
-        controller = overlayPreview,
-        saving = previewSaving,
-        onSave = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
-    )
+    Box(modifier.fillMaxSize().background(Bg)) {
+        if (!landscape) {
+            // Portrait: video is the full-bleed background; cards float on the left.
+            backgroundLayer(Modifier.fillMaxSize())
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                header(Modifier)
+                Row(
+                    Modifier.weight(1f).fillMaxWidth().padding(start = VbtSpacing.m, end = VbtSpacing.m, top = VbtSpacing.s),
+                ) {
+                    Column(
+                        Modifier.weight(0.46f).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+                    ) {
+                        cardsContent(Modifier.fillMaxWidth())
+                    }
+                    Spacer(Modifier.weight(0.54f))
+                }
+                if (overlayFile != null) {
+                    PlaybackBar(
+                        playback = playback,
+                        modifier = Modifier.padding(horizontal = VbtSpacing.m),
+                    )
+                }
+                actions(Modifier.padding(VbtSpacing.m))
+            }
+        } else {
+            // Landscape: full-width video on top, cards in a horizontal strip below. No overlap.
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                header(Modifier)
+                Box(Modifier.weight(0.5f).fillMaxWidth()) {
+                    backgroundLayer(Modifier.fillMaxSize())
+                }
+                if (overlayFile != null) {
+                    PlaybackBar(playback = playback, modifier = Modifier.padding(horizontal = VbtSpacing.m))
+                }
+                Row(
+                    Modifier
+                        .weight(0.5f)
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(VbtSpacing.m),
+                    horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+                ) {
+                    cardsContent(Modifier.width(240.dp))
+                }
+                actions(Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs))
+            }
+        }
+        SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter))
+    }
 
+    if (stageSheetOpen) {
+        StageSheet(
+            onDismiss = { stageSheetOpen = false },
+            slice = selectedSlice,
+            lift = current.lift,
+            editing = editingPhases,
+            onToggleEditing = { editingPhases = !editingPhases },
+            onRepChange = ::updateSlice,
+            manualRejected = manualEditRejected,
+        )
+    }
+    if (detailSheetOpen) {
+        DetailSheet(
+            onDismiss = { detailSheetOpen = false },
+            lvp = current.lvp,
+            analyzePose = current.analyzePose,
+            quality = current.quality,
+            fps = current.fps,
+            reps = reps,
+        )
+    }
     if (exportSheetOpen) {
         ExportSheet(
             onDismiss = { exportSheetOpen = false },
             onExportJson = { jsonLauncher.launch("vbtdroid-set.json") },
             onExportCsv = { csvLauncher.launch("vbtdroid-set.csv") },
             onExportOverlay = { overlayLauncher.launch("vbtdroid-overlay.mp4") },
+            onSaveOverlay = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
+            overlayReady = overlayFile != null,
             overlayExporting = overlayExporting,
             overlayProgress = overlayProgress,
             exportSucceeded = exportSucceeded,

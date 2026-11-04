@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +58,7 @@ fun ReportPreview(
     best: RepSlice?,
     samples: List<MotionSample>,
     modifier: Modifier = Modifier,
+    fill: Boolean = false,
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
@@ -80,9 +82,8 @@ fun ReportPreview(
 
     Box(
         modifier
-            .fillMaxWidth()
-            .height(220.dp)
-            .clip(MaterialTheme.shapes.large)
+            .then(if (fill) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(220.dp))
+            .clip(if (fill) RoundedCornerShape(0.dp) else MaterialTheme.shapes.large)
             .background(
                 Brush.verticalGradient(
                     listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.surfaceContainerLow),

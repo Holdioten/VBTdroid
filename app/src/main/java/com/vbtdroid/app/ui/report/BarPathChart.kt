@@ -8,11 +8,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.ui.theme.VbtTheme
@@ -29,6 +31,8 @@ fun BarPathChart(
     rep: RepSlice? = null,
     modifier: Modifier = Modifier,
     comparisonRep: RepSlice? = null,
+    height: Dp = 220.dp,
+    chartBackground: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
     val compareColor = VbtTheme.colors.comparison
@@ -41,7 +45,7 @@ fun BarPathChart(
     }.orEmpty()
     val description = stringResource(R.string.report_bar_path_chart_description)
     Canvas(
-        modifier.fillMaxWidth().height(220.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        modifier.fillMaxWidth().height(height).background(chartBackground)
             .semantics { contentDescription = description },
     ) {
         if (points.size < 2) return@Canvas

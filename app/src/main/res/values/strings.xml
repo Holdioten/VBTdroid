@@ -19,9 +19,7 @@
     <string name="import_analysis_progress">分析进度：%1$d%%</string>
     <string name="import_invalid_settings">请输入有效的负荷、片径和机位角度</string>
 
-    <string name="report_title">分析报告</string>
     <string name="report_back">返回</string>
-    <string name="report_total_reps">有效重复数</string>
     <string name="report_repetitions">逐次指标</string>
     <string name="report_rep">次数</string>
     <string name="report_rep_number">第 %1$d 次</string>
@@ -38,7 +36,6 @@
     <string name="report_no_warnings">无质量警告</string>
     <string name="report_no_data">无可显示数据</string>
     <string name="report_value_missing">—</string>
-    <string name="report_external_load_assumption">力、功率、功不含人体质量</string>
 
     <string name="metric_mcv">平均向心速度（MCV，m/s）</string>
     <string name="metric_mpv">平均推进速度（MPV，m/s）</string>
@@ -90,8 +87,7 @@
     <string name="report_export_overlay_no_data">未检测到杠铃片，无法生成</string>
     <string name="report_export_succeeded">导出完成</string>
     <string name="report_export_failed">导出失败，请重新选择位置</string>
-    <string name="report_saved_automatically">已保存</string>
-    <string name="report_save_failed">修改保存失败，请检查存储空间后重试</string>
+    <string name="report_save_failed">保存失败</string>
     <string name="report_lvp_title">1RM 估算</string>
     <string name="report_lvp_points">%1$d / 3 个负荷点</string>
     <string name="report_lvp_fit">斜率 %1$.5f；截距 %2$.3f；R² %3$.3f</string>
@@ -112,7 +108,6 @@
     <string name="report_key_frame_angles">关键帧关节角</string>
     <string name="report_joint_angles_disabled_title">关节角分析已关闭</string>
     <string name="report_joint_angles_disabled_hint">重新分析时开启“分析关节角”</string>
-    <string name="report_joint_angles_unavailable">本组未获得可用关节角</string>
     <string name="report_key_frame_start">起始</string>
     <string name="report_key_frame_bottom">底部/触胸</string>
     <string name="report_key_frame_sticking">粘滞点</string>
@@ -158,7 +153,6 @@
     <string name="import_cta_need_roi">请确认杠铃片区域</string>
     <string name="analysis_cancelled">分析已取消</string>
 
-    <string name="report_best_of_short">最佳 MCV</string>
     <string name="report_trajectory_schematic">杠铃轨迹示意</string>
     <string name="report_preview_placeholder">首帧不可用</string>
     <string name="report_preview_description">视频首帧与当前次的杠铃轨迹示意</string>
@@ -168,12 +162,9 @@
     <string name="report_per_rep_mcv">逐次平均速度</string>
     <string name="report_rep_bar_description">第 %1$d 次平均速度 %2$s 米每秒</string>
     <string name="report_angle_value">%1$.1f°</string>
-    <string name="report_confidence_chip">置信 %1$.2f</string>
-    <string name="report_concentric_duration">向心时长 %1$.2f 秒</string>
     <string name="report_peak_velocity_label">峰值 %1$s m/s</string>
     <string name="report_velocity_chart_description">杠铃垂直速度曲线</string>
     <string name="report_bar_path_chart_description">杠铃水平与垂直轨迹</string>
-    <string name="report_compare_none">只看本次</string>
     <string name="report_compare_best">对比最佳次</string>
     <string name="report_quality_summary_warnings">%1$d 条需注意</string>
     <string name="report_estimated_badge">估算</string>
@@ -207,14 +198,16 @@
     <string name="phase_deadlift_pause">起始停顿</string>
     <string name="phase_deadlift_concentric">拉起</string>
 
-    <string name="report_overlay_preview_button">预览叠加视频</string>
-    <string name="report_overlay_preview_title">叠加视频预览</string>
     <string name="report_overlay_play">播放</string>
     <string name="report_overlay_pause">暂停</string>
-    <string name="report_overlay_save">保存视频</string>
-    <string name="report_overlay_close">关闭</string>
 
     <string name="phase_eccentric_not_counted">不计入次数</string>
 
     <string name="import_back_to_roi">返回框选</string>
+
+    <string name="report_save_overlay">保存叠加视频</string>
+    <string name="report_card_mcv">平均 MCV</string>
+    <string name="report_action_stages">阶段</string>
+    <string name="report_action_details">详情</string>
+    <string name="report_rep_index">第 %1$d / %2$d 次</string>
 </resources>
