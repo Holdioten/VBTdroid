@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -148,13 +149,19 @@ private fun phaseDisplayName(lift: Lift, type: PhaseType): String = stringResour
 
 /** Colour key for the four phase types. */
 @Composable
-fun PhaseLegend(modifier: Modifier = Modifier, lift: Lift = Lift.SQUAT) {
+fun PhaseLegend(
+    modifier: Modifier = Modifier,
+    lift: Lift = Lift.SQUAT,
+    present: Set<PhaseType> = emptySet(),
+) {
     val colors = phaseColors()
+    val types = legendPhaseTypes(lift, present)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        PhaseType.entries.forEach { type ->
+        types.forEach { type ->
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(
                     Modifier
@@ -167,6 +174,15 @@ fun PhaseLegend(modifier: Modifier = Modifier, lift: Lift = Lift.SQUAT) {
                 )
             }
         }
+    }
+    // A lowering stage is never a normal stage on deadlift: say it is not counted.
+    if (lift == Lift.DEADLIFT && PhaseType.ECCENTRIC in present) {
+        Text(
+            text = stringResource(R.string.phase_eccentric_not_counted),
+            style = MaterialTheme.typography.labelSmall,
+            color = com.vbtdroid.app.ui.theme.VbtTheme.colors.warning,
+        )
+    }
     }
 }
 

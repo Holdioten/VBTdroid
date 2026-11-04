@@ -4,6 +4,8 @@ import com.vbtdroid.app.R
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.phases.PhaseType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
@@ -39,5 +41,36 @@ class PhaseLabelsTest {
     @Test
     fun squatAndBenchPauseDiffer() {
         assertNotEquals(phaseLabelRes(Lift.SQUAT, PhaseType.PAUSE), phaseLabelRes(Lift.BENCH, PhaseType.PAUSE))
+    }
+
+    @Test
+    fun deadliftEccentricIsExplicitlyLabelled() {
+        assertEquals(R.string.phase_deadlift_eccentric, phaseLabelRes(Lift.DEADLIFT, PhaseType.ECCENTRIC))
+        assertNotEquals(R.string.phase_bench_eccentric, phaseLabelRes(Lift.DEADLIFT, PhaseType.ECCENTRIC))
+    }
+
+    @Test
+    fun deadliftLegendHidesLoweringWhenAbsent() {
+        val types = legendPhaseTypes(Lift.DEADLIFT, setOf(PhaseType.PAUSE, PhaseType.CONCENTRIC, PhaseType.LOCKOUT))
+        assertFalse(PhaseType.ECCENTRIC in types)
+        assertEquals(listOf(PhaseType.PAUSE, PhaseType.CONCENTRIC, PhaseType.LOCKOUT), types)
+    }
+
+    @Test
+    fun deadliftLegendDefaultSkipsEccentric() {
+        val types = legendPhaseTypes(Lift.DEADLIFT, emptySet())
+        assertFalse(PhaseType.ECCENTRIC in types)
+        assertTrue(PhaseType.LOCKOUT in types)
+    }
+
+    @Test
+    fun deadliftLegendShowsLoweringOnlyWhenPresent() {
+        val types = legendPhaseTypes(Lift.DEADLIFT, setOf(PhaseType.ECCENTRIC, PhaseType.CONCENTRIC))
+        assertEquals(listOf(PhaseType.ECCENTRIC, PhaseType.CONCENTRIC), types)
+    }
+
+    @Test
+    fun squatLegendKeepsAllFourWhenDefault() {
+        assertEquals(PhaseType.entries.toList(), legendPhaseTypes(Lift.SQUAT, emptySet()))
     }
 }

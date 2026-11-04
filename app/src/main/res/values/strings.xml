@@ -241,7 +241,7 @@
     <string name="phase_bench_eccentric">下放</string>
     <string name="phase_bench_pause">触胸停顿</string>
     <string name="phase_bench_concentric">推起</string>
-    <string name="phase_deadlift_eccentric">下放</string>
+    <string name="phase_deadlift_eccentric">下放（离心）</string>
     <string name="phase_deadlift_pause">起始停顿</string>
     <string name="phase_deadlift_concentric">拉起</string>
 
@@ -252,4 +252,7 @@
     <string name="report_overlay_save">保存视频</string>
     <string name="report_overlay_close">关闭</string>
     <string name="report_export_overlay_direct">直接导出叠加视频</string>
+
+    <string name="phase_eccentric_not_counted">不计入次数</string>
+    <string name="report_deadlift_stage_help">硬拉正式次数从离地到锁定；下放属于离心收尾，不计入次数。</string>
 </resources>

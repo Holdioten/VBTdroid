@@ -249,7 +249,8 @@ class OverlayRenderer(private val result: AnalysisResult) {
             PhaseType.LOCKOUT -> "Lockout"
             PhaseType.ECCENTRIC -> when (result.lift) {
                 Lift.SQUAT -> "Descent"
-                Lift.BENCH, Lift.DEADLIFT -> "Lower"
+                Lift.BENCH -> "Lower"
+                Lift.DEADLIFT -> "Lower (eccentric)"
             }
             PhaseType.PAUSE -> when (result.lift) {
                 Lift.SQUAT -> "Bottom pause"

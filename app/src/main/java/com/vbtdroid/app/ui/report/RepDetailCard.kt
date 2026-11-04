@@ -125,8 +125,15 @@ fun RepDetailCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )
+            if (lift == Lift.DEADLIFT) {
+                Text(
+                    stringResource(R.string.report_deadlift_stage_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VbtTheme.colors.onSurfaceVariant,
+                )
+            }
             PhaseTimeline(slice, onRepChange, editable = editing, lift = lift)
-            PhaseLegend(lift = lift)
+            PhaseLegend(lift = lift, present = slice.phases.map { it.type }.toSet())
             if (editing) {
                 Text(
                     stringResource(R.string.report_phase_edit_hint),

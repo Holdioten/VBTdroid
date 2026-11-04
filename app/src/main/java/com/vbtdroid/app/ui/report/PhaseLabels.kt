@@ -28,3 +28,12 @@ internal fun phaseLabelRes(lift: Lift, type: PhaseType): Int = when (lift) {
         PhaseType.LOCKOUT -> R.string.phase_lockout
     }
 }
+
+/**
+ * Stage types to show in the legend. Only types present in the rep are shown; with no slice, the
+ * default set is shown. Deadlift never shows a lowering stage unless one actually appears.
+ */
+internal fun legendPhaseTypes(lift: Lift, present: Set<PhaseType>): List<PhaseType> {
+    if (present.isNotEmpty()) return PhaseType.entries.filter { it in present }
+    return PhaseType.entries.filter { !(lift == Lift.DEADLIFT && it == PhaseType.ECCENTRIC) }
+}

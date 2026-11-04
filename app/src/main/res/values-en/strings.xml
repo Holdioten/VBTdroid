@@ -181,7 +181,7 @@
     <string name="phase_bench_eccentric">Lower</string>
     <string name="phase_bench_pause">Chest pause</string>
     <string name="phase_bench_concentric">Press</string>
-    <string name="phase_deadlift_eccentric">Lower</string>
+    <string name="phase_deadlift_eccentric">Lower (eccentric)</string>
     <string name="phase_deadlift_pause">Start pause</string>
     <string name="phase_deadlift_concentric">Pull</string>
 
@@ -192,4 +192,7 @@
     <string name="report_overlay_save">Save video</string>
     <string name="report_overlay_close">Close</string>
     <string name="report_export_overlay_direct">Export overlay video directly</string>
+
+    <string name="phase_eccentric_not_counted">Not counted as a rep</string>
+    <string name="report_deadlift_stage_help">Deadlift reps count from the floor to lockout; the lowering is an eccentric finish and is not counted.</string>
 </resources>
