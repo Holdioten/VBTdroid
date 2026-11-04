@@ -24,6 +24,10 @@ data class PoseFrame(
 }
 
 interface PoseEstimator {
-    fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame?
+    /**
+     * @param barCenter plate/bar centre in frame pixels, when a plate observation exists. Used by
+     *   multi-person backends to pick the lifter near the barbell instead of a background person.
+     */
+    fun estimate(bitmap: Bitmap, tSec: Double, barCenter: Point2? = null): PoseFrame?
     fun reset() = Unit
 }

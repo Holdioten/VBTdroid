@@ -90,14 +90,17 @@ class AnalysisPipelineTest {
 
     @Test
     fun `low confidence and high occlusion keep requested joint angles with warnings`() = runTest {
+        val pose = FakePose(lowConfidencePose())
         val pipeline = AnalysisPipeline(
             FakeDecoder(),
             FakeTracker(confidence = 0.5),
-            FakePose(lowConfidencePose()),
+            pose,
         )
 
         val result = pipeline.analyze(AnalysisRequest(Uri.EMPTY, Lift.SQUAT, 90.0, 0.45, null))
 
+        assertTrue(pose.barCenters.isNotEmpty())
+        assertTrue(pose.barCenters.all { it?.x == 16.0 })
         assertTrue(result.quality.occlusionPct > 20.0)
         assertTrue(result.quality.anglesAvailable)
         assertTrue(result.frameAngles.isNotEmpty())
@@ -324,9 +327,11 @@ class AnalysisPipelineTest {
             private set
         var resets = 0
             private set
+        val barCenters = mutableListOf<Point2?>()
 
-        override fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame? {
+        override fun estimate(bitmap: Bitmap, tSec: Double, barCenter: Point2?): PoseFrame? {
             calls++
+            barCenters += barCenter
             return frame?.copy(tSec = tSec)
         }
 

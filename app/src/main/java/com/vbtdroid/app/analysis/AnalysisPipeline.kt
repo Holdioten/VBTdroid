@@ -12,6 +12,7 @@ import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.Kinematics
 import com.vbtdroid.core.metrics.LvpEstimate
 import com.vbtdroid.core.metrics.MotionSample
+import com.vbtdroid.core.metrics.Point2
 import com.vbtdroid.core.metrics.RepMetricException
 import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.metrics.RepMetricsCalculator
@@ -151,7 +152,8 @@ class AnalysisPipeline(
                 // Pose is deliberately best-effort and never gates plate-derived bar metrics.
                 if (request.analyzePose && (decodedFrames - 1) % POSE_FRAME_STRIDE == 0) {
                     try {
-                        val pose = poseEstimator.estimate(frame.bitmap, frame.tSec)
+                        val barCenter = observation?.let { Point2(it.xPx, it.yPx) }
+                        val pose = poseEstimator.estimate(frame.bitmap, frame.tSec, barCenter)
                         if (pose != null) {
                             poseFrames += pose
                             val angles = JointAngleExtractor.extract(

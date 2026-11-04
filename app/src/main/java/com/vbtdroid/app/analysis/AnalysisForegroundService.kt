@@ -23,6 +23,7 @@ import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.app.vision.TflitePlateDetector
+import com.vbtdroid.core.metrics.Point2
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -156,7 +157,7 @@ class AnalysisForegroundService : Service() {
     }
 
     private object NoPoseEstimator : PoseEstimator {
-        override fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame? = null
+        override fun estimate(bitmap: Bitmap, tSec: Double, barCenter: Point2?): PoseFrame? = null
     }
 
     private companion object {

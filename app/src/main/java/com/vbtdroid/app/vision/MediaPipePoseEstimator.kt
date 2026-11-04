@@ -31,27 +31,34 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
     }
 
     @Synchronized
-    override fun estimate(bitmap: Bitmap, tSec: Double): PoseFrame? {
+    override fun estimate(bitmap: Bitmap, tSec: Double, barCenter: Point2?): PoseFrame? {
         require(tSec.isFinite() && tSec >= 0.0) { "Video timestamp must be finite and non-negative" }
         val requestedTimestampMs = (tSec * 1000.0).toLong()
         val timestampMs = maxOf(requestedTimestampMs, lastTimestampMs + 1L)
         lastTimestampMs = timestampMs
 
         val result = landmarker.detectForVideo(BitmapImageBuilder(bitmap).build(), timestampMs)
-        val pose = result.landmarks().firstOrNull() ?: return null
-        val points = LinkedHashMap<Int, Point2>(pose.size)
-        val visibility = LinkedHashMap<Int, Float>(pose.size)
-        pose.forEachIndexed { index, landmark ->
-            points[index] = Point2(
-                landmark.x().toDouble() * bitmap.width,
-                landmark.y().toDouble() * bitmap.height,
-            )
-            visibility[index] = landmark.visibility().orElse(0f)
+        val candidates = result.landmarks().map { pose ->
+            val points = LinkedHashMap<Int, Point2>(pose.size)
+            val visibility = LinkedHashMap<Int, Float>(pose.size)
+            pose.forEachIndexed { index, landmark ->
+                points[index] = Point2(
+                    landmark.x().toDouble() * bitmap.width,
+                    landmark.y().toDouble() * bitmap.height,
+                )
+                visibility[index] = landmark.visibility().orElse(0f)
+            }
+            PoseCandidate(points, visibility)
         }
+        // A lifter's torso stays near the bar; background people fall outside this generous gate
+        // (~2-3 plate diameters for typical framing). null barCenter keeps the largest skeleton.
+        val maxBarDistancePx = maxOf(bitmap.width, bitmap.height) * MAX_BAR_DISTANCE_FRAME_FRACTION
+        val chosen = PosePersonSelector.select(candidates, barCenter, maxBarDistancePx) ?: return null
+        val pose = candidates[chosen]
         return PoseFrame(
             tSec = tSec,
-            landmarks = points,
-            visibility = visibility,
+            landmarks = pose.landmarks,
+            visibility = pose.visibility,
             frameWidth = bitmap.width,
             frameHeight = bitmap.height,
             normalized = false,
@@ -75,12 +82,14 @@ class MediaPipePoseEstimator(context: Context) : PoseEstimator, AutoCloseable {
         val options = PoseLandmarker.PoseLandmarkerOptions.builder()
             .setBaseOptions(baseOptions)
             .setRunningMode(RunningMode.VIDEO)
-            .setNumPoses(1)
+            .setNumPoses(MAX_POSES)
             .build()
         return PoseLandmarker.createFromOptions(context, options)
     }
 
     private companion object {
         const val MODEL_ASSET = "models/pose_landmarker_lite.task"
+        const val MAX_POSES = 3
+        const val MAX_BAR_DISTANCE_FRAME_FRACTION = 0.45
     }
 }
