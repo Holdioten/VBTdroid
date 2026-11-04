@@ -2,7 +2,9 @@ package com.vbtdroid.core.phases
 
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.model.Lift
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 enum class PhaseType { ECCENTRIC, PAUSE, CONCENTRIC, LOCKOUT }
 
@@ -139,6 +141,22 @@ object PhaseSegmenter {
             if (droppedRomOutliers > 0) add(REP_ROM_OUTLIER)
             if (finalReps.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) add(NO_LOCKOUT)
         }
+        // The phase-run path can collapse several cycles when the velocity track is noisy or
+        // pauses between reps are misread. y extrema keep one clean top/bottom per rep, so use
+        // them to recover squat/bench reps, but only when they find strictly more complete reps.
+        if (lift == Lift.SQUAT || lift == Lift.BENCH) {
+            val recovered = recoverRepsFromYExtrema(samples, config)
+            val (finalRecovered, recoveredOutliers) = dropRomOutliers(recovered, samples, config)
+            if (finalRecovered.size > finalReps.size) {
+                val recoveredWarnings = buildList {
+                    if (recoveredOutliers > 0) add(REP_ROM_OUTLIER)
+                    if (finalRecovered.any { rep -> rep.phases.none { it.type == PhaseType.LOCKOUT } }) {
+                        add(NO_LOCKOUT)
+                    }
+                }
+                return PhaseSegmentation(finalRecovered, recoveredWarnings)
+            }
+        }
         return PhaseSegmentation(finalReps, warnings)
     }
 
@@ -175,6 +193,289 @@ object PhaseSegmenter {
         val incompleteCount: Int,
         val noLockoutCount: Int,
     )
+
+    private data class YExtremum(val index: Int, val y: Double, val isBottom: Boolean)
+
+    /**
+     * Rebuilds squat/bench reps from smoothed vertical-position extrema.
+     *
+     * Bar height `yM` is upward-positive throughout the app (`Calibration` negates pixel y), so a
+     * squat/bench bottom is a local y minimum and a top is a local y maximum. One rep is a
+     * top -> bottom -> top cycle. Extrema need at least [PhaseConfig.minRomM] of prominence and
+     * same-kind extrema need at least [PhaseConfig.minRepSec] (or
+     * [EXTREMA_MIN_SEPARATION_SEC]) between them. Incomplete leading/trailing edges are skipped:
+     * a boundary extremum is only used when the track starts/ends at rest, and a bottom without a
+     * top on both sides never becomes a rep.
+     */
+    private fun recoverRepsFromYExtrema(
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): List<RepSlice> {
+        if (samples.size < 3) return emptyList()
+        val smoothed = smoothY(samples)
+        val extrema = yExtrema(samples, smoothed, config.minRomM)
+        if (extrema.size < 3) return emptyList()
+
+        val alternating = filterYExtrema(extrema, config.minRomM)
+        if (alternating.size < 3) return emptyList()
+
+        val minSeparationSec = max(config.minRepSec, EXTREMA_MIN_SEPARATION_SEC)
+        val reps = mutableListOf<RepSlice>()
+        var lastBottomSec = Double.NEGATIVE_INFINITY
+        for (position in 1 until alternating.size - 1) {
+            val bottom = alternating[position]
+            if (!bottom.isBottom) continue
+            val topBefore = alternating[position - 1]
+            val topAfter = alternating[position + 1]
+            if (topBefore.isBottom || topAfter.isBottom) continue
+            val bottomSec = samples[bottom.index].tSec
+            if (bottomSec - lastBottomSec + 1e-9 < minSeparationSec) continue
+            val rep = extremaRep(topBefore, bottom, topAfter, samples, config) ?: continue
+            reps += rep
+            lastBottomSec = bottomSec
+        }
+        return reps.mapIndexed { index, rep -> rep.copy(index = index + 1) }
+    }
+
+    private fun extremaRep(
+        topBefore: YExtremum,
+        bottom: YExtremum,
+        topAfter: YExtremum,
+        samples: List<MotionSample>,
+        config: PhaseConfig,
+    ): RepSlice? {
+        val startIndex = topBefore.index
+        val bottomIndex = bottom.index
+        val endIndex = topAfter.index
+        if (startIndex >= bottomIndex || bottomIndex >= endIndex) return null
+        val startSec = samples[startIndex].tSec
+        val endSec = samples[endIndex].tSec
+        if (endSec - startSec + 1e-9 < config.minRepSec) return null
+
+        // ROM is measured top -> bottom; the higher of the two bounding tops is the rep's top.
+        val romM = max(topBefore.y, topAfter.y) - bottom.y
+        if (romM + 1e-9 < config.minRomM) return null
+
+        val repSamples = samples.subList(startIndex, endIndex + 1)
+        val hasMotion = repSamples.any { abs(it.vyMps) > config.vEps }
+        val bottomSec = samples[bottomIndex].tSec
+        val phases = mutableListOf<Phase>()
+        if (!hasMotion) {
+            // Degraded velocity track: direction is still fully determined by the y extrema.
+            phases += Phase(PhaseType.ECCENTRIC, startSec, bottomSec)
+            phases += Phase(PhaseType.CONCENTRIC, bottomSec, endSec)
+            return RepSlice(index = 0, startSec = startSec, endSec = endSec, phases = phases)
+        }
+
+        var pauseStart = bottomIndex
+        while (pauseStart > startIndex && abs(samples[pauseStart - 1].vyMps) <= config.vEps) pauseStart--
+        var pauseEnd = bottomIndex
+        while (pauseEnd < endIndex && abs(samples[pauseEnd + 1].vyMps) <= config.vEps) pauseEnd++
+        val pauseStartSec = samples[pauseStart].tSec
+        val pauseEndSec = samples[pauseEnd].tSec
+        val usePause = pauseStartSec - startSec > 1e-9 &&
+            pauseEndSec - pauseStartSec > 1e-9 &&
+            endSec - pauseEndSec + 1e-9 >= config.minConcentricSec
+        if (usePause) {
+            phases += Phase(PhaseType.ECCENTRIC, startSec, pauseStartSec)
+            phases += Phase(PhaseType.PAUSE, pauseStartSec, pauseEndSec)
+            phases += Phase(PhaseType.CONCENTRIC, pauseEndSec, endSec)
+        } else {
+            phases += Phase(PhaseType.ECCENTRIC, startSec, bottomSec)
+            phases += Phase(PhaseType.CONCENTRIC, bottomSec, endSec)
+        }
+
+        // Optional lockout: a near-zero-velocity run at the trailing top, capped like the
+        // phase-run path so a long standing pause does not swallow the next rep.
+        var lockoutStart = endIndex
+        while (lockoutStart > bottomIndex && abs(samples[lockoutStart - 1].vyMps) <= config.vEps) lockoutStart--
+        var lockoutEnd = endIndex
+        while (lockoutEnd < samples.lastIndex && abs(samples[lockoutEnd + 1].vyMps) <= config.vEps) lockoutEnd++
+        val lockoutStartSec = samples[lockoutStart].tSec
+        val lockoutAvailableSec = samples[lockoutEnd].tSec - lockoutStartSec
+        val trailingConcentric = phases.last()
+        if (lockoutStart > bottomIndex &&
+            lockoutAvailableSec + 1e-9 >= config.lockoutSec &&
+            lockoutStartSec - trailingConcentric.startSec + 1e-9 >= config.minConcentricSec
+        ) {
+            val lockoutEndSec = minOf(samples[lockoutEnd].tSec, lockoutStartSec + config.lockoutSec)
+            if (lockoutEndSec > lockoutStartSec) {
+                phases[phases.lastIndex] = trailingConcentric.copy(endSec = lockoutStartSec)
+                phases += Phase(PhaseType.LOCKOUT, lockoutStartSec, lockoutEndSec)
+            }
+        }
+        return RepSlice(index = 0, startSec = startSec, endSec = endSec, phases = phases)
+    }
+
+    private fun smoothY(samples: List<MotionSample>): DoubleArray {
+        val raw = DoubleArray(samples.size) { samples[it].yM }
+        if (raw.size < 3) return raw
+        val dt = medianSampleDt(samples)
+        if (dt <= 0.0) return raw
+        val radius = (EXTREMA_SMOOTHING_HALF_WINDOW_SEC / dt).roundToInt()
+        if (radius <= 0) return raw
+        return DoubleArray(raw.size) { index ->
+            val from = (index - radius).coerceAtLeast(0)
+            val to = (index + radius).coerceAtMost(raw.lastIndex)
+            var sum = 0.0
+            for (i in from..to) sum += raw[i]
+            sum / (to - from + 1)
+        }
+    }
+
+    private fun medianSampleDt(samples: List<MotionSample>): Double {
+        if (samples.size < 2) return 0.0
+        val deltas = DoubleArray(samples.size - 1) { samples[it + 1].tSec - samples[it].tSec }.sortedArray()
+        return deltas[deltas.size / 2]
+    }
+
+    /**
+     * Builds a clean alternating extremum list from smoothed y. The first/last sample is only
+     * added as an extremum when that edge is at rest, so a clip that starts or ends mid-rep does
+     * not fabricate a partial cycle.
+     */
+    private fun yExtrema(
+        samples: List<MotionSample>,
+        y: DoubleArray,
+        minRomM: Double,
+    ): List<YExtremum> {
+        val n = y.size
+        if (n < 3) return emptyList()
+        val range = y.max() - y.min()
+        // Movement smaller than this cannot contribute to a rep; treating it as flat also keeps
+        // tracking noise from turning every wobble on a top/bottom plateau into an extremum.
+        val flatEps = max(
+            EXTREMA_FLAT_EPS_M,
+            max(range * EXTREMA_FLAT_FRACTION, minRomM * EXTREMA_FLAT_ROM_FRACTION),
+        )
+        val turns = mutableListOf<YExtremum>()
+        var direction = 0
+        var lastTurnIndex = 0
+        for (index in 1 until n) {
+            val delta = y[index] - y[index - 1]
+            if (abs(delta) <= flatEps) continue
+            val sign = if (delta > 0) 1 else -1
+            if (direction == 0) {
+                direction = sign
+                continue
+            }
+            if (sign == direction) continue
+            val isBottom = direction < 0
+            val extremumIndex = if (isBottom) {
+                argMin(y, lastTurnIndex, index)
+            } else {
+                argMax(y, lastTurnIndex, index)
+            }
+            turns += YExtremum(extremumIndex, y[extremumIndex], isBottom)
+            lastTurnIndex = extremumIndex
+            direction = sign
+        }
+        if (turns.isEmpty()) return emptyList()
+
+        val dt = medianSampleDt(samples)
+        val result = mutableListOf<YExtremum>()
+        if (edgeIsFlat(y, atStart = true, dt = dt, flatEps = flatEps)) {
+            val first = turns.first()
+            val index = if (first.isBottom) argMax(y, 0, first.index) else argMin(y, 0, first.index)
+            if (index < first.index) {
+                result += YExtremum(index, y[index], isBottom = !first.isBottom)
+            }
+        }
+        result += turns
+        if (edgeIsFlat(y, atStart = false, dt = dt, flatEps = flatEps)) {
+            val last = turns.last()
+            val index = if (direction > 0) argMax(y, last.index, n - 1) else argMin(y, last.index, n - 1)
+            if (index > last.index) {
+                result += YExtremum(index, y[index], isBottom = direction < 0)
+            }
+        }
+        return result
+    }
+
+    private fun edgeIsFlat(y: DoubleArray, atStart: Boolean, dt: Double, flatEps: Double): Boolean {
+        val windowSamples = if (dt > 0.0) {
+            max(2, (EXTREMA_EDGE_FLAT_SEC / dt).roundToInt())
+        } else {
+            2
+        }
+        val count = minOf(y.size, windowSamples)
+        val from = if (atStart) 0 else y.size - count
+        val to = if (atStart) count - 1 else y.lastIndex
+        var minimum = y[from]
+        var maximum = y[from]
+        for (index in from..to) {
+            minimum = minOf(minimum, y[index])
+            maximum = maxOf(maximum, y[index])
+        }
+        return maximum - minimum <= max(flatEps, EXTREMA_EDGE_FLAT_M)
+    }
+
+    /**
+     * Removes weak alternating extrema one at a time, always dropping the smallest excursion
+     * first. This clears noise wiggles before a real top/bottom (whose neighbours are the full
+     * opposite excursion) is judged. What remains is a clean zigzag whose every step is at least
+     * [minRomM], i.e. the amplitude requirement.
+     */
+    private fun filterYExtrema(extrema: List<YExtremum>, minRomM: Double): List<YExtremum> {
+        val current = extrema.toMutableList()
+        while (current.size >= 3) {
+            var weakestIndex = 0
+            var weakestAmplitude = Double.POSITIVE_INFINITY
+            for (index in current.indices) {
+                val amplitude = extremumAmplitude(current, index)
+                if (amplitude < weakestAmplitude) {
+                    weakestAmplitude = amplitude
+                    weakestIndex = index
+                }
+            }
+            if (weakestAmplitude + 1e-9 >= minRomM) break
+            current.removeAt(weakestIndex)
+        }
+        val alternating = mutableListOf<YExtremum>()
+        for (extremum in current) {
+            val previous = alternating.lastOrNull()
+            if (previous != null && previous.isBottom == extremum.isBottom) {
+                if (isMoreExtreme(extremum, previous)) alternating[alternating.lastIndex] = extremum
+            } else {
+                alternating += extremum
+            }
+        }
+        return alternating
+    }
+
+    /** Smallest y excursion to either neighbour; a boundary extremum only has one side. */
+    private fun extremumAmplitude(extrema: List<YExtremum>, index: Int): Double {
+        val extremum = extrema[index]
+        val previous = extrema.getOrNull(index - 1)
+        val next = extrema.getOrNull(index + 1)
+        val previousAmplitude = previous?.let { abs(extremum.y - it.y) }
+        val nextAmplitude = next?.let { abs(extremum.y - it.y) }
+        return when {
+            previousAmplitude != null && nextAmplitude != null -> minOf(previousAmplitude, nextAmplitude)
+            previousAmplitude != null -> previousAmplitude
+            nextAmplitude != null -> nextAmplitude
+            else -> 0.0
+        }
+    }
+
+    private fun isMoreExtreme(candidate: YExtremum, current: YExtremum): Boolean =
+        if (candidate.isBottom) candidate.y < current.y else candidate.y > current.y
+
+    private fun argMin(values: DoubleArray, from: Int, to: Int): Int {
+        var best = from.coerceIn(0, values.lastIndex)
+        for (index in (best + 1)..to.coerceAtMost(values.lastIndex)) {
+            if (values[index] < values[best]) best = index
+        }
+        return best
+    }
+
+    private fun argMax(values: DoubleArray, from: Int, to: Int): Int {
+        var best = from.coerceIn(0, values.lastIndex)
+        for (index in (best + 1)..to.coerceAtMost(values.lastIndex)) {
+            if (values[index] > values[best]) best = index
+        }
+        return best
+    }
 
     private fun classify(samples: List<MotionSample>, vEps: Double): List<Run> {
         val runs = mutableListOf<Run>()
@@ -683,4 +984,25 @@ object PhaseSegmenter {
 
     /** How far before a pull to look for the floor (bottom) sample. */
     private const val DEADLIFT_BOTTOM_LOOKBACK_SEC = 0.5
+
+    /** Half-window of the extra moving average applied before y-extrema detection. */
+    private const val EXTREMA_SMOOTHING_HALF_WINDOW_SEC = 0.12
+
+    /** y deltas under this are treated as flat terrain while finding turnarounds. */
+    private const val EXTREMA_FLAT_EPS_M = 1e-4
+
+    /** Flat threshold also scales with the track's total travel for very noisy tracks. */
+    private const val EXTREMA_FLAT_FRACTION = 1e-4
+
+    /** ...and with the required ROM: wiggles below 5% of minRomM are never meaningful. */
+    private const val EXTREMA_FLAT_ROM_FRACTION = 0.05
+
+    /** How much of the start/end must be at rest before a boundary extremum is trusted. */
+    private const val EXTREMA_EDGE_FLAT_SEC = 0.20
+
+    /** Maximum y variation inside that rest window. */
+    private const val EXTREMA_EDGE_FLAT_M = 0.02
+
+    /** Same-kind extrema closer than this (or minRepSec) cannot be separate reps. */
+    private const val EXTREMA_MIN_SEPARATION_SEC = 0.35
 }

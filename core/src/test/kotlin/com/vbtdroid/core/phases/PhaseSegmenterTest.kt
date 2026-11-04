@@ -2,6 +2,8 @@ package com.vbtdroid.core.phases
 
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.model.Lift
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -461,6 +463,115 @@ class PhaseSegmenterTest {
         val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
 
         assertTrue(result.reps.isEmpty())
+    }
+
+    private data class CycleSegment(val durationSec: Double, val fromY: Double, val toY: Double)
+
+    /**
+     * Squat-like cycles in the app's upward-positive y convention: start at the top, descend,
+     * pause at the bottom, stand up, pause at the top. `flatVelocity` simulates a degraded
+     * velocity track so only the y-extrema fallback can count the reps.
+     */
+    private fun yCycleSamples(
+        count: Int,
+        stepSec: Double = 1.0 / 30.0,
+        amplitudeM: Double = 0.55,
+        noiseM: Double = 0.0,
+        flatVelocity: Boolean = false,
+    ): List<MotionSample> {
+        val segments = buildList {
+            add(CycleSegment(0.40, 0.0, 0.0))
+            repeat(count) {
+                add(CycleSegment(0.55, 0.0, -amplitudeM))
+                add(CycleSegment(0.20, -amplitudeM, -amplitudeM))
+                add(CycleSegment(0.55, -amplitudeM, 0.0))
+                add(CycleSegment(0.25, 0.0, 0.0))
+            }
+        }
+        val raw = mutableListOf<MotionSample>()
+        var t = 0.0
+        var sampleIndex = 0
+        for (segment in segments) {
+            val steps = maxOf(1, (segment.durationSec / stepSec).roundToInt())
+            for (step in 0 until steps) {
+                val fraction = step.toDouble() / steps
+                val y = segment.fromY + (segment.toY - segment.fromY) * fraction +
+                    noiseM * sin(sampleIndex * 2.399)
+                raw += MotionSample(t, 0.0, y, 0.0, 0.0, 0.0, 0.0)
+                t += stepSec
+                sampleIndex++
+            }
+        }
+        if (flatVelocity) return raw
+        return raw.mapIndexed { index, sample ->
+            val previous = raw[maxOf(0, index - 1)]
+            val next = raw[minOf(raw.lastIndex, index + 1)]
+            val dt = next.tSec - previous.tSec
+            val vy = if (dt > 0.0) (next.yM - previous.yM) / dt else 0.0
+            sample.copy(vyMps = vy)
+        }
+    }
+
+    private fun ramp(from: Double, to: Double, steps: Int): List<Double> =
+        (0 until steps).map { from + (to - from) * it / steps }
+
+    @Test
+    fun `six noisy cycles recover from y extrema when the velocity track is flat`() {
+        val samples = yCycleSamples(count = 6, noiseM = 0.008, flatVelocity = true)
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertEquals(6, result.reps.size)
+        assertEquals((1..6).toList(), result.reps.map { it.index })
+        result.reps.forEach { rep ->
+            assertEquals(
+                listOf(PhaseType.ECCENTRIC, PhaseType.CONCENTRIC),
+                rep.phases.map { it.type },
+            )
+            val repSamples = samples.filter { it.tSec in rep.startSec..rep.endSec }
+            assertEquals(
+                0.55,
+                repSamples.maxOf { it.yM } - repSamples.minOf { it.yM },
+                0.03,
+            )
+        }
+    }
+
+    @Test
+    fun `eight noisy cycles are still eight bench reps with a realistic velocity track`() {
+        val samples = yCycleSamples(count = 8, noiseM = 0.006)
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.BENCH)
+
+        assertEquals(8, result.reps.size)
+        assertEquals((1..8).toList(), result.reps.map { it.index })
+        assertTrue(result.reps.all { rep -> rep.phases.any { it.type == PhaseType.CONCENTRIC } })
+    }
+
+    @Test
+    fun `extrema fallback ignores incomplete leading and trailing edges`() {
+        val y = buildList {
+            addAll(ramp(-0.25, -0.55, 8)) // starts mid-descent: no top for this bottom
+            addAll(List(4) { -0.55 })
+            addAll(ramp(-0.55, 0.0, 12))
+            addAll(List(3) { 0.0 })
+            addAll(ramp(0.0, -0.55, 12)) // first complete cycle
+            addAll(List(3) { -0.55 })
+            addAll(ramp(-0.55, 0.0, 12))
+            addAll(List(3) { 0.0 })
+            addAll(ramp(0.0, -0.55, 12))
+            addAll(List(3) { -0.55 })
+            addAll(ramp(-0.55, -0.25, 8)) // ends mid-ascent: no top for the last bottom
+        }
+        val samples = y.mapIndexed { index, value ->
+            MotionSample(index * 0.05, 0.0, value, 0.0, 0.0, 0.0, 0.0)
+        }
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.SQUAT)
+
+        assertEquals(1, result.reps.size)
+        assertTrue(result.reps.single().phases.any { it.type == PhaseType.ECCENTRIC })
+        assertTrue(result.reps.single().phases.any { it.type == PhaseType.CONCENTRIC })
     }
 
     @Test
