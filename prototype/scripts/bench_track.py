@@ -4,6 +4,10 @@ Tracking: Hough circle seeded/validated inside 1.35 * plate-diameter ROI, radius
 15% radius gate, 0.5-diameter innovation gate, velocity clamp.
 Smoothing: Hampel + Savitzky-Golay over the whole track.
 Reps: concentric velocity runs with duration/ROM gates and median-ROM filter.
+
+The rep count is always inferred from the smoothed velocity signal. The clip labels below
+("...-6次-...") are per-fixture expectations used only to score the run; nothing in the
+detector reads or targets a count.
 """
 
 import sys
@@ -20,6 +24,13 @@ MIN_CONCENTRIC_SEC = 0.15
 MIN_ROM_M = 0.20
 PLATE_M = 0.45
 HOUGH = dict(dp=1.2, param1=120, param2=45)
+
+# Fixtures: (path, expected reps stated in the clip label). Expectations are per video,
+# never a global target count and never a detector parameter.
+FIXTURES = [
+    ("高杠深蹲-135kg-6次-侧面90度.mp4", 6),
+    ("传统硬拉-100kg-6次-第二次和第三次中间有四分之一次没完成拉起.mp4", 6),
+]
 
 
 def hough(gray, min_radius, max_radius, param2=None, min_dist=None):
@@ -110,7 +121,7 @@ def savgol(values, window=7, order=2):
     return out
 
 
-def analyze(path, lift, verbose=True):
+def analyze(path, verbose=True):
     capture = cv2.VideoCapture(path)
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
     frames = []
@@ -210,8 +221,13 @@ def analyze(path, lift, verbose=True):
 
 
 if __name__ == "__main__":
-    squat_reps = analyze(sys.argv[1], "squat")
-    deadlift_reps = analyze(sys.argv[2], "deadlift")
-    print(f"RESULT squat={squat_reps} (expect 6) deadlift={deadlift_reps} (expect 6)")
-    if squat_reps != 6 or deadlift_reps != 6:
+    failures = 0
+    for fixture, expected in FIXTURES:
+        inferred = analyze(fixture)
+        passed = inferred == expected
+        print(f"FIXTURE {fixture}: inferred={inferred} expected={expected} "
+              f"{'PASS' if passed else 'FAIL'}")
+        if not passed:
+            failures += 1
+    if failures:
         sys.exit(1)

@@ -90,10 +90,10 @@ forward-backward Kalman/RTS，改成整条轨迹上的三段鲁棒处理：
 
 ```
 cd example
-python /path/to/prototype/scripts/bench_track.py \
-  "高杠深蹲-135kg-6次-侧面90度.mp4" \
-  "传统硬拉-100kg-6次-第二次和第三次中间有四分之一次没完成拉起.mp4"
+python /path/to/prototype/scripts/bench_track.py
 ```
+
+脚本内 `FIXTURES` 显式列出两段视频与各自的期望次数（文件名标注的 6），仅作打分用。
 
 结果（720x1280, 30fps）：
 
@@ -107,6 +107,10 @@ python /path/to/prototype/scripts/bench_track.py \
   另有若干 0.02–0.03 m 噪声段丢弃。
 - 该脚本是 PC 参考实现（numpy/opencv），不等同于 APK 内 OpenCV 路径；用于验证参数与
   规则，不替代真机回归。
+- rep 数完全由平滑速度信号推断：速度阈值段 + 时长/ROM/中位数 ROM 门限。两个 6 是
+  **fixture 标注的期望值**（视频文件名自带“6次”），只用于打分；代码里没有目标次数、没有
+  `if reps == 6`、没有按次数调参。fixture 列表和期望值显式写在 `FIXTURES` 里，换视频只需
+  改标注。
 
 ## 测试
 
@@ -125,6 +129,10 @@ ANDROID_HOME=~/toolchains/android-sdk \
   1 个四分之一拉 + 6 个真实硬拉 → 6 reps，含 `REP_ROM_OUTLIER`，索引连续 1..6。
 - `PhaseSegmenterTest.median ROM filter waits for at least three candidates`：2 个候选不触发
   中位数过滤。
+- `PhaseSegmenterTest.eight continuous reps are inferred from the signal alone`：合成 8 rep →
+  8，索引 1..8，证明计数与目标次数无关。
+- `PhaseSegmenterTest.three reps with a middle partial pull keep the two full reps`：3 个候选
+  中含 1 个四分之一拉 → 2 reps + `REP_ROM_OUTLIER`。
 - `PlateRoiTest.local search radius covers the whole plate diameter plus margin`：
   260 px 直径 → 351 px 半径 > 260 px。
 - `PlateRoiTest.local search radius rejects an invalid reference`。

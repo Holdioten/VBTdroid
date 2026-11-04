@@ -322,6 +322,34 @@ class PhaseSegmenterTest {
     }
 
     @Test
+    fun `eight continuous reps are inferred from the signal alone`() {
+        val moves = (1..8).flatMap {
+            listOf(Move(-0.5, 6, -0.05), Move(0.5, 6, 0.05))
+        }.toTypedArray()
+
+        val result = PhaseSegmenter.segmentDetailed(sequence(*moves), Lift.SQUAT)
+
+        // Count comes from the track; there is no target count anywhere in the segmenter.
+        assertEquals(8, result.reps.size)
+        assertFalse(result.warnings.contains(PhaseSegmenter.REP_ROM_OUTLIER))
+        assertEquals((1..8).toList(), result.reps.map { it.index })
+    }
+
+    @Test
+    fun `three reps with a middle partial pull keep the two full reps`() {
+        val samples = sequence(
+            *deadliftRep(),
+            *quarterPull(),
+            *deadliftRep(),
+        )
+
+        val result = PhaseSegmenter.segmentDetailed(samples, Lift.DEADLIFT)
+
+        assertEquals(2, result.reps.size)
+        assertTrue(result.warnings.contains(PhaseSegmenter.REP_ROM_OUTLIER))
+    }
+
+    @Test
     fun `long pause does not split a rep`() {
         val samples = sequence(
             Move(-0.5, 6, -0.05),
