@@ -141,10 +141,5 @@ fun ReportPreview(
                 modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
             )
         }
-        StatusChip(
-            text = stringResource(R.string.report_trajectory_schematic),
-            tone = ChipTone.NEUTRAL,
-            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-        )
     }
 }

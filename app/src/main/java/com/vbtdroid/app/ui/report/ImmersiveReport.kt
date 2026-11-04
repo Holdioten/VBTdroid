@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.vbtdroid.app.R
@@ -184,7 +185,10 @@ internal fun PlaybackBar(playback: OverlayPlayback, modifier: Modifier = Modifie
     }
 }
 
-/** Top strip over the video: back, lift/variant/load, rep index with prev/next, history. */
+/**
+ * Top strip over the video. Row 1: back, identity (one line), history. Row 2: rep stepper and
+ * status. Two rows keep the identity from being squeezed by the rep index.
+ */
 @Composable
 internal fun ReportHeader(
     identity: String,
@@ -197,29 +201,40 @@ internal fun ReportHeader(
     onHistory: () -> Unit,
     status: (@Composable () -> Unit)? = null,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.s),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(VbtSpacing.xs),
     ) {
-        RoundGlassButton(onClick = onBack, label = stringResource(R.string.report_back), icon = Icons.Filled.KeyboardArrowLeft)
-        Surface(shape = ShapePill, color = GlassColor, modifier = Modifier.weight(1f)) {
-            Column(Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs)) {
-                Text(identity, style = MaterialTheme.typography.titleMedium, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            RoundGlassButton(onClick = onBack, label = stringResource(R.string.report_back), icon = Icons.Filled.KeyboardArrowLeft)
+            Surface(shape = ShapePill, color = GlassColor, modifier = Modifier.weight(1f)) {
+                Text(
+                    identity,
+                    modifier = Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.s),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            TextButton(onClick = onHistory, modifier = Modifier.heightIn(min = MinTouchTarget)) {
+                Text(stringResource(R.string.history_title), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            Surface(shape = ShapePill, color = GlassColor) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = VbtSpacing.s)) {
                     IconButton(onClick = onPrev, enabled = canPrev, modifier = Modifier.size(MinTouchTarget)) {
                         Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                     }
-                    Text(repLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text(repLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     IconButton(onClick = onNext, enabled = canNext, modifier = Modifier.size(MinTouchTarget)) {
                         Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
-        }
-        status?.invoke()
-        TextButton(onClick = onHistory, modifier = Modifier.heightIn(min = MinTouchTarget)) {
-            Text(stringResource(R.string.history_title), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.weight(1f))
+            status?.invoke()
         }
     }
 }
@@ -296,22 +311,22 @@ internal fun MainMcvCard(
                 modifier = Modifier.padding(bottom = 6.dp),
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            MiniValue(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing)
-            MiniValue(
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            MiniRow(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing)
+            MiniRow(
                 stringResource(R.string.report_mini_vl),
                 formatMetricValue(velocityLossPct, MetricId.SET_VELOCITY_LOSS),
             )
-            MiniValue(stringResource(R.string.report_mini_reps), repCount.toString())
+            MiniRow(stringResource(R.string.report_mini_reps), repCount.toString())
         }
     }
 }
 
 @Composable
-private fun MiniValue(label: String, value: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = VbtTheme.colors.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+private fun MiniRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = VbtTheme.colors.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
     }
 }
 
@@ -382,23 +397,7 @@ internal fun BarPathCard(
 ) {
     val comparison = bestSlice?.takeIf { it.index != slice?.index }
     val compareLabel = stringResource(R.string.report_compare_best)
-    GlassCard(
-        modifier = modifier,
-        title = stringResource(R.string.report_bar_path_chart),
-        trailing = {
-            if (comparison != null) {
-                FilterChip(
-                    selected = compare,
-                    onClick = { onCompare(!compare) },
-                    label = { Text(compareLabel, style = MaterialTheme.typography.labelSmall) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = VbtTheme.colors.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                    ),
-                )
-            }
-        },
-    ) {
+    GlassCard(modifier = modifier, title = stringResource(R.string.report_bar_path_chart)) {
         BarPathChart(
             samples = samples,
             rep = slice,
@@ -406,6 +405,17 @@ internal fun BarPathCard(
             height = 150.dp,
             chartBackground = Color.Transparent,
         )
+        if (comparison != null) {
+            FilterChip(
+                selected = compare,
+                onClick = { onCompare(!compare) },
+                label = { Text(compareLabel, style = MaterialTheme.typography.labelSmall) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = VbtTheme.colors.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+        }
     }
 }
 

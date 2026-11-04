@@ -100,7 +100,6 @@
     <string name="import_cta_need_roi">Confirm the plate region</string>
     <string name="analysis_cancelled">Analysis cancelled</string>
 
-    <string name="report_trajectory_schematic">Bar path schematic</string>
     <string name="report_preview_placeholder">First frame unavailable; showing path schematic</string>
     <string name="report_preview_description">First frame with the bar path of the selected rep</string>
     <string name="report_mini_best_mcv">Best MCV</string>

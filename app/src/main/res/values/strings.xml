@@ -153,7 +153,6 @@
     <string name="import_cta_need_roi">请确认杠铃片区域</string>
     <string name="analysis_cancelled">分析已取消</string>
 
-    <string name="report_trajectory_schematic">杠铃轨迹示意</string>
     <string name="report_preview_placeholder">首帧不可用</string>
     <string name="report_preview_description">视频首帧与当前次的杠铃轨迹示意</string>
     <string name="report_mini_best_mcv">最佳 MCV</string>
