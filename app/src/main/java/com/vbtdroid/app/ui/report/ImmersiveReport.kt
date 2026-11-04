@@ -5,35 +5,26 @@ import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.VideoView
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -57,42 +48,37 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.vbtdroid.app.R
-import com.vbtdroid.app.analysis.FrameAngles
-import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.MessageBanner
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
-import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
-import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.model.Lift
-import com.vbtdroid.core.model.MetricId
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.QualityFlags
 import com.vbtdroid.core.metrics.LvpEstimate
 import kotlinx.coroutines.delay
-import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Card scrim: #0A0E11 at 82%, so burned-in video text does not show through the cards. */
 internal val GlassColor = Bg.copy(alpha = 0.82f)
 
 /**
- * Full-bleed video (source video in the report, cached overlay MP4 in the preview dialog). Scales
- * to cover the parent (cropping) so portrait and landscape both fill the hero area without
- * distortion; the view is measured to the video's own aspect ratio.
+ * Full-bleed video layer that letterboxes the frame instead of cropping it. The overlay burns its
+ * card column into the source frame, so cover-scaling would cut those cards off; fit keeps the
+ * whole frame visible and lets [Bg] fill the bars.
  */
 @Composable
-internal fun CoverVideo(uri: Uri, playback: OverlayPlayback, modifier: Modifier = Modifier) {
+internal fun FitVideo(uri: Uri, playback: OverlayPlayback, modifier: Modifier = Modifier) {
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            CoverFrame(context).also { frame ->
+            FitFrame(context).also { frame ->
                 val view = VideoView(context)
                 frame.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 view.setOnErrorListener { _, _, _ ->
@@ -116,8 +102,8 @@ internal fun CoverVideo(uri: Uri, playback: OverlayPlayback, modifier: Modifier 
     }
 }
 
-/** Layout that cover-scales its single child to the video's aspect ratio. */
-private class CoverFrame(context: Context) : FrameLayout(context) {
+/** Layout that fits its single child inside the parent, preserving the video's aspect ratio. */
+private class FitFrame(context: Context) : FrameLayout(context) {
     private var videoWidth = 0
     private var videoHeight = 0
 
@@ -132,7 +118,7 @@ private class CoverFrame(context: Context) : FrameLayout(context) {
         val h = MeasureSpec.getSize(heightMeasureSpec)
         setMeasuredDimension(w, h)
         val child = getChildAt(0) ?: return
-        val (cw, ch) = coverSize(w, h)
+        val (cw, ch) = fitSize(w, h)
         child.measure(
             MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(ch, MeasureSpec.EXACTLY),
@@ -148,9 +134,9 @@ private class CoverFrame(context: Context) : FrameLayout(context) {
         child.layout(l, t, l + cw, t + ch)
     }
 
-    private fun coverSize(w: Int, h: Int): Pair<Int, Int> {
+    private fun fitSize(w: Int, h: Int): Pair<Int, Int> {
         if (videoWidth <= 0 || videoHeight <= 0 || w <= 0 || h <= 0) return w to h
-        val scale = max(w.toFloat() / videoWidth, h.toFloat() / videoHeight)
+        val scale = min(w.toFloat() / videoWidth, h.toFloat() / videoHeight)
         return (videoWidth * scale).roundToInt() to (videoHeight * scale).roundToInt()
     }
 }
@@ -233,17 +219,12 @@ private fun PauseGlyph(modifier: Modifier = Modifier, tint: Color = MaterialThem
 }
 
 /**
- * Top strip over the video. Row 1: back, identity (one line), history. Row 2: rep stepper and
- * status. Two rows keep the identity from being squeezed by the rep index.
+ * Top strip over the video: back, identity (one line), history. The status chip drops to a second
+ * row only when there is something to report.
  */
 @Composable
 internal fun ReportHeader(
     identity: String,
-    repLabel: String,
-    canPrev: Boolean,
-    canNext: Boolean,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
     onBack: () -> Unit,
     onHistory: () -> Unit,
     status: (@Composable () -> Unit)? = null,
@@ -268,20 +249,11 @@ internal fun ReportHeader(
                 Text(stringResource(R.string.history_title), style = MaterialTheme.typography.labelLarge, maxLines = 1)
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-            Surface(shape = ShapePill, color = GlassColor) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = VbtSpacing.s)) {
-                    IconButton(onClick = onPrev, enabled = canPrev, modifier = Modifier.size(MinTouchTarget)) {
-                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    Text(repLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                    IconButton(onClick = onNext, enabled = canNext, modifier = Modifier.size(MinTouchTarget)) {
-                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                }
+        if (status != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                status()
             }
-            Spacer(Modifier.weight(1f))
-            status?.invoke()
         }
     }
 }
@@ -299,216 +271,11 @@ private fun RoundGlassButton(onClick: () -> Unit, label: String, icon: androidx.
     }
 }
 
-/** Translucent floating card over the video (spec §1.7). Compact: 10dp padding, tight spacing. */
-@Composable
-internal fun GlassCard(
-    modifier: Modifier = Modifier,
-    title: String? = null,
-    trailing: (@Composable () -> Unit)? = null,
-    content: @Composable () -> Unit,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = GlassColor,
-        border = BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.5f)),
-    ) {
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (title != null || trailing != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (title != null) {
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = VbtTheme.colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    trailing?.invoke()
-                }
-            }
-            content()
-        }
-    }
-}
-
-/** This rep's MCV as the hero number, with a 2×2 grid of set-level figures. */
-@Composable
-internal fun MainMcvCard(
-    modifier: Modifier,
-    repMcv: Double?,
-    setMeanMcv: Double?,
-    bestMcv: Double?,
-    velocityLossPct: Double?,
-    repCount: Int,
-) {
-    val missing = stringResource(R.string.report_value_missing)
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_card_rep_mcv)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                formatMcv(repMcv) ?: missing,
-                style = VbtTheme.numbers.displayMetricSm,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-            )
-            Text(
-                stringResource(R.string.unit_mps),
-                style = MaterialTheme.typography.labelMedium,
-                color = VbtTheme.colors.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MiniCell(stringResource(R.string.report_mini_set_mean), formatMcv(setMeanMcv) ?: missing, Modifier.weight(1f))
-            MiniCell(stringResource(R.string.report_mini_best_mcv), formatMcv(bestMcv) ?: missing, Modifier.weight(1f))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MiniCell(
-                stringResource(R.string.report_mini_vl),
-                formatMetricValue(velocityLossPct, MetricId.SET_VELOCITY_LOSS),
-                Modifier.weight(1f),
-            )
-            MiniCell(stringResource(R.string.report_mini_reps), repCount.toString(), Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun MiniCell(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = VbtTheme.colors.onSurfaceVariant, maxLines = 1)
-        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-    }
-}
-
-@Composable
-internal fun VelocityCard(
-    modifier: Modifier,
-    samples: List<MotionSample>,
-    slice: RepSlice?,
-    mean: Double?,
-    cursorSec: Double?,
-) {
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_velocity_chart)) {
-        VelocityChart(
-            samples = samples,
-            rep = slice,
-            meanVelocityMps = mean,
-            height = 56.dp,
-            chartBackground = Color.Transparent,
-            cursorSec = cursorSec,
-        )
-    }
-}
-
-/**
- * 姿态分析 card: joint angles at the current playback frame (nearest pose frame, low confidence shown
- * as “—”). Values only, no curve: the numbers themselves follow the playhead. Off-state is stated,
- * not hidden.
- */
-@Composable
-internal fun PoseCard(
-    modifier: Modifier,
-    lift: Lift,
-    slice: RepSlice?,
-    frames: List<FrameAngles>,
-    analyzePose: Boolean,
-    cursorSec: Double?,
-) {
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_card_pose)) {
-        if (!analyzePose) {
-            Text(
-                stringResource(R.string.report_pose_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = VbtTheme.colors.onSurfaceVariant,
-            )
-            return@GlassCard
-        }
-        val current = PoseReadout.frameAt(frames, cursorSec ?: slice?.startSec)
-        PoseReadout.joints(lift).chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                pair.forEach { joint ->
-                    val value = PoseReadout.display(current, joint)
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(joint.labelRes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = VbtTheme.colors.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                        Text(
-                            value?.let { stringResource(R.string.report_angle_value, it) }
-                                ?: stringResource(R.string.report_value_missing),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (value == null) VbtTheme.colors.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-internal fun BarPathCard(
-    modifier: Modifier,
-    samples: List<MotionSample>,
-    slice: RepSlice?,
-    bestSlice: RepSlice?,
-    compare: Boolean,
-    onCompare: (Boolean) -> Unit,
-    trailUpToSec: Double?,
-) {
-    val comparison = bestSlice?.takeIf { it.index != slice?.index }
-    val compareLabel = stringResource(R.string.report_compare_best)
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_bar_path_chart)) {
-        BarPathChart(
-            samples = samples,
-            rep = slice,
-            comparisonRep = if (compare) comparison else null,
-            trailUpToSec = trailUpToSec,
-            height = 96.dp,
-            chartBackground = Color.Transparent,
-        )
-        if (comparison != null) {
-            FilterChip(
-                selected = compare,
-                onClick = { onCompare(!compare) },
-                label = { Text(compareLabel, style = MaterialTheme.typography.labelSmall) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = VbtTheme.colors.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-        }
-    }
-}
-
-@Composable
-internal fun RepBarsCard(
-    modifier: Modifier,
-    reps: List<RepMetrics>,
-    position: Int,
-    onSelect: (Int) -> Unit,
-) {
-    GlassCard(modifier = modifier, title = stringResource(R.string.report_per_rep_mcv)) {
-        RepBarsContent(reps = reps, selectedPosition = position, onSelect = onSelect)
-    }
-}
-
-/** Bottom action strip: stage correction, details, overlay preview, save the cached overlay video. */
+/** Bottom action strip: stage correction, details, save the cached overlay video. */
 @Composable
 internal fun ReportActions(
     onStages: () -> Unit,
     onDetails: () -> Unit,
-    onPreview: () -> Unit,
-    previewEnabled: Boolean,
     onSave: () -> Unit,
     saveEnabled: Boolean,
     modifier: Modifier = Modifier,
@@ -519,47 +286,20 @@ internal fun ReportActions(
         color = GlassColor,
     ) {
         Row(Modifier.padding(VbtSpacing.s), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-            ActionButton(onClick = onStages, label = stringResource(R.string.report_action_stages), modifier = Modifier.weight(1f))
-            ActionButton(onClick = onDetails, label = stringResource(R.string.report_action_details), modifier = Modifier.weight(1f))
-            ActionButton(
-                onClick = onPreview,
-                enabled = previewEnabled,
-                label = stringResource(R.string.report_overlay_preview_button),
-                modifier = Modifier.weight(1.4f),
-            )
-            ActionButton(
+            OutlinedButton(onClick = onStages, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
+                Text(stringResource(R.string.report_action_stages), maxLines = 1)
+            }
+            OutlinedButton(onClick = onDetails, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
+                Text(stringResource(R.string.report_action_details), maxLines = 1)
+            }
+            OutlinedButton(
                 onClick = onSave,
                 enabled = saveEnabled,
-                label = stringResource(R.string.report_save_overlay),
-                modifier = Modifier.weight(1.1f),
-            )
+                modifier = Modifier.weight(1.3f).heightIn(min = MinTouchTarget),
+            ) {
+                Text(stringResource(R.string.report_save_overlay), maxLines = 1)
+            }
         }
-    }
-}
-
-/**
- * Compact text button for the action strip. Narrow padding plus a smaller label keeps four actions
- * on one line; the longest label (“预览叠加视频”) gets the widest share.
- */
-@Composable
-private fun ActionButton(
-    onClick: () -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier.heightIn(min = MinTouchTarget),
-        contentPadding = PaddingValues(horizontal = 8.dp),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

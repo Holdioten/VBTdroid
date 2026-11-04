@@ -187,3 +187,15 @@ fun PhaseLegend(
 }
 
 private const val MIN_MANUAL_PHASE_SEC = 0.001
+
+/** Stage colours shared by the timeline and any chart that bands phases. */
+@Composable
+internal fun phaseColors(): Map<PhaseType, Color> {
+    val colors = VbtTheme.colors
+    return mapOf(
+        PhaseType.ECCENTRIC -> colors.phaseEccentric,
+        PhaseType.PAUSE -> colors.phasePause,
+        PhaseType.CONCENTRIC -> colors.phaseConcentric,
+        PhaseType.LOCKOUT -> colors.phaseLockout,
+    )
+}

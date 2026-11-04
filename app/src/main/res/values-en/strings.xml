@@ -97,12 +97,8 @@
     <string name="report_mini_best_mcv">Best MCV</string>
     <string name="report_mini_vl">Velocity loss VL</string>
     <string name="report_per_rep_mcv">Mean velocity per rep</string>
-    <string name="report_rep_bar_description">Rep %1$d mean velocity %2$s metres per second</string>
     <string name="report_angle_value">%1$.1f°</string>
     <string name="report_peak_velocity_label">Peak %1$s m/s</string>
-    <string name="report_velocity_chart_description">Vertical bar velocity curve</string>
-    <string name="report_bar_path_chart_description">Bar path, horizontal and vertical</string>
-    <string name="report_compare_best">Compare with best</string>
     <string name="report_quality_summary_warnings">%1$d to review</string>
     <string name="report_estimated_badge">Estimate</string>
     <string name="report_quality_meter_track">Tracking confidence</string>
@@ -187,8 +183,6 @@
     <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
 
     <string name="report_save_overlay">Save video</string>
-    <string name="report_overlay_preview_button">Preview overlay video</string>
-    <string name="report_overlay_close">Close</string>
     <string name="report_action_stages">Stages</string>
     <string name="report_action_details">Details</string>
     <string name="report_rep_index">Rep %1$d / %2$d</string>

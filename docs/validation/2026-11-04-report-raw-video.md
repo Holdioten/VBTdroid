@@ -1,5 +1,7 @@
 # 验证报告：报告页改播原始视频 + 卡片补齐 + 播放图标
 
+> **已被取代**：同日 `2026-11-04-report-overlay-only.md` 按用户决定反转了本方案——报告改回只播叠加视频、删除 Compose 数据卡。本文仅作为 `e045ef7` 的历史记录。
+
 - 日期：2026-11-04
 - 范围：`ui/report/*`（`ReportScreen` / `ImmersiveReport` / 新增 `OverlayPreviewDialog`）与 `values*/strings.xml`。
 - 未包含：core、叠加编码器（`overlay/*` 由另一代理在改，本次未触碰）。

@@ -3,57 +3,26 @@ package com.vbtdroid.app.ui.report
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.clip
-import androidx.compose.material3.Text
-import com.vbtdroid.app.ui.components.ChipTone
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -61,24 +30,22 @@ import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
-import com.vbtdroid.app.ui.components.BannerTone
-import com.vbtdroid.app.ui.components.MessageBanner
-import com.vbtdroid.app.ui.components.PrimaryActionBar
-import com.vbtdroid.app.ui.components.SectionCard
-import com.vbtdroid.app.ui.components.SectionLabel
+import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.StatusChip
-import com.vbtdroid.app.ui.components.reveal
 import com.vbtdroid.app.ui.theme.Bg
-import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.VbtSpacing
-import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.phases.RepTimeline
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Video-first report. The burned-in overlay MP4 is the only content: Compose draws no data cards
+ * over it, so the cards appear exactly once, in the style the overlay burns.
+ */
 @Composable
 fun ReportScreen(
     result: AnalysisResult,
@@ -95,18 +62,16 @@ fun ReportScreen(
     val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
     val exportScope = rememberCoroutineScope()
-    // The report plays the original source video; the analysis service's cached overlay MP4 is
-    // only previewed and saved, never shown behind the Compose cards.
     val playback = remember(result) { OverlayPlayback() }
     val overlayFile = remember(current.overlayVideoPath) { overlayVideoFile(current.overlayVideoPath) }
-    val sourceUri = remember(current.videoUri) { current.videoUri.takeIf { it.isNotBlank() }?.let { Uri.parse(it) } }
-    val mainVideo = sourceUri?.takeUnless { playback.failed }
-    var previewOpen by rememberSaveable(result) { mutableStateOf(false) }
+    // null while the overlay is missing or unreadable: the report falls back to the first frame.
+    val overlayVideo = overlayFile?.takeUnless { playback.failed }
+    val overlayUri = remember(overlayVideo) { overlayVideo?.let { Uri.fromFile(it) } }
     var saving by remember(result) { mutableStateOf(false) }
 
     // UI-only state (spec §4.1).
-    var selectedPosition by rememberSaveable(result) { mutableStateOf(0) }
-    var compareWithBest by rememberSaveable(result) { mutableStateOf(false) }
+    var stageSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
+    var detailSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(current, persistPending) {
@@ -167,209 +132,65 @@ fun ReportScreen(
     }
 
     val reps = current.reps
-    val position = selectedPosition.coerceIn(0, (reps.size - 1).coerceAtLeast(0))
-    val selectedRep = reps.getOrNull(position)
-    val selectedSlice = selectedRep?.let { rep ->
-        current.repSlices.firstOrNull { it.index == rep.repIndex } ?: current.repSlices.getOrNull(position)
-    }
-    val bestRep = reps.filter { it.mcvMps != null }.maxByOrNull { it.mcvMps ?: Double.NEGATIVE_INFINITY }
-    val bestSlice = bestRep?.let { best -> current.repSlices.firstOrNull { it.index == best.repIndex } }
-    val subtitle = buildSubtitle(current.loadKg, current.lift, current.variant)
-    val configuration = LocalConfiguration.current
-    val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    var stageSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
-    var detailSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
-
-    // Playback drives the rep: the card set switches only when the playhead crosses into another
-    // rep, so a manual pick while paused is not overwritten (time does not change while paused).
-    val playbackSec: Double? = if (mainVideo != null && playback.durationMs > 0f) {
+    val playbackSec: Double? = if (overlayVideo != null && playback.durationMs > 0f) {
         playback.positionMs / 1000.0
     } else {
         null
     }
-    // Cursor for the time-series charts: only while the playhead is inside the selected rep.
-    val cursorInRep = playbackSec?.takeIf { t ->
-        selectedSlice?.let { t >= it.startSec && t <= it.endSec } == true
-    }
-    val timeRep = playbackSec?.let { RepTimeline.currentRepAt(current.repSlices, it) }
-    LaunchedEffect(timeRep?.index) {
-        val target = timeRep ?: return@LaunchedEffect
-        val position = reps.indexOfFirst { it.repIndex == target.index }
-        if (position >= 0) selectedPosition = position
-    }
-    // Manual selection (bars, stepper) jumps the video to the rep's start.
-    fun selectRep(position: Int) {
-        selectedPosition = position
-        reps.getOrNull(position)?.let { rep ->
-            current.repSlices.firstOrNull { it.index == rep.repIndex }?.let { slice ->
-                playback.seekTo((slice.startSec * 1000).toInt())
-            }
-        }
-    }
+    // Stage sheet edits the rep under the playhead; with no card selection it falls back to the first.
+    val editedSlice = playbackSec
+        ?.let { RepTimeline.currentRepAt(current.repSlices, it) }
+        ?: current.repSlices.firstOrNull()
 
-    val identity = subtitle
-    // Compact HUD: "第 i/n · stage" while the playhead is inside the selected rep.
-    val stageType = selectedSlice?.let { slice ->
-        val inRep = playbackSec?.takeIf { it >= slice.startSec && it <= slice.endSec }
-        inRep?.let { RepTimeline.phaseAt(slice, minOf(it, slice.endSec - 1e-6))?.type }
-    }
-    val repLabel = when {
-        reps.isEmpty() -> stringResource(R.string.report_value_missing)
-        stageType != null -> stringResource(
-            R.string.report_hud_stage,
-            position + 1,
-            reps.size,
-            stringResource(phaseLabelRes(current.lift, stageType)),
-        )
-        else -> stringResource(R.string.report_rep_index, position + 1, reps.size)
-    }
-    val header: @Composable (Modifier) -> Unit = { modifier ->
+    val identity = buildSubtitle(current.loadKg, current.lift, current.variant)
+    val header: @Composable (Modifier) -> Unit = {
         ReportHeader(
             identity = identity,
-            repLabel = repLabel,
-            canPrev = position > 0,
-            canNext = position < reps.size - 1,
-            onPrev = { selectRep(position - 1) },
-            onNext = { selectRep(position + 1) },
             onBack = onBack,
             onHistory = onShowHistory,
             status = {
                 when {
                     persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
-                    overlayFile == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
+                    overlayVideo == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
                     else -> Unit
                 }
             },
         )
     }
-    // One scrollable column: MCV, velocity, bar path, pose and per-rep average speed. No pager, so
-    // the trail and average-speed cards are always in the column instead of hidden on page two.
-    val cards: @Composable (Modifier) -> Unit = { cardModifier ->
-        if (reps.isEmpty()) {
-            GlassCard(modifier = cardModifier) {
-                Text(stringResource(R.string.report_no_data), style = MaterialTheme.typography.bodyMedium)
-            }
-        } else {
-            MainMcvCard(
-                modifier = cardModifier,
-                repMcv = selectedRep?.mcvMps,
-                setMeanMcv = current.summary.mcvAvgMps,
-                bestMcv = current.summary.bestMcvMps,
-                velocityLossPct = current.summary.velocityLossPct,
-                repCount = current.summary.repCount,
-            )
-            selectedSlice?.let { slice ->
-                VelocityCard(
-                    cardModifier,
-                    current.motionSamples,
-                    slice,
-                    selectedRep?.mcvMps,
-                    cursorSec = cursorInRep,
-                )
-                BarPathCard(
-                    modifier = cardModifier,
-                    samples = current.motionSamples,
-                    slice = slice,
-                    bestSlice = bestSlice,
-                    compare = compareWithBest,
-                    onCompare = { compareWithBest = it },
-                    // In the gap after a rep, trailRepAt still returns it: the full trail stays
-                    // until the next rep starts, then the chart draws the new rep from its start.
-                    trailUpToSec = playbackSec?.takeIf {
-                        RepTimeline.trailRepAt(current.repSlices, it)?.index == slice.index
-                    },
-                )
-            }
-            PoseCard(
-                modifier = cardModifier,
-                lift = current.lift,
-                slice = selectedSlice,
-                frames = selectedRep?.let { current.frameAnglesByRep[it.repIndex].orEmpty() }.orEmpty(),
-                analyzePose = current.analyzePose,
-                cursorSec = cursorInRep,
-            )
-            RepBarsCard(
-                modifier = cardModifier,
-                reps = reps,
-                position = position,
-                onSelect = ::selectRep,
-            )
-        }
-    }
-    val actions: @Composable (Modifier) -> Unit = { modifier ->
+    val actions: @Composable (Modifier) -> Unit = { actionModifier ->
         ReportActions(
             onStages = { stageSheetOpen = true },
             onDetails = { detailSheetOpen = true },
-            onPreview = { previewOpen = true },
-            previewEnabled = overlayFile != null,
             onSave = { saveLauncher.launch("vbtdroid-overlay.mp4") },
             saveEnabled = overlayFile != null && !saving,
-            modifier = modifier,
+            modifier = actionModifier,
         )
     }
-    val backgroundLayer: @Composable (Modifier) -> Unit = { modifier ->
-        val uri = mainVideo
+    val backgroundLayer: @Composable (Modifier) -> Unit = { videoModifier ->
+        val uri = overlayUri
         if (uri != null) {
-            CoverVideo(uri = uri, playback = playback, modifier = modifier)
+            FitVideo(uri = uri, playback = playback, modifier = videoModifier)
         } else {
             ReportPreview(
                 videoUri = current.videoUri,
-                modifier = modifier,
+                modifier = videoModifier,
                 fill = true,
             )
         }
     }
 
     Box(modifier.fillMaxSize().background(Bg)) {
-        if (!landscape) {
-            // Portrait: video is the full-bleed background; cards float on the left.
-            backgroundLayer(Modifier.fillMaxSize())
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                header(Modifier)
-                Row(
-                    Modifier.weight(1f).fillMaxWidth().padding(start = VbtSpacing.m, end = VbtSpacing.m, top = VbtSpacing.s),
-                ) {
-                    Column(
-                        Modifier
-                            .weight(0.36f)
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
-                    ) {
-                        cards(Modifier.fillMaxWidth())
-                    }
-                    Spacer(Modifier.weight(0.64f))
-                }
-                if (mainVideo != null) {
-                    PlaybackBar(
-                        playback = playback,
-                        modifier = Modifier.padding(horizontal = VbtSpacing.m),
-                    )
-                }
-                actions(Modifier.padding(VbtSpacing.m))
+        backgroundLayer(Modifier.fillMaxSize())
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            header(Modifier)
+            Spacer(Modifier.weight(1f))
+            if (overlayUri != null) {
+                PlaybackBar(
+                    playback = playback,
+                    modifier = Modifier.padding(horizontal = VbtSpacing.m),
+                )
             }
-        } else {
-            // Landscape: full-width video on top, cards in a horizontal strip below. No overlap.
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                header(Modifier)
-                Box(Modifier.weight(0.5f).fillMaxWidth()) {
-                    backgroundLayer(Modifier.fillMaxSize())
-                }
-                if (mainVideo != null) {
-                    PlaybackBar(playback = playback, modifier = Modifier.padding(horizontal = VbtSpacing.m))
-                }
-                Row(
-                    Modifier
-                        .weight(0.5f)
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(VbtSpacing.m),
-                    horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
-                ) {
-                    cards(Modifier.width(240.dp))
-                }
-                actions(Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs))
-            }
+            actions(Modifier.padding(VbtSpacing.m))
         }
         SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter))
     }
@@ -377,7 +198,7 @@ fun ReportScreen(
     if (stageSheetOpen) {
         StageSheet(
             onDismiss = { stageSheetOpen = false },
-            slice = selectedSlice,
+            slice = editedSlice,
             lift = current.lift,
             editing = editingPhases,
             onToggleEditing = { editingPhases = !editingPhases },
@@ -393,17 +214,6 @@ fun ReportScreen(
             quality = current.quality,
             fps = current.fps,
             reps = reps,
-        )
-    }
-    // Overlay preview: the burned-in MP4, only on request; the report keeps the raw source video.
-    val previewFile = overlayFile?.takeIf { previewOpen }
-    if (previewFile != null) {
-        LaunchedEffect(previewFile) {
-            if (playback.playing) playback.togglePlay()
-        }
-        OverlayPreviewDialog(
-            file = previewFile,
-            onDismiss = { previewOpen = false },
         )
     }
 }

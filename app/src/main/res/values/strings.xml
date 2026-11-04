@@ -145,12 +145,8 @@
     <string name="report_mini_best_mcv">最佳 MCV</string>
     <string name="report_mini_vl">速度损失 VL</string>
     <string name="report_per_rep_mcv">逐次平均速度</string>
-    <string name="report_rep_bar_description">第 %1$d 次平均速度 %2$s 米每秒</string>
     <string name="report_angle_value">%1$.1f°</string>
     <string name="report_peak_velocity_label">峰值 %1$s m/s</string>
-    <string name="report_velocity_chart_description">杠铃垂直速度曲线</string>
-    <string name="report_bar_path_chart_description">杠铃水平与垂直轨迹</string>
-    <string name="report_compare_best">对比最佳次</string>
     <string name="report_quality_summary_warnings">%1$d 条需注意</string>
     <string name="report_estimated_badge">估算</string>
     <string name="report_quality_meter_track">跟踪置信度</string>
@@ -190,8 +186,6 @@
     <string name="import_back_to_roi">返回框选</string>
 
     <string name="report_save_overlay">保存视频</string>
-    <string name="report_overlay_preview_button">预览叠加视频</string>
-    <string name="report_overlay_close">关闭</string>
     <string name="report_action_stages">阶段</string>
     <string name="report_action_details">详情</string>
     <string name="report_rep_index">第 %1$d / %2$d 次</string>
