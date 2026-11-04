@@ -1,5 +1,6 @@
 package com.vbtdroid.app.ui.report
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -8,8 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -96,10 +95,13 @@ fun ReportScreen(
     val latestPersist by rememberUpdatedState(onPersist)
     val context = LocalContext.current
     val exportScope = rememberCoroutineScope()
-    // The analysis service renders the overlay MP4 into cache; the report only plays or copies it.
+    // The report plays the original source video; the analysis service's cached overlay MP4 is
+    // only previewed and saved, never shown behind the Compose cards.
     val playback = remember(result) { OverlayPlayback() }
     val overlayFile = remember(current.overlayVideoPath) { overlayVideoFile(current.overlayVideoPath) }
-    val videoFile = overlayFile?.takeUnless { playback.failed }
+    val sourceUri = remember(current.videoUri) { current.videoUri.takeIf { it.isNotBlank() }?.let { Uri.parse(it) } }
+    val mainVideo = sourceUri?.takeUnless { playback.failed }
+    var previewOpen by rememberSaveable(result) { mutableStateOf(false) }
     var saving by remember(result) { mutableStateOf(false) }
 
     // UI-only state (spec §4.1).
@@ -130,7 +132,7 @@ fun ReportScreen(
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4"),
     ) { uri ->
-        val source = videoFile
+        val source = overlayFile
         if (uri != null && source != null) {
             saving = true
             exportScope.launch {
@@ -180,7 +182,7 @@ fun ReportScreen(
 
     // Playback drives the rep: the card set switches only when the playhead crosses into another
     // rep, so a manual pick while paused is not overwritten (time does not change while paused).
-    val playbackSec: Double? = if (videoFile != null && playback.durationMs > 0f) {
+    val playbackSec: Double? = if (mainVideo != null && playback.durationMs > 0f) {
         playback.positionMs / 1000.0
     } else {
         null
@@ -234,15 +236,15 @@ fun ReportScreen(
             status = {
                 when {
                     persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
-                    videoFile == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
+                    overlayFile == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
                     else -> Unit
                 }
             },
         )
     }
-    // Two card pages so the column fits the screen without clipping: page A = numbers and pose,
-    // page B = trail and per-rep bars. Landscape shows both pages in one horizontal strip.
-    val pageA: @Composable (Modifier) -> Unit = { cardModifier ->
+    // One scrollable column: MCV, velocity, bar path, pose and per-rep average speed. No pager, so
+    // the trail and average-speed cards are always in the column instead of hidden on page two.
+    val cards: @Composable (Modifier) -> Unit = { cardModifier ->
         if (reps.isEmpty()) {
             GlassCard(modifier = cardModifier) {
                 Text(stringResource(R.string.report_no_data), style = MaterialTheme.typography.bodyMedium)
@@ -264,20 +266,6 @@ fun ReportScreen(
                     selectedRep?.mcvMps,
                     cursorSec = cursorInRep,
                 )
-            }
-            PoseCard(
-                modifier = cardModifier,
-                lift = current.lift,
-                slice = selectedSlice,
-                frames = selectedRep?.let { current.frameAnglesByRep[it.repIndex].orEmpty() }.orEmpty(),
-                analyzePose = current.analyzePose,
-                cursorSec = cursorInRep,
-            )
-        }
-    }
-    val pageB: @Composable (Modifier) -> Unit = { cardModifier ->
-        if (reps.isNotEmpty()) {
-            selectedSlice?.let { slice ->
                 BarPathCard(
                     modifier = cardModifier,
                     samples = current.motionSamples,
@@ -292,6 +280,14 @@ fun ReportScreen(
                     },
                 )
             }
+            PoseCard(
+                modifier = cardModifier,
+                lift = current.lift,
+                slice = selectedSlice,
+                frames = selectedRep?.let { current.frameAnglesByRep[it.repIndex].orEmpty() }.orEmpty(),
+                analyzePose = current.analyzePose,
+                cursorSec = cursorInRep,
+            )
             RepBarsCard(
                 modifier = cardModifier,
                 reps = reps,
@@ -300,19 +296,21 @@ fun ReportScreen(
             )
         }
     }
-    val cardPages = rememberPagerState(pageCount = { 2 })
     val actions: @Composable (Modifier) -> Unit = { modifier ->
         ReportActions(
             onStages = { stageSheetOpen = true },
             onDetails = { detailSheetOpen = true },
+            onPreview = { previewOpen = true },
+            previewEnabled = overlayFile != null,
             onSave = { saveLauncher.launch("vbtdroid-overlay.mp4") },
-            saveEnabled = videoFile != null && !saving,
+            saveEnabled = overlayFile != null && !saving,
             modifier = modifier,
         )
     }
     val backgroundLayer: @Composable (Modifier) -> Unit = { modifier ->
-        if (videoFile != null) {
-            CoverVideo(file = videoFile, playback = playback, modifier = modifier)
+        val uri = mainVideo
+        if (uri != null) {
+            CoverVideo(uri = uri, playback = playback, modifier = modifier)
         } else {
             ReportPreview(
                 videoUri = current.videoUri,
@@ -331,24 +329,18 @@ fun ReportScreen(
                 Row(
                     Modifier.weight(1f).fillMaxWidth().padding(start = VbtSpacing.m, end = VbtSpacing.m, top = VbtSpacing.s),
                 ) {
-                    Column(Modifier.weight(0.36f).fillMaxHeight()) {
-                        HorizontalPager(
-                            state = cardPages,
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            verticalAlignment = Alignment.Top,
-                        ) { page ->
-                            Column(
-                                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
-                            ) {
-                                if (page == 0) pageA(Modifier.fillMaxWidth()) else pageB(Modifier.fillMaxWidth())
-                            }
-                        }
-                        PageDots(current = cardPages.currentPage, count = 2)
+                    Column(
+                        Modifier
+                            .weight(0.36f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(VbtSpacing.s),
+                    ) {
+                        cards(Modifier.fillMaxWidth())
                     }
                     Spacer(Modifier.weight(0.64f))
                 }
-                if (videoFile != null) {
+                if (mainVideo != null) {
                     PlaybackBar(
                         playback = playback,
                         modifier = Modifier.padding(horizontal = VbtSpacing.m),
@@ -363,7 +355,7 @@ fun ReportScreen(
                 Box(Modifier.weight(0.5f).fillMaxWidth()) {
                     backgroundLayer(Modifier.fillMaxSize())
                 }
-                if (videoFile != null) {
+                if (mainVideo != null) {
                     PlaybackBar(playback = playback, modifier = Modifier.padding(horizontal = VbtSpacing.m))
                 }
                 Row(
@@ -374,8 +366,7 @@ fun ReportScreen(
                         .padding(VbtSpacing.m),
                     horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
                 ) {
-                    pageA(Modifier.width(240.dp))
-                    pageB(Modifier.width(240.dp))
+                    cards(Modifier.width(240.dp))
                 }
                 actions(Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.xs))
             }
@@ -402,6 +393,17 @@ fun ReportScreen(
             quality = current.quality,
             fps = current.fps,
             reps = reps,
+        )
+    }
+    // Overlay preview: the burned-in MP4, only on request; the report keeps the raw source video.
+    val previewFile = overlayFile?.takeIf { previewOpen }
+    if (previewFile != null) {
+        LaunchedEffect(previewFile) {
+            if (playback.playing) playback.togglePlay()
+        }
+        OverlayPreviewDialog(
+            file = previewFile,
+            onDismiss = { previewOpen = false },
         )
     }
 }

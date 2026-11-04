@@ -6,12 +6,12 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.VideoView
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,11 +22,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -46,14 +48,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -77,19 +76,19 @@ import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.QualityFlags
 import com.vbtdroid.core.metrics.LvpEstimate
 import kotlinx.coroutines.delay
-import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** Card scrim: #0A0E11 at 82%, so burned-in video text does not show through the cards. */
-private val GlassColor = Bg.copy(alpha = 0.82f)
+internal val GlassColor = Bg.copy(alpha = 0.82f)
 
 /**
- * Full-bleed overlay video. Scales to cover the parent (cropping) so portrait and landscape both
- * fill the hero area without distortion; the view is measured to the video's own aspect ratio.
+ * Full-bleed video (source video in the report, cached overlay MP4 in the preview dialog). Scales
+ * to cover the parent (cropping) so portrait and landscape both fill the hero area without
+ * distortion; the view is measured to the video's own aspect ratio.
  */
 @Composable
-internal fun CoverVideo(file: File, playback: OverlayPlayback, modifier: Modifier = Modifier) {
+internal fun CoverVideo(uri: Uri, playback: OverlayPlayback, modifier: Modifier = Modifier) {
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -107,12 +106,12 @@ internal fun CoverVideo(file: File, playback: OverlayPlayback, modifier: Modifie
                     view.start()
                     playback.playing = true
                 }
-                view.setVideoURI(Uri.fromFile(file))
+                view.setVideoURI(uri)
                 playback.view = view
             }
         },
     )
-    DisposableEffect(file) {
+    DisposableEffect(uri) {
         onDispose { playback.release() }
     }
 }
@@ -156,7 +155,7 @@ private class CoverFrame(context: Context) : FrameLayout(context) {
     }
 }
 
-/** Play/pause and seek for the background overlay video. */
+/** Play/pause and seek for the background video. State is driven by icons, never by text. */
 @Composable
 internal fun PlaybackBar(playback: OverlayPlayback, modifier: Modifier = Modifier) {
     LaunchedEffect(playback) {
@@ -172,28 +171,63 @@ internal fun PlaybackBar(playback: OverlayPlayback, modifier: Modifier = Modifie
         }
     }
     val duration = playback.durationMs
+    // Label describes the action the control performs, so it matches the glyph shown.
+    val actionLabel = stringResource(
+        if (playback.playing) R.string.report_overlay_pause else R.string.report_overlay_play,
+    )
     Row(
         modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s),
     ) {
         Surface(
-            shape = ShapePill,
+            shape = CircleShape,
             color = GlassColor,
-            modifier = Modifier.clickable { playback.togglePlay() },
+            modifier = Modifier.size(MinTouchTarget).clickable { playback.togglePlay() },
         ) {
-            Text(
-                stringResource(if (playback.playing) R.string.report_overlay_pause else R.string.report_overlay_play),
-                modifier = Modifier.padding(horizontal = VbtSpacing.m, vertical = VbtSpacing.s),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (playback.playing) {
+                    PauseGlyph(Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+                } else {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = actionLabel,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+            }
         }
         Slider(
             value = if (duration > 0f) playback.positionMs / duration else 0f,
             onValueChange = { fraction -> playback.seekTo((fraction * duration).toInt()) },
             enabled = duration > 0f,
             modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Pause glyph drawn as two rounded bars: the material core icon set ships no pause vector. */
+@Composable
+private fun PauseGlyph(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurface) {
+    Canvas(modifier) {
+        val barWidth = size.width * 0.13f
+        val barHeight = size.height * 0.52f
+        val top = (size.height - barHeight) / 2f
+        val gap = size.width * 0.1f
+        val center = size.width / 2f
+        val radius = CornerRadius(barWidth / 2f)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(center - gap / 2f - barWidth, top),
+            size = Size(barWidth, barHeight),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(center + gap / 2f, top),
+            size = Size(barWidth, barHeight),
+            cornerRadius = radius,
         )
     }
 }
@@ -373,7 +407,8 @@ internal fun VelocityCard(
 
 /**
  * 姿态分析 card: joint angles at the current playback frame (nearest pose frame, low confidence shown
- * as “—”). Headline joint curve over the rep with the playback cursor. Off-state is stated, not hidden.
+ * as “—”). Values only, no curve: the numbers themselves follow the playhead. Off-state is stated,
+ * not hidden.
  */
 @Composable
 internal fun PoseCard(
@@ -392,15 +427,6 @@ internal fun PoseCard(
                 color = VbtTheme.colors.onSurfaceVariant,
             )
             return@GlassCard
-        }
-        if (slice != null) {
-            JointAngleChart(
-                frames = frames,
-                joint = PoseReadout.headlineJoint(lift),
-                rep = slice,
-                cursorSec = cursorSec,
-                height = 36.dp,
-            )
         }
         val current = PoseReadout.frameAt(frames, cursorSec ?: slice?.startSec)
         PoseReadout.joints(lift).chunked(2).forEach { pair ->
@@ -424,39 +450,6 @@ internal fun PoseCard(
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-/** Joint angle over the rep for one joint; low-confidence frames are dropped. Cursor marks playback. */
-@Composable
-internal fun JointAngleChart(
-    frames: List<FrameAngles>,
-    joint: PoseJoint,
-    rep: RepSlice,
-    cursorSec: Double?,
-    height: Dp,
-) {
-    val series = frames.filter { it.tSec >= rep.startSec && it.tSec <= rep.endSec }
-        .mapNotNull { frame -> PoseReadout.display(frame, joint)?.let { frame.tSec to it } }
-    val lineColor = VbtTheme.colors.skeleton
-    val cursorColor = MaterialTheme.colorScheme.primary
-    Canvas(Modifier.fillMaxWidth().height(height)) {
-        if (series.size < 2) return@Canvas
-        val minV = series.minOf { it.second } - 2.0
-        val maxV = series.maxOf { it.second } + 2.0
-        val span = (maxV - minV).takeIf { it > 1e-6 } ?: 1.0
-        val path = Path()
-        series.forEachIndexed { index, (t, v) ->
-            val x = timeToX(t, rep.startSec, rep.endSec, size.width) ?: return@forEachIndexed
-            val y = 4f + (size.height - 8f) * (1f - ((v - minV) / span).toFloat())
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(path, lineColor.copy(alpha = 0.9f), style = Stroke(width = 1.5.dp.toPx()))
-        cursorSec?.let { t ->
-            timeToX(t, rep.startSec, rep.endSec, size.width)?.let { x ->
-                drawLine(cursorColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.5.dp.toPx())
             }
         }
     }
@@ -509,11 +502,13 @@ internal fun RepBarsCard(
     }
 }
 
-/** Bottom action strip: stage correction, details, save the cached overlay video. */
+/** Bottom action strip: stage correction, details, overlay preview, save the cached overlay video. */
 @Composable
 internal fun ReportActions(
     onStages: () -> Unit,
     onDetails: () -> Unit,
+    onPreview: () -> Unit,
+    previewEnabled: Boolean,
     onSave: () -> Unit,
     saveEnabled: Boolean,
     modifier: Modifier = Modifier,
@@ -524,20 +519,47 @@ internal fun ReportActions(
         color = GlassColor,
     ) {
         Row(Modifier.padding(VbtSpacing.s), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
-            OutlinedButton(onClick = onStages, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
-                Text(stringResource(R.string.report_action_stages), maxLines = 1)
-            }
-            OutlinedButton(onClick = onDetails, modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget)) {
-                Text(stringResource(R.string.report_action_details), maxLines = 1)
-            }
-            OutlinedButton(
+            ActionButton(onClick = onStages, label = stringResource(R.string.report_action_stages), modifier = Modifier.weight(1f))
+            ActionButton(onClick = onDetails, label = stringResource(R.string.report_action_details), modifier = Modifier.weight(1f))
+            ActionButton(
+                onClick = onPreview,
+                enabled = previewEnabled,
+                label = stringResource(R.string.report_overlay_preview_button),
+                modifier = Modifier.weight(1.4f),
+            )
+            ActionButton(
                 onClick = onSave,
                 enabled = saveEnabled,
-                modifier = Modifier.weight(1.3f).heightIn(min = MinTouchTarget),
-            ) {
-                Text(stringResource(R.string.report_save_overlay), maxLines = 1)
-            }
+                label = stringResource(R.string.report_save_overlay),
+                modifier = Modifier.weight(1.1f),
+            )
         }
+    }
+}
+
+/**
+ * Compact text button for the action strip. Narrow padding plus a smaller label keeps four actions
+ * on one line; the longest label (“预览叠加视频”) gets the widest share.
+ */
+@Composable
+private fun ActionButton(
+    onClick: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = MinTouchTarget),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -622,25 +644,3 @@ internal fun DetailSheet(
     }
 }
 
-/** Page indicator for the card pages: filled dot = current page. */
-@Composable
-internal fun PageDots(current: Int, count: Int, modifier: Modifier = Modifier) {
-    Row(
-        modifier.fillMaxWidth().padding(top = VbtSpacing.xs),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(count) { index ->
-            Box(
-                Modifier
-                    .padding(horizontal = 3.dp)
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (index == current) MaterialTheme.colorScheme.primary
-                        else VbtTheme.colors.onSurfaceVariant.copy(alpha = 0.4f),
-                    ),
-            )
-        }
-    }
-}

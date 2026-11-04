@@ -190,6 +190,8 @@
     <string name="import_back_to_roi">返回框选</string>
 
     <string name="report_save_overlay">保存视频</string>
+    <string name="report_overlay_preview_button">预览叠加视频</string>
+    <string name="report_overlay_close">关闭</string>
     <string name="report_action_stages">阶段</string>
     <string name="report_action_details">详情</string>
     <string name="report_rep_index">第 %1$d / %2$d 次</string>
