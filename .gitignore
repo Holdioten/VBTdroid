@@ -50,3 +50,6 @@ docs/validation/private/
 
 # example
 example/
+
+# JVM crash dumps
+*.hprof
