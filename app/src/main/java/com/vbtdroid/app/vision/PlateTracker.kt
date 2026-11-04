@@ -51,26 +51,59 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
 
     override fun close() = reset()
 
+    /**
+     * 在用户 ROI 内优先用霍夫圆初始化。
+     *
+     * 期望半径取 ROI 短边的一半；圆检测对孔洞、反光和多边形轮廓不敏感，避免椭圆拟合锁到
+     * 内毂（尺寸不对）。霍夫失败时才退回轮廓椭圆拟合。
+     */
     open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
         val gray = toGray(bitmap)
         try {
-            val fitted = findEllipse(gray, roi, null, null, null)
-                ?: throw IllegalArgumentException("Could not fit a plate ellipse inside the selected ROI")
+            val expectedRadius = min(roi.width(), roi.height()) / 2f
+            val roiCenterX = (roi.left + roi.right) / 2f
+            val roiCenterY = (roi.top + roi.bottom) / 2f
+            val circle = findCircle(gray, roi, expectedRadius, roiCenterX, roiCenterY)
+            val fitted = if (circle == null) findEllipse(gray, roi, null, null, null) else null
             velocityX = 0f
             velocityY = 0f
-            axisReference = PlateAxisReference(fitted.majorAxis)
-            commitSuccessfulFrame(gray, fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec)
-            return observation(tSec, fitted)
+            return when {
+                circle != null -> {
+                    axisReference = PlateAxisReference(circle.radiusPx * 2f)
+                    commitSuccessfulFrame(gray, circle.centerX, circle.centerY, tSec)
+                    PlateObservation(
+                        tSec = tSec,
+                        xPx = circle.centerX.toDouble(),
+                        yPx = circle.centerY.toDouble(),
+                        majorAxisPx = (circle.radiusPx * 2f).toDouble(),
+                        confidence = circle.confidence.toDouble(),
+                    )
+                }
+                fitted != null -> {
+                    axisReference = PlateAxisReference(fitted.majorAxis)
+                    commitSuccessfulFrame(
+                        gray,
+                        fitted.ellipse.center.x.toFloat(),
+                        fitted.ellipse.center.y.toFloat(),
+                        tSec,
+                    )
+                    observation(tSec, fitted)
+                }
+                else -> throw IllegalArgumentException(
+                    "Could not locate a plate circle or ellipse inside the selected ROI",
+                )
+            }
         } finally {
             gray.release()
         }
     }
 
     /**
-     * 使用 PyrLK 光流预测中心，再在局部搜索区（整块杠铃片 + 余量）内先做霍夫圆定位，
-     * 用圆心作为椭圆拟合的种子；椭圆失败时退回霍夫圆结果。
+     * 使用 PyrLK 光流/速度预测中心，再在局部搜索区（整块杠铃片 + 余量）内做主信号：
+     * 霍夫圆。圆检测对部分遮挡、反光和模糊更稳，接受后直接用圆心与固定参考直径；
+     * 霍夫失败才退回轮廓椭圆，再失败才调用检测器恢复。
      */
     open fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
         ensureOpenCv()
@@ -85,18 +118,42 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val predictedY = opticalPrediction?.y?.toFloat() ?: velocityPredictionY
 
             // Full plate diameter plus margin; a radius below the diameter only exposes an arc.
-            val radius = PlateRoi.localSearchRadiusPx(reference.majorAxisPx)
-            val circle = findHoughCircle(
+            val searchRadius = PlateRoi.localSearchRadiusPx(reference.majorAxisPx)
+            if (searchRadius <= 0f) {
+                successfulPair.failed()
+                return null
+            }
+            val circle = findCircle(
                 currentGray,
-                RectF(predictedX - radius, predictedY - radius, predictedX + radius, predictedY + radius),
-                reference.majorAxisPx,
+                RectF(
+                    predictedX - searchRadius,
+                    predictedY - searchRadius,
+                    predictedX + searchRadius,
+                    predictedY + searchRadius,
+                ),
+                reference.majorAxisPx / 2f,
                 predictedX,
                 predictedY,
-                dt,
             )
-            val seedX = circle?.centerX ?: predictedX
-            val seedY = circle?.centerY ?: predictedY
-            val roi = RectF(seedX - radius, seedY - radius, seedX + radius, seedY + radius)
+            if (circle != null) {
+                updatePosition(circle.centerX, circle.centerY, tSec, currentGray)
+                return PlateObservation(
+                    tSec = tSec,
+                    xPx = circle.centerX.toDouble(),
+                    yPx = circle.centerY.toDouble(),
+                    majorAxisPx = reference.majorAxisPx.toDouble(),
+                    confidence = circle.confidence.toDouble(),
+                )
+            }
+
+            // Fallback: contour ellipse fit inside the same local window. It needs a clean
+            // contour, so it is no longer the primary signal for controlled side views.
+            val roi = RectF(
+                predictedX - searchRadius,
+                predictedY - searchRadius,
+                predictedX + searchRadius,
+                predictedY + searchRadius,
+            )
             val fitted = findEllipse(currentGray, roi, reference.majorAxisPx, predictedX, predictedY)
                 ?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
                 ?.takeIf { fit ->
@@ -112,19 +169,6 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             if (fitted != null) {
                 updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec, currentGray)
                 return observation(tSec, fitted)
-            }
-
-            // Ellipse fit needs a clean contour; the Hough circle still localizes a partially
-            // occluded or blurred plate. Reference axis is required before this path runs.
-            if (circle != null) {
-                updatePosition(circle.centerX, circle.centerY, tSec, currentGray)
-                return PlateObservation(
-                    tSec = tSec,
-                    xPx = circle.centerX.toDouble(),
-                    yPx = circle.centerY.toDouble(),
-                    majorAxisPx = reference.majorAxisPx.toDouble(),
-                    confidence = circle.confidence.toDouble(),
-                )
             }
 
             // 检测器只在跟踪丢失时调用，用于恢复而非逐帧主信号。
@@ -232,27 +276,23 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     }
 
     /**
-     * 在局部 ROI 内检测圆，作为椭圆拟合的种子和失败回退。
-     *
-     * 半径相对于参考直径（直径/2）做 ±15% 校验，超出即视为别的圆（内毂、旁边的片）；圆心离
-     * 预测点过远也拒绝，避免整帧跳到另一个物体。
+     * 在局部 ROI 内检测圆。候选按参考半径 ±15% 过滤，再选离预测中心最近的一个；
+     * 该半径门拒绝内毂和相邻杠铃片。ROI 本身已经围绕预测点，因此不再叠加逐帧跳变门。
      */
-    private fun findHoughCircle(
+    private fun findCircle(
         gray: Mat,
         requestedRoi: RectF,
-        expectedAxisPx: Float,
+        expectedRadius: Float,
         predictedX: Float,
         predictedY: Float,
-        dtSec: Float,
     ): HoughCircle? {
+        if (!expectedRadius.isFinite() || expectedRadius <= 1f) return null
         val left = requestedRoi.left.toInt().coerceIn(0, gray.cols() - 1)
         val top = requestedRoi.top.toInt().coerceIn(0, gray.rows() - 1)
         val right = requestedRoi.right.toInt().coerceIn(left + 1, gray.cols())
         val bottom = requestedRoi.bottom.toInt().coerceIn(top + 1, gray.rows())
         if (right - left < 5 || bottom - top < 5) return null
 
-        val expectedRadius = expectedAxisPx / 2f
-        if (!expectedRadius.isFinite() || expectedRadius <= 1f) return null
         val minRadius = (expectedRadius * HOUGH_MIN_RADIUS_FACTOR).toInt().coerceAtLeast(1)
         val maxRadius = (expectedRadius * HOUGH_MAX_RADIUS_FACTOR).toInt().coerceAtLeast(minRadius + 1)
 
@@ -272,34 +312,35 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 minRadius,
                 maxRadius,
             )
-            var best: HoughCircle? = null
+            val candidates = ArrayList<CircleCandidate>(circles.cols())
             for (index in 0 until circles.cols()) {
                 val values = circles.get(0, index) ?: continue
                 if (values.size < 3) continue
-                val centerX = (values[0] + left).toFloat()
-                val centerY = (values[1] + top).toFloat()
-                val radiusPx = values[2].toFloat()
-                if (!centerX.isFinite() || !centerY.isFinite() || !radiusPx.isFinite()) continue
-                if (radiusPx <= 0f) continue
-                // Reject a circle whose radius moved too far from the reference plate.
-                val radiusDeviation = abs(radiusPx - expectedRadius) / expectedRadius
-                if (radiusDeviation > HOUGH_MAX_RADIUS_DEVIATION) continue
-                val dx = centerX - predictedX
-                val dy = centerY - predictedY
-                val distance = sqrt(dx * dx + dy * dy)
-                val maxJump = PlateRoi.maxInnovationPx(expectedAxisPx, dtSec.toDouble())
-                if (maxJump <= 0f || distance > maxJump) continue
-                val radiusScore = (1f - radiusDeviation / HOUGH_MAX_RADIUS_DEVIATION).coerceIn(0f, 1f)
-                val distanceScore = (1f - distance / maxJump).coerceIn(0f, 1f)
-                val confidence = (0.5f + 0.5f * radiusScore) * (0.5f + 0.5f * distanceScore)
-                val candidate = HoughCircle(centerX, centerY, radiusPx, confidence, distance)
-                if (best == null || candidate.confidence > best.confidence ||
-                    (candidate.confidence == best.confidence && distance < best.distance)
-                ) {
-                    best = candidate
-                }
+                candidates += CircleCandidate(
+                    centerX = (values[0] + left).toFloat(),
+                    centerY = (values[1] + top).toFloat(),
+                    radiusPx = values[2].toFloat(),
+                )
             }
-            return best
+            val maxDistance = min(requestedRoi.width(), requestedRoi.height()) / 2f
+            val accepted = PlateRoi.selectCircle(
+                candidates = candidates,
+                expectedRadiusPx = expectedRadius,
+                predictedX = predictedX,
+                predictedY = predictedY,
+                maxDistancePx = maxDistance,
+                radiusTolerance = HOUGH_MAX_RADIUS_DEVIATION,
+            ) ?: return null
+
+            val deviation = abs(accepted.radiusPx - expectedRadius) / expectedRadius
+            val dx = accepted.centerX - predictedX
+            val dy = accepted.centerY - predictedY
+            val distance = sqrt(dx * dx + dy * dy)
+            val radiusScore = (1f - deviation / HOUGH_MAX_RADIUS_DEVIATION).coerceIn(0f, 1f)
+            val distanceScore = (1f - distance / maxDistance).coerceIn(0f, 1f)
+            val confidence = (HOUGH_ACCEPT_CONFIDENCE + HOUGH_ACCEPT_BONUS * radiusScore * distanceScore)
+                .coerceIn(HOUGH_ACCEPT_CONFIDENCE, 0.95f)
+            return HoughCircle(accepted.centerX, accepted.centerY, accepted.radiusPx, confidence, distance)
         } catch (_: RuntimeException) {
             return null
         } finally {
@@ -415,7 +456,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val MAX_AXIS_DEVIATION = 0.15f
         const val MIN_TRACK_CONFIDENCE = 0.25f
 
-        // Hough circle fallback tuned on the 720x1280 side-view PC videos (plate r ~130 px).
+        // Hough circle tuned on the 720x1280 controlled side-view PC videos (plate r ~147 px).
         const val HOUGH_DP = 1.2
         const val HOUGH_MIN_DIST_FACTOR = 0.5
         const val HOUGH_PARAM1 = 120.0
@@ -423,5 +464,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val HOUGH_MIN_RADIUS_FACTOR = 0.85f
         const val HOUGH_MAX_RADIUS_FACTOR = 1.15f
         const val HOUGH_MAX_RADIUS_DEVIATION = 0.15f
+
+        // An accepted Hough circle is the primary signal; keep it above the 0.6 quality warning
+        // threshold so a clean plate is not flagged LOW_CALIBRATION/LOW_TRACK_CONFIDENCE.
+        const val HOUGH_ACCEPT_CONFIDENCE = 0.75f
+        const val HOUGH_ACCEPT_BONUS = 0.15f
     }
 }

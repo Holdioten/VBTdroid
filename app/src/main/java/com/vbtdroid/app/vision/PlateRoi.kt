@@ -1,6 +1,14 @@
 package com.vbtdroid.app.vision
 
 import kotlin.math.abs
+import kotlin.math.sqrt
+
+/** Detected circle in image coordinates (public so the radius gate is unit-testable). */
+data class CircleCandidate(
+    val centerX: Float,
+    val centerY: Float,
+    val radiusPx: Float,
+)
 
 object PlateRoi {
     /**
@@ -40,6 +48,46 @@ object PlateRoi {
 
     fun selectLargest(detections: List<PlateDetection>): PlateDetection? =
         detections.maxByOrNull { it.widthPx.coerceAtLeast(0f) * it.heightPx.coerceAtLeast(0f) }
+
+    /**
+     * Picks the Hough circle that best matches the reference plate.
+     *
+     * Candidates farther than [radiusTolerance] (relative radius) from [expectedRadiusPx] are
+     * rejected: the inner hub and neighbouring plates have a different radius. Among the rest,
+     * the closest to the predicted center wins, with radius closeness as a tie-breaker.
+     */
+    fun selectCircle(
+        candidates: List<CircleCandidate>,
+        expectedRadiusPx: Float,
+        predictedX: Float,
+        predictedY: Float,
+        maxDistancePx: Float,
+        radiusTolerance: Float = 0.15f,
+    ): CircleCandidate? {
+        if (!expectedRadiusPx.isFinite() || expectedRadiusPx <= 0f) return null
+        if (!predictedX.isFinite() || !predictedY.isFinite()) return null
+        if (!maxDistancePx.isFinite() || maxDistancePx <= 0f) return null
+        if (!radiusTolerance.isFinite() || radiusTolerance <= 0f) return null
+        var best: CircleCandidate? = null
+        var bestScore = -1f
+        for (candidate in candidates) {
+            if (!candidate.centerX.isFinite() || !candidate.centerY.isFinite()) continue
+            if (!candidate.radiusPx.isFinite() || candidate.radiusPx <= 0f) continue
+            val deviation = abs(candidate.radiusPx - expectedRadiusPx) / expectedRadiusPx
+            if (deviation > radiusTolerance) continue
+            val dx = candidate.centerX - predictedX
+            val dy = candidate.centerY - predictedY
+            val distance = sqrt(dx * dx + dy * dy)
+            if (distance > maxDistancePx) continue
+            val score = 0.5f * (1f - deviation / radiusTolerance) +
+                0.5f * (1f - distance / maxDistancePx)
+            if (score > bestScore) {
+                bestScore = score
+                best = candidate
+            }
+        }
+        return best
+    }
 
     fun isValidMajorAxis(
         majorAxisPx: Float,

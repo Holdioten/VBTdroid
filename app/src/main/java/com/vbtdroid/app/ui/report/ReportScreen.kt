@@ -252,12 +252,11 @@ fun ReportScreen(
     var stageSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
     var detailSheetOpen by rememberSaveable(result) { mutableStateOf(false) }
 
-    // Overlay video is generated in the background as soon as the report opens; the first-frame
-    // fallback shows until it is ready. Cache is removed when the report leaves composition.
-    LaunchedEffect(result) {
-        if (current.observations.isNotEmpty() && current.videoUri.isNotBlank()) {
-            overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current)
-        }
+    // No overlay render on open: the first frame plus the static cards are enough. The MP4 is
+    // generated lazily only when the user taps preview/export in the sheet.
+    fun startOverlayPreview() {
+        if (current.observations.isEmpty() || current.videoUri.isBlank()) return
+        overlayPreview.start(context, android.net.Uri.parse(current.videoUri), current)
     }
     val overlayFile = overlayPreview.file
     // Playback drives the rep: the card set switches only when the playhead crosses into another
@@ -467,7 +466,10 @@ fun ReportScreen(
             onExportCsv = { csvLauncher.launch("vbtdroid-set.csv") },
             onExportOverlay = { overlayLauncher.launch("vbtdroid-overlay.mp4") },
             onSaveOverlay = { previewSaveLauncher.launch("vbtdroid-overlay.mp4") },
+            onPreviewOverlay = ::startOverlayPreview,
             overlayReady = overlayFile != null,
+            overlayPreviewBusy = overlayPreview.busy,
+            overlayPreviewProgress = overlayPreview.progress,
             overlayExporting = overlayExporting,
             overlayProgress = overlayProgress,
             exportSucceeded = exportSucceeded,

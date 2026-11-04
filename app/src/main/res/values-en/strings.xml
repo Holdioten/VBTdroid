@@ -201,6 +201,7 @@
     <string name="analysis_service_unavailable">Analysis service not connected; try again shortly</string>
 
     <string name="report_save_overlay">Save overlay video</string>
+    <string name="report_preview_overlay">Preview overlay video</string>
     <string name="report_action_stages">Stages</string>
     <string name="report_action_details">Details</string>
     <string name="report_rep_index">Rep %1$d / %2$d</string>

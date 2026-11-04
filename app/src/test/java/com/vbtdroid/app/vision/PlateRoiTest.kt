@@ -21,6 +21,69 @@ class PlateRoiTest {
     }
 
     @Test
+    fun `circle selection rejects inner hub and picks nearest predicted center`() {
+        val plate = CircleCandidate(centerX = 314f, centerY = 640f, radiusPx = 147f)
+        val hub = CircleCandidate(centerX = 320f, centerY = 640f, radiusPx = 60f)
+        val neighbour = CircleCandidate(centerX = 500f, centerY = 640f, radiusPx = 147f)
+
+        val selected = PlateRoi.selectCircle(
+            candidates = listOf(hub, neighbour, plate),
+            expectedRadiusPx = 147f,
+            predictedX = 310f,
+            predictedY = 645f,
+            maxDistancePx = 200f,
+        )
+
+        assertEquals(plate, selected)
+    }
+
+    @Test
+    fun `circle selection rejects radius deviation beyond fifteen percent`() {
+        // 170 px is 15.6% larger than 147 px: a different plate, not the tracked one.
+        val oversized = CircleCandidate(centerX = 314f, centerY = 640f, radiusPx = 170f)
+
+        assertTrue(
+            PlateRoi.selectCircle(
+                candidates = listOf(oversized),
+                expectedRadiusPx = 147f,
+                predictedX = 314f,
+                predictedY = 640f,
+                maxDistancePx = 200f,
+            ) == null,
+        )
+    }
+
+    @Test
+    fun `circle selection rejects candidates outside the local search window`() {
+        val far = CircleCandidate(centerX = 600f, centerY = 640f, radiusPx = 147f)
+
+        assertTrue(
+            PlateRoi.selectCircle(
+                candidates = listOf(far),
+                expectedRadiusPx = 147f,
+                predictedX = 314f,
+                predictedY = 640f,
+                maxDistancePx = 100f,
+            ) == null,
+        )
+    }
+
+    @Test
+    fun `circle selection ignores invalid inputs`() {
+        val circle = CircleCandidate(314f, 640f, 147f)
+
+        assertTrue(
+            PlateRoi.selectCircle(listOf(circle), 0f, 314f, 640f, 200f) == null,
+        )
+        assertTrue(
+            PlateRoi.selectCircle(listOf(CircleCandidate(Float.NaN, 640f, 147f)), 147f, 314f, 640f, 200f) == null,
+        )
+        assertTrue(
+            PlateRoi.selectCircle(listOf(CircleCandidate(314f, 640f, Float.NaN)), 147f, 314f, 640f, 200f) == null,
+        )
+    }
+
+    @Test
     fun `accepted observations never move the initialization diameter reference`() {
         val reference = PlateAxisReference(180f)
 

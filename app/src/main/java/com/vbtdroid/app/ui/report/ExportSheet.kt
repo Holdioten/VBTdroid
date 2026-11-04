@@ -35,7 +35,10 @@ fun ExportSheet(
     onExportCsv: () -> Unit,
     onExportOverlay: () -> Unit,
     onSaveOverlay: () -> Unit,
+    onPreviewOverlay: () -> Unit,
     overlayReady: Boolean,
+    overlayPreviewBusy: Boolean,
+    overlayPreviewProgress: Float,
     overlayExporting: Boolean,
     overlayProgress: Float,
     exportSucceeded: Boolean?,
@@ -64,22 +67,20 @@ fun ExportSheet(
                 onClick = onExportCsv,
             )
             ExportRow(
+                title = stringResource(R.string.report_preview_overlay),
+                enabled = !overlayPreviewBusy && !overlayExporting,
+                onClick = onPreviewOverlay,
+            )
+            if (overlayPreviewBusy) {
+                ProgressLine(overlayPreviewProgress)
+            }
+            ExportRow(
                 title = stringResource(R.string.report_save_overlay),
                 enabled = overlayReady && !overlayExporting,
                 onClick = onSaveOverlay,
             )
             if (overlayExporting) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.s), verticalArrangement = Arrangement.spacedBy(VbtSpacing.xs)) {
-                    Text(
-                        stringResource(R.string.report_export_overlay_progress, (overlayProgress * 100f).roundToInt()),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    LinearProgressIndicator(
-                        progress = { overlayProgress },
-                        modifier = Modifier.fillMaxWidth().height(4.dp),
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    )
-                }
+                ProgressLine(overlayProgress)
             } else {
                 ExportRow(
                     title = stringResource(R.string.report_export_overlay_video),
@@ -122,6 +123,24 @@ private fun ExportRow(title: String, enabled: Boolean, onClick: () -> Unit) {
             .heightIn(min = MinTouchTarget)
             .clickable(enabled = enabled, onClick = onClick),
     )
+}
+
+@Composable
+private fun ProgressLine(progress: Float) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = VbtSpacing.l, vertical = VbtSpacing.s),
+        verticalArrangement = Arrangement.spacedBy(VbtSpacing.xs),
+    ) {
+        Text(
+            stringResource(R.string.report_export_overlay_progress, (progress * 100f).roundToInt()),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        )
+    }
 }
 
 @Composable
