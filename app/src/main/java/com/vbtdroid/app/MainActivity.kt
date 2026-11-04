@@ -10,8 +10,11 @@ import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -82,12 +85,64 @@ private fun AnalysisApp(session: AnalysisSession) {
     var history by remember { mutableStateOf<List<SetEntity>>(emptyList()) }
     var historyDetail by remember { mutableStateOf<HistoryDetail?>(null) }
     val serviceUnavailable = stringResource(R.string.analysis_service_unavailable)
-    val analysisAlreadyRunning = stringResource(R.string.analysis_already_running)
+
+    fun callbacksFor(): AnalysisForegroundService.Callbacks =
+        object : AnalysisForegroundService.Callbacks {
+            override fun onProgress(value: Float) {
+                if (analyzing) progress = value
+            }
+
+            override fun onResult(value: AnalysisResult) {
+                // Keep the service-owned copy: this composition may already be detached (the
+                // Activity can be destroyed while backgrounded), and only onResume/onServiceConnected
+                // can decide whether the result still needs showing. syncWithService() consumes it.
+                analyzing = false
+                progress = 1f
+                analysisError = null
+                publishResult(value)
+                screen = AppScreen.REPORT
+            }
+
+            override fun onError(message: String) {
+                // Same reasoning as onResult: the stored error is consumed by syncWithService().
+                analyzing = false
+                analysisError = message
+            }
+        }
+
+    /** Adopts the service-owned state after connecting or returning to the foreground. */
+    fun syncWithService(binder: AnalysisForegroundService.AnalysisBinder) {
+        val state = binder.state()
+        if (state.running) {
+            // Never start a second analysis: show the running one and follow it again.
+            analyzing = true
+            progress = state.progress
+            analysisError = null
+            binder.attach(callbacksFor())
+            screen = AppScreen.IMPORT
+            return
+        }
+        analyzing = false
+        val completed = binder.consumeResult()
+        if (completed != null) {
+            progress = 1f
+            analysisError = null
+            // A live composition may already show this report; only navigate for a new result.
+            if (resultState !== completed) {
+                publishResult(completed)
+                screen = AppScreen.REPORT
+            }
+            return
+        }
+        binder.consumeError()?.let { analysisError = it }
+    }
 
     val connection = remember(context) {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                serviceBinder = binder as AnalysisForegroundService.AnalysisBinder
+                val analysisBinder = binder as AnalysisForegroundService.AnalysisBinder
+                serviceBinder = analysisBinder
+                syncWithService(analysisBinder)
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -111,6 +166,18 @@ private fun AnalysisApp(session: AnalysisSession) {
         }
     }
 
+    // Returning from background does not recreate the composition, so re-read the service state.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, connection) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                serviceBinder?.let { syncWithService(it) }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     fun openHistory() {
         scope.launch {
             history = repository.history()
@@ -125,6 +192,9 @@ private fun AnalysisApp(session: AnalysisSession) {
     }
 
     fun backFromReport() {
+        // The report was explicitly dismissed; drop the service copy so returning to the app
+        // cannot reopen it.
+        serviceBinder?.consumeResult()
         publishResult(null)
         analysisError = null
         progress = 0f
@@ -173,26 +243,11 @@ private fun AnalysisApp(session: AnalysisSession) {
                     context.startForegroundService(Intent(context, AnalysisForegroundService::class.java))
                     val startResult = binder.analyze(
                         request = request,
-                        callbacks = object : AnalysisForegroundService.Callbacks {
-                            override fun onProgress(value: Float) {
-                                if (analyzing) progress = value
-                            }
-
-                            override fun onResult(value: AnalysisResult) {
-                                analyzing = false
-                                publishResult(value)
-                                screen = AppScreen.REPORT
-                            }
-
-                            override fun onError(message: String) {
-                                analyzing = false
-                                analysisError = message
-                            }
-                        },
+                        callbacks = callbacksFor(),
                     )
                     if (startResult == AnalysisStartResult.ALREADY_RUNNING) {
-                        analyzing = false
-                        analysisError = analysisAlreadyRunning
+                        // A run survived while this Activity was away: adopt it, do not restart.
+                        syncWithService(binder)
                     }
                 }
             },

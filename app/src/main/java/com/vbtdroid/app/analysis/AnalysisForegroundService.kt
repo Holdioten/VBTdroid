@@ -52,6 +52,14 @@ class AnalysisForegroundService : Service() {
         fun analyze(request: AnalysisRequest, callbacks: Callbacks): AnalysisStartResult =
             startAnalysis(request, callbacks)
 
+        /** Replaces the delivery target without disturbing a run already in flight. */
+        fun attach(callbacks: Callbacks) {
+            this@AnalysisForegroundService.callbacks = callbacks
+        }
+
+        fun state(): AnalysisState = stateHolder.snapshot()
+        fun consumeResult(): AnalysisResult? = stateHolder.consumeResult()
+        fun consumeError(): String? = stateHolder.consumeError()
         fun cancel() = cancelAnalysis()
         fun isRunning(): Boolean = runGate.isRunning()
         fun suggestRoi(bitmap: Bitmap): RectF? = PlateTracker(plateDetector).use { it.initialRoi(bitmap) }
@@ -61,6 +69,11 @@ class AnalysisForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val runGate = AnalysisRunGate()
+    private val stateHolder = AnalysisStateHolder()
+
+    /** Latest callbacks from whichever Activity/Compose tree is currently attached. */
+    @Volatile
+    private var callbacks: Callbacks? = null
 
     private val decoder by lazy { VideoDecoder(applicationContext) }
     private val databaseDelegate = lazy { AppDatabase.build(applicationContext) }
@@ -89,26 +102,33 @@ class AnalysisForegroundService : Service() {
     }
 
     private fun startAnalysis(request: AnalysisRequest, callbacks: Callbacks): AnalysisStartResult {
+        // A reconnecting Activity gets the current state even when a run is already active; it
+        // must never start a duplicate analysis.
+        this.callbacks = callbacks
         lateinit var job: Job
         val started = runGate.tryStart {
+            stateHolder.start()
             serviceScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     val analyzed = pipeline.analyze(request) { progress ->
-                        mainHandler.post {
-                            callbacks.onProgress(AnalysisOverlayJob.analysisProgress(progress))
-                        }
+                        deliverProgress(AnalysisOverlayJob.analysisProgress(progress))
                     }
                     // One background job owns both passes: analysis 0..0.75, overlay 0.75..1.0.
-                    mainHandler.post { callbacks.onProgress(AnalysisOverlayJob.ANALYSIS_SHARE) }
-                    val withOverlay = attachOverlay(request, analyzed, callbacks)
+                    deliverProgress(AnalysisOverlayJob.ANALYSIS_SHARE)
+                    val withOverlay = attachOverlay(request, analyzed)
                     val saved = repository.saveAnalysis(withOverlay, request)
-                    mainHandler.post { callbacks.onProgress(1f) }
-                    withContext(Dispatchers.Main.immediate) { callbacks.onResult(saved) }
+                    deliverProgress(1f)
+                    withContext(Dispatchers.Main.immediate) {
+                        stateHolder.succeed(saved)
+                        callbacksForDelivery()?.onResult(saved)
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
+                    val message = error.message ?: error::class.java.simpleName
                     withContext(Dispatchers.Main.immediate) {
-                        callbacks.onError(error.message ?: error::class.java.simpleName)
+                        stateHolder.fail(message)
+                        callbacksForDelivery()?.onError(message)
                     }
                 } finally {
                     runGate.clear(job)
@@ -125,6 +145,16 @@ class AnalysisForegroundService : Service() {
         return AnalysisStartResult.STARTED
     }
 
+    /** Posts progress to the main thread and records it for later reattachment. */
+    private fun deliverProgress(value: Float) {
+        mainHandler.post {
+            stateHolder.updateProgress(value)
+            callbacksForDelivery()?.onProgress(value)
+        }
+    }
+
+    private fun callbacksForDelivery(): Callbacks? = callbacks
+
     /**
      * Renders the overlay MP4 into app cache and returns the result carrying its path. A failed or
      * cancelled export never fails the analysis: the failure is turned into a quality warning and
@@ -133,7 +163,6 @@ class AnalysisForegroundService : Service() {
     private suspend fun attachOverlay(
         request: AnalysisRequest,
         analyzed: AnalysisResult,
-        callbacks: Callbacks,
     ): AnalysisResult {
         val output = File(cacheDir, AnalysisOverlayJob.overlayFileName(analyzed.createdAtEpochMs))
         try {
@@ -143,9 +172,7 @@ class AnalysisForegroundService : Service() {
                 outputFile = output,
                 result = analyzed,
             ) { progress ->
-                mainHandler.post {
-                    callbacks.onProgress(AnalysisOverlayJob.overlayProgress(progress))
-                }
+                deliverProgress(AnalysisOverlayJob.overlayProgress(progress))
             }
             return analyzed.copy(overlayVideoPath = output.absolutePath)
         } catch (cancelled: CancellationException) {
@@ -179,10 +206,13 @@ class AnalysisForegroundService : Service() {
     }
 
     private fun cancelAnalysis() {
+        stateHolder.cancel()
         runGate.cancel()
     }
 
     override fun onDestroy() {
+        // Do not reset the holder here: destruction after a finished run must not wipe a result
+        // that no Activity has consumed yet. User cancellation calls cancelAnalysis().
         runGate.cancel()
         serviceScope.cancel()
         if (pipelineDelegate.isInitialized()) plateTracker.close()
