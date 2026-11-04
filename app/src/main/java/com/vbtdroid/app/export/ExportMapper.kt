@@ -65,13 +65,14 @@ object ExportMapper {
                     calibrationConfidence = result.quality.calibrationConfidence,
                 )
             },
-            quality = mapOf(
-                "track_confidence" to result.quality.trackConfidence,
-                "occlusion_pct" to result.quality.occlusionPct,
-                "rep_confidence" to result.quality.repConfidence,
-                "calibration_confidence" to result.quality.calibrationConfidence,
-                "effective_fps" to result.fps,
-            ),
+            quality = buildMap {
+                put("track_confidence", result.quality.trackConfidence)
+                put("occlusion_pct", result.quality.occlusionPct)
+                put("rep_confidence", result.quality.repConfidence)
+                put("calibration_confidence", result.quality.calibrationConfidence)
+                put("effective_fps", result.fps)
+                result.trackLostFromSec?.let { put("track_lost_from_sec", it) }
+            },
             summary = SummaryExport(
                 repCount = result.summary.repCount,
                 mcvAvgMps = result.summary.mcvAvgMps,

@@ -23,6 +23,8 @@ import com.vbtdroid.core.phases.PhaseSegmenter
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.Quality
 import com.vbtdroid.core.quality.QualityFlags
+import com.vbtdroid.core.signal.TrackBreakReason
+import com.vbtdroid.core.signal.TrackContinuity
 import com.vbtdroid.core.signal.TrackSmoother
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
@@ -75,6 +77,8 @@ data class AnalysisResult(
     val filterConfig: FilterConfigExport? = null,
     val repWarnings: Map<Int, List<String>> = emptyMap(),
     val lvp: LvpEstimate? = null,
+    /** Last timestamp with a trustworthy plate track, when tracking broke before the clip ended. */
+    val trackLostFromSec: Double? = null,
     val createdAtEpochMs: Long = System.currentTimeMillis(),
     val savedSetId: String? = null,
     /**
@@ -186,6 +190,10 @@ class AnalysisPipeline(
         // The videos are purpose-shot with one unobstructed plate, so the whole track can be
         // cleaned offline: radius/innovation gates remove wrong-object frames, then a zero-phase
         // Savitzky-Golay pass smooths the bar path before any metric is derived.
+        // The calibration is fixed from the first frames, so a later plate-scale jump (camera
+        // moved closer/farther or zoomed) must not be merged into the same track. Report where
+        // the track stops instead of silently dropping or invalidating the reps before it.
+        val trackBreak = TrackContinuity.detect(observations, durationSec = lastFrameSec)
         val cleanedObservations = TrackSmoother.smooth(observations)
         val calibration = Calibration.fromPlate(
             plateDiameterM = request.plateDiameterM,
@@ -206,6 +214,11 @@ class AnalysisPipeline(
         val reps = computation.reps
         val validSlices = computation.validSlices
         val extraWarnings = (computation.warnings + segmentation.warnings).toMutableList()
+        when (trackBreak?.reason) {
+            TrackBreakReason.SCALE_CHANGE -> extraWarnings += CAMERA_MOVED
+            TrackBreakReason.TRACK_ENDED -> extraWarnings += TRACK_LOST
+            null -> Unit
+        }
 
         val poseConfidence = frameAngles.map { it.confidence }.average().takeIf { it.isFinite() } ?: 0.0
         if (request.analyzePose) {
@@ -322,6 +335,8 @@ class AnalysisPipeline(
         const val POSE_UNAVAILABLE = "POSE_UNAVAILABLE"
         const val POSE_PARTIAL = "POSE_PARTIAL"
         const val POSE_LOW_CONFIDENCE = "POSE_LOW_CONFIDENCE"
+        const val CAMERA_MOVED = "CAMERA_MOVED"
+        const val TRACK_LOST = "TRACK_LOST"
         const val ANGLES_UNAVAILABLE_OCCLUSION = "ANGLES_UNAVAILABLE_OCCLUSION"
     }
 }

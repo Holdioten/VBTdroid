@@ -197,4 +197,8 @@
     <string name="report_pose_off">Off</string>
 
     <string name="analysis_already_running">An analysis is already running. Wait or cancel it first.</string>
+    <string name="report_track_camera_moved">Camera moved after %1$.1f s</string>
+    <string name="report_track_lost">Tracking lost after %1$.1f s</string>
+    <string name="quality_camera_moved">Camera moved; later reps were not counted</string>
+    <string name="quality_track_lost">Tracking lost; later reps were not counted</string>
 </resources>

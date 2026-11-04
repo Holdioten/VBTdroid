@@ -70,6 +70,16 @@ class TrackSmootherTest {
     }
 
     @Test
+    fun `camera scale change drops later frames but keeps early reps`() {
+        val samples = track(40, axisAt = { index -> if (index < 8) 260.0 else 312.0 })
+
+        val smoothed = TrackSmoother.smooth(samples)
+
+        assertEquals(8, smoothed.size)
+        assertTrue(smoothed.all { it.majorAxisPx == 260.0 })
+    }
+
+    @Test
     fun `short tracks pass through unchanged`() {
         val short = track(2).toMutableList().also {
             it[1] = it[1].copy(yPx = it[1].yPx + 300.0)

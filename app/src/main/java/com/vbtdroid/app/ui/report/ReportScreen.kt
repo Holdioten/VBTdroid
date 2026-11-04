@@ -143,6 +143,7 @@ fun ReportScreen(
         ?: current.repSlices.firstOrNull()
 
     val identity = buildSubtitle(current.loadKg, current.lift, current.variant)
+    val trackLostFromSec = current.trackLostFromSec
     val header: @Composable (Modifier) -> Unit = {
         ReportHeader(
             identity = identity,
@@ -152,6 +153,17 @@ fun ReportScreen(
                 when {
                     persistFailed -> StatusChip(text = stringResource(R.string.report_save_failed), tone = ChipTone.ERROR)
                     overlayVideo == null -> StatusChip(text = stringResource(R.string.report_overlay_unavailable))
+                    trackLostFromSec != null -> StatusChip(
+                        text = stringResource(
+                            if ("CAMERA_MOVED" in current.quality.warnings) {
+                                R.string.report_track_camera_moved
+                            } else {
+                                R.string.report_track_lost
+                            },
+                            trackLostFromSec,
+                        ),
+                        tone = ChipTone.WARNING,
+                    )
                     else -> Unit
                 }
             },

@@ -200,4 +200,8 @@
     <string name="report_pose_off">已关闭</string>
 
     <string name="analysis_already_running">已有分析正在进行，请等待完成或取消后再试</string>
+    <string name="report_track_camera_moved">%1$.1f 秒后机位移动</string>
+    <string name="report_track_lost">%1$.1f 秒后跟踪中断</string>
+    <string name="quality_camera_moved">机位移动，后续次数未计入</string>
+    <string name="quality_track_lost">跟踪中断，后续次数未计入</string>
 </resources>

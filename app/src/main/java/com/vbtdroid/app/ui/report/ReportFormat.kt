@@ -32,6 +32,8 @@ internal fun qualityWarningText(warning: String): String = stringResource(
         warning == "INCOMPLETE_REP_NO_LOCKOUT" -> R.string.quality_incomplete_rep
         warning == "INCOMPLETE_REP" -> R.string.quality_incomplete_rep
         warning == "NO_LOCKOUT" -> R.string.quality_no_lockout
+        warning == "CAMERA_MOVED" -> R.string.quality_camera_moved
+        warning == "TRACK_LOST" -> R.string.quality_track_lost
         warning == "POSE_LOW_CONFIDENCE" -> R.string.quality_pose_low_confidence
         warning == "ACCELERATION_UNAVAILABLE" -> R.string.quality_acceleration_unavailable
         warning.contains("NON_MONOTONIC_CONCENTRIC") -> R.string.quality_non_monotonic

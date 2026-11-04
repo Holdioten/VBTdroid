@@ -46,7 +46,10 @@ object TrackSmoother {
             .sortedBy { it.tSec }
         if (ordered.size < 3) return ordered
 
-        val referenceAxis = median(ordered.map { it.majorAxisPx }.filter { it > 0.0 })
+        // Calibration is fixed from the first frames, so the radius gate must use that same
+        // early reference. A whole-track median would let a later camera move dominate and
+        // discard the good early reps instead of the invalid later ones.
+        val referenceAxis = TrackContinuity.referenceAxisPx(ordered)
         if (!referenceAxis.isFinite() || referenceAxis <= 0.0) return ordered
 
         val radiusGated = ordered.filter { observation ->
