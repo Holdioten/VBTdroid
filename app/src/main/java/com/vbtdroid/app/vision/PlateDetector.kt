@@ -10,6 +10,7 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import kotlin.math.roundToInt
 
 data class PlateDetection(
     val cxPx: Float,
@@ -136,9 +137,52 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
         }
     }
 
+    /**
+     * Runs the detector on the full frame plus top/bottom crops.
+     *
+     * Plates near the top of a tall portrait frame occupy few pixels after the square model
+     * resize, which pushed their scores below the threshold (squat filming angle). Crops restore
+     * the apparent plate size. Every detection is mapped back to original coordinates, merged and
+     * de-duplicated with NMS. Only used for ROI init/recovery, so three inferences per call is
+     * acceptable.
+     */
     @Synchronized
     override fun detect(bitmap: Bitmap): List<PlateDetection> {
         if (bitmap.width <= 0 || bitmap.height <= 0) return emptyList()
+        val cropHeight = (bitmap.height * CROP_HEIGHT_FRACTION).roundToInt()
+            .coerceIn(1, bitmap.height)
+        val bottomTop = bitmap.height - cropHeight
+        val regions = buildList {
+            add(EfficientDetPostprocess.CropRegion(0, 0, bitmap.width, bitmap.height))
+            add(EfficientDetPostprocess.CropRegion(0, 0, bitmap.width, cropHeight))
+            if (bottomTop > 0) {
+                add(EfficientDetPostprocess.CropRegion(0, bottomTop, bitmap.width, cropHeight))
+            }
+        }
+        val detections = ArrayList<PlateDetection>()
+        for (region in regions) {
+            val crop = if (region.left == 0 && region.top == 0 &&
+                region.width == bitmap.width && region.height == bitmap.height
+            ) {
+                bitmap
+            } else {
+                Bitmap.createBitmap(bitmap, region.left, region.top, region.width, region.height)
+            }
+            try {
+                detections += EfficientDetPostprocess.mapCropDetections(
+                    detections = detectSingle(crop),
+                    cropWidth = crop.width,
+                    cropHeight = crop.height,
+                    region = region,
+                )
+            } finally {
+                if (crop !== bitmap) crop.recycle()
+            }
+        }
+        return EfficientDetPostprocess.mergeDetections(detections)
+    }
+
+    private fun detectSingle(bitmap: Bitmap): List<PlateDetection> {
         val resized = Bitmap.createScaledBitmap(bitmap, inputWidth, inputHeight, true)
         val bytesPerChannel = if (inputType == DataType.FLOAT32) 4 else 1
         val input = ByteBuffer.allocateDirect(inputWidth * inputHeight * 3 * bytesPerChannel)
@@ -211,6 +255,9 @@ class TflitePlateDetector(context: Context) : PlateDetector, AutoCloseable {
     }
 
     private companion object {
+        /** Top/bottom crop height as a fraction of the full frame. */
+        const val CROP_HEIGHT_FRACTION = 0.6f
+
         fun FloatArray.toDirectBuffer(): ByteBuffer =
             ByteBuffer.allocateDirect(size * Float.SIZE_BYTES).order(ByteOrder.nativeOrder())
 

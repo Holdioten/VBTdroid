@@ -25,6 +25,20 @@ object EfficientDetPostprocess {
         val xmax: Float,
     )
 
+    /** A sub-region of the original bitmap, in native pixel coordinates. */
+    data class CropRegion(
+        val left: Int,
+        val top: Int,
+        val width: Int,
+        val height: Int,
+    ) {
+        init {
+            require(left >= 0 && top >= 0 && width > 0 && height > 0) {
+                "Invalid crop region: left=$left top=$top width=$width height=$height"
+            }
+        }
+    }
+
     /**
      * Filters model outputs down to scored, class-0, positive boxes.
      *
@@ -102,6 +116,50 @@ object EfficientDetPostprocess {
         }
         return nonMaximumSuppression(mapped, iouThreshold)
     }
+
+    /**
+     * Maps detections expressed in a crop's pixel space back to the original bitmap.
+     *
+     * [cropWidth]/[cropHeight] are the coordinate space the detections refer to (the bitmap that
+     * was fed to the model), while [region] is where that crop sits in the original bitmap. This
+     * covers both a native-resolution crop (scale 1) and a resized crop (scale > 1).
+     */
+    fun mapCropDetections(
+        detections: List<PlateDetection>,
+        cropWidth: Int,
+        cropHeight: Int,
+        region: CropRegion,
+    ): List<PlateDetection> {
+        if (cropWidth <= 0 || cropHeight <= 0) return emptyList()
+        val scaleX = region.width.toFloat() / cropWidth
+        val scaleY = region.height.toFloat() / cropHeight
+        return detections.mapNotNull { detection ->
+            val width = detection.widthPx * scaleX
+            val height = detection.heightPx * scaleY
+            if (!width.isFinite() || !height.isFinite() || width <= 0f || height <= 0f) {
+                return@mapNotNull null
+            }
+            PlateDetection(
+                cxPx = detection.cxPx * scaleX + region.left,
+                cyPx = detection.cyPx * scaleY + region.top,
+                widthPx = width,
+                heightPx = height,
+                confidence = detection.confidence,
+            )
+        }
+    }
+
+    /**
+     * Flattens detections from several crops and drops cross-crop duplicates with NMS.
+     * The result is sorted by descending confidence (see [nonMaximumSuppression]).
+     */
+    fun mergeDetections(
+        detections: List<PlateDetection>,
+        iouThreshold: Float = NMS_IOU_THRESHOLD,
+    ): List<PlateDetection> = nonMaximumSuppression(
+        detections.filter { it.confidence.isFinite() && it.widthPx > 0f && it.heightPx > 0f },
+        iouThreshold,
+    )
 
     /**
      * Heuristic used to tell the class-id tensor apart from the score tensor when tensor names do
