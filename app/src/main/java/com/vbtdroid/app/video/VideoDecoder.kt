@@ -151,7 +151,18 @@ open class VideoDecoder(context: Context) {
             } else {
                 source
             }
-            if (rotation == 0) return scaled
+            // Some devices already return a display-rotated frame from getFrameAtTime(). Rotating
+            // again turns a portrait clip into a landscape preview, so skip when it is upright.
+            val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull()
+            val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull()
+            val alreadyUpright = (rotation == 90 || rotation == 270) && (
+                source.width < source.height ||
+                    (rawWidth != null && rawHeight != null &&
+                        source.width == rawHeight && source.height == rawWidth)
+                )
+            if (rotation == 0 || alreadyUpright) return scaled
             val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
             return Bitmap.createBitmap(scaled, 0, 0, scaled.width, scaled.height, matrix, true).also {
                 if (it !== scaled) scaled.recycle()
