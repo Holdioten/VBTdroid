@@ -26,6 +26,9 @@ import kotlin.math.max
  */
 object TrackSmoother {
     const val MAX_RADIUS_DEVIATION = 0.15
+
+    /** A bar never travels more than half a plate diameter sideways. */
+    const val MAX_LATERAL_DIAMETERS = 0.5
     const val MAX_INNOVATION_DIAMETERS = 0.5
     const val MAX_SPEED_DIAMETERS_PER_SEC = 8.0
     const val HAMPEL_WINDOW = 5
@@ -57,7 +60,18 @@ object TrackSmoother {
         }
         if (radiusGated.size < 3) return ordered
 
-        val innovationGated = innovationGate(radiusGated, referenceAxis)
+        // Lateral identity gate: the far plate / another round object sits farther than half a
+        // diameter from the plate the set started on, so those frames are not the same object.
+        val xReference = median(ordered.take(TrackContinuity.REFERENCE_SAMPLES).map { it.xPx })
+        val lateralGated = if (xReference.isFinite()) {
+            val maxLateral = referenceAxis * MAX_LATERAL_DIAMETERS
+            radiusGated.filter { abs(it.xPx - xReference) <= maxLateral }
+        } else {
+            radiusGated
+        }
+        if (lateralGated.size < 3) return ordered
+
+        val innovationGated = innovationGate(lateralGated, referenceAxis)
         if (innovationGated.size < 3) return ordered
 
         val cleaned = hampel(innovationGated)

@@ -5,6 +5,7 @@ import android.graphics.RectF
 import com.vbtdroid.core.model.PlateObservation
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
+import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfFloat
@@ -17,6 +18,7 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.video.Video
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -32,6 +34,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var velocityY = 0f
     private var axisReference: PlateAxisReference? = null
     private var consecutiveMisses = 0
+    private var xReferencePx = Float.NaN
+    private var detectorRegion: RectF? = null
 
     open fun initialRoi(bitmap: Bitmap): RectF? {
         val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
@@ -49,6 +53,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         velocityY = 0f
         axisReference = null
         consecutiveMisses = 0
+        xReferencePx = Float.NaN
+        detectorRegion = null
     }
 
     override fun close() = reset()
@@ -72,6 +78,13 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             velocityX = 0f
             velocityY = 0f
             consecutiveMisses = 0
+            xReferencePx = circle?.centerX ?: fitted?.ellipse?.center?.x?.toFloat() ?: roiCenterX
+            detectorRegion = analysisColumn(
+                width = bitmap.width,
+                height = bitmap.height,
+                centerX = xReferencePx,
+                halfWidth = maxOf(roi.width(), expectedRadius * 3f),
+            )
             return when {
                 circle != null -> {
                     axisReference = PlateAxisReference(circle.radiusPx * 2f)
@@ -137,7 +150,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 reference.majorAxisPx / 2f,
                 predictedX,
                 predictedY,
-            )
+            )?.takeIf { withinLateralGate(it.centerX, reference) }
             if (circle != null) {
                 updatePosition(circle.centerX, circle.centerY, tSec, currentGray)
                 return PlateObservation(
@@ -169,6 +182,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                         dt,
                     )
                 }
+                ?.takeIf { withinLateralGate(it.ellipse.center.x.toFloat(), reference) }
             if (fitted != null) {
                 updatePosition(fitted.ellipse.center.x.toFloat(), fitted.ellipse.center.y.toFloat(), tSec, currentGray)
                 return observation(tSec, fitted)
@@ -178,14 +192,17 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             // local window even though its size is unchanged. The reference radius is known, so
             // a global search is both cheap and unambiguous; the detector is the last resort.
             val recoveredCircle = if (consecutiveMisses >= 1) {
+                val region = detectorRegion ?: RectF(
+                    0f, 0f, currentGray.cols().toFloat(), currentGray.rows().toFloat(),
+                )
                 findCircle(
                     currentGray,
-                    RectF(0f, 0f, currentGray.cols().toFloat(), currentGray.rows().toFloat()),
+                    region,
                     reference.majorAxisPx / 2f,
                     predictedX,
                     predictedY,
-                    maxDistancePx = maxOf(bitmap.width, bitmap.height).toFloat(),
-                )
+                    maxDistancePx = maxOf(region.width(), region.height()),
+                )?.takeIf { withinLateralGate(it.centerX, reference) }
             } else {
                 null
             }
@@ -202,7 +219,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
 
             // 检测器只在跟踪丢失时调用，用于恢复而非逐帧主信号。
             val detection = if (consecutiveMisses >= DETECTOR_RECOVERY_MISSES) {
-                detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) }
+                detectPlate(bitmap)
             } else {
                 null
             }
@@ -221,11 +238,12 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                     detection.cxPx,
                     detection.cyPx,
                 )?.takeIf { it.confidence >= MIN_TRACK_CONFIDENCE }
+                    ?.takeIf { withinLateralGate(it.ellipse.center.x.toFloat(), reference) }
                 if (recovered != null) {
                     updatePosition(recovered.ellipse.center.x.toFloat(), recovered.ellipse.center.y.toFloat(), tSec, currentGray)
                     return observation(tSec, recovered)
                 }
-                if (reference.accepts(detectedDiameter)) {
+                if (reference.accepts(detectedDiameter) && withinLateralGate(detection.cxPx, reference)) {
                     updatePosition(detection.cxPx, detection.cyPx, tSec, currentGray)
                     return PlateObservation(
                         tSec = tSec,
@@ -274,6 +292,55 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         }
     }
 
+    /**
+     * Sub-pixel centre: fit an ellipse to Canny edges on the rim. Hough returns integer
+     * accumulator centres, which is several millimetres of lateral noise at 650 px/m.
+     * A bad fit (moved more than 20% of the radius) is ignored.
+     */
+    private fun refineCircleCenter(gray: Mat, cx: Float, cy: Float, radius: Float): Point? {
+        if (radius < 4f) return null
+        val pad = (radius * 1.15f).toInt().coerceAtLeast(2)
+        val left = (cx - pad).toInt().coerceIn(0, (gray.cols() - 1).coerceAtLeast(0))
+        val top = (cy - pad).toInt().coerceIn(0, (gray.rows() - 1).coerceAtLeast(0))
+        val right = (cx + pad).toInt().coerceIn(left + 1, gray.cols())
+        val bottom = (cy + pad).toInt().coerceIn(top + 1, gray.rows())
+        if (right - left < 8 || bottom - top < 8) return null
+        val crop = gray.submat(Rect(left, top, right - left, bottom - top)).clone()
+        val edges = Mat()
+        val nonZero = Mat()
+        try {
+            Imgproc.Canny(crop, edges, 60.0, 160.0)
+            Core.findNonZero(edges, nonZero)
+            if (nonZero.empty()) return null
+            val minRadius = radius * 0.9f
+            val maxRadius = radius * 1.1f
+            val points = ArrayList<Point>()
+            for (index in 0 until nonZero.rows()) {
+                val value = nonZero.get(index, 0) ?: continue
+                if (value.size < 2) continue
+                val px = value[0].toFloat() + left
+                val py = value[1].toFloat() + top
+                val distance = hypot(px - cx, py - cy)
+                if (distance in minRadius..maxRadius) points += Point(px.toDouble(), py.toDouble())
+            }
+            if (points.size < 12) return null
+            val mat = MatOfPoint2f(*points.toTypedArray())
+            val ellipse = try {
+                Imgproc.fitEllipse(mat)
+            } finally {
+                mat.release()
+            }
+            if (hypot(ellipse.center.x - cx, ellipse.center.y - cy) > radius * 0.2) return null
+            return Point(ellipse.center.x, ellipse.center.y)
+        } catch (_: RuntimeException) {
+            return null
+        } finally {
+            crop.release()
+            edges.release()
+            nonZero.release()
+        }
+    }
+
     private fun observation(tSec: Double, fit: EllipseFit): PlateObservation =
         PlateObservation(
             tSec = tSec,
@@ -317,6 +384,40 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         } finally {
             rgba.release()
         }
+    }
+
+    /** Detection runs inside the plate column so the gym background cannot win the largest box. */
+    private fun detectPlate(bitmap: Bitmap): PlateDetection? {
+        val plateDetector = detector ?: return null
+        val region = detectorRegion ?: return PlateRoi.selectLargest(plateDetector.detect(bitmap))
+        val left = region.left.toInt().coerceIn(0, (bitmap.width - 2).coerceAtLeast(0))
+        val top = region.top.toInt().coerceIn(0, (bitmap.height - 2).coerceAtLeast(0))
+        val width = (region.right.toInt() - left).coerceIn(2, bitmap.width - left)
+        val height = (region.bottom.toInt() - top).coerceIn(2, bitmap.height - top)
+        val crop = Bitmap.createBitmap(bitmap, left, top, width, height)
+        return try {
+            PlateRoi.selectLargest(plateDetector.detect(crop))?.let { detection ->
+                detection.copy(cxPx = detection.cxPx + left, cyPx = detection.cyPx + top)
+            }
+        } finally {
+            if (!crop.isRecycled) crop.recycle()
+        }
+    }
+
+    private fun analysisColumn(width: Int, height: Int, centerX: Float, halfWidth: Float): RectF {
+        val safeHalf = halfWidth.coerceAtLeast(1f)
+        return RectF(
+            (centerX - safeHalf).coerceIn(0f, width.toFloat()),
+            0f,
+            (centerX + safeHalf).coerceIn(0f, width.toFloat()),
+            height.toFloat(),
+        )
+    }
+
+    /** A bar never travels more than half a plate diameter sideways; anything else is another object. */
+    private fun withinLateralGate(candidateX: Float, reference: PlateAxisReference): Boolean {
+        if (!xReferencePx.isFinite()) return true
+        return abs(candidateX - xReferencePx) <= reference.majorAxisPx * MAX_LATERAL_DIAMETERS
     }
 
     /**
@@ -389,7 +490,14 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val distanceScore = (1f - distance / maxDistance).coerceIn(0f, 1f)
             val confidence = (HOUGH_ACCEPT_CONFIDENCE + HOUGH_ACCEPT_BONUS * radiusScore * distanceScore)
                 .coerceIn(HOUGH_ACCEPT_CONFIDENCE, 0.95f)
-            return HoughCircle(accepted.centerX, accepted.centerY, accepted.radiusPx, confidence, distance)
+            val refined = refineCircleCenter(gray, accepted.centerX, accepted.centerY, accepted.radiusPx)
+            return HoughCircle(
+                refined?.x?.toFloat() ?: accepted.centerX,
+                refined?.y?.toFloat() ?: accepted.centerY,
+                accepted.radiusPx,
+                confidence,
+                distance,
+            )
         } catch (_: RuntimeException) {
             return null
         } finally {
@@ -518,6 +626,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         // threshold so a clean plate is not flagged LOW_CALIBRATION/LOW_TRACK_CONFIDENCE.
         const val HOUGH_ACCEPT_CONFIDENCE = 0.75f
         const val DETECTOR_RECOVERY_MISSES = 3
+        const val MAX_LATERAL_DIAMETERS = 0.5f
         const val MISS_VELOCITY_DECAY = 0.5f
         const val HOUGH_ACCEPT_BONUS = 0.15f
     }

@@ -80,6 +80,18 @@ class TrackSmootherTest {
     }
 
     @Test
+    fun `frames on the other plate are dropped by the lateral gate`() {
+        val samples = track(30).mapIndexed { index, observation ->
+            if (index < 20) observation else observation.copy(xPx = 300.0 + 220.0)
+        }
+
+        val smoothed = TrackSmoother.smooth(samples)
+
+        assertEquals(20, smoothed.size)
+        assertTrue(smoothed.all { abs(it.xPx - 300.0) < 1e-9 })
+    }
+
+    @Test
     fun `short tracks pass through unchanged`() {
         val short = track(2).toMutableList().also {
             it[1] = it[1].copy(yPx = it[1].yPx + 300.0)

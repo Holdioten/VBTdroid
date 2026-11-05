@@ -214,6 +214,12 @@ class AnalysisPipeline(
         val reps = computation.reps
         val validSlices = computation.validSlices
         val extraWarnings = (computation.warnings + segmentation.warnings).toMutableList()
+        // A real bar never travels more than half a plate diameter laterally. Larger spread means
+        // the track locked onto another round object at some point.
+        val lateralRangePx = observations.maxOf { it.xPx } - observations.minOf { it.xPx }
+        if (lateralRangePx > cleanedObservations.first().majorAxisPx * 0.5) {
+            extraWarnings += LATERAL_DRIFT
+        }
         when (trackBreak?.reason) {
             TrackBreakReason.SCALE_CHANGE -> extraWarnings += CAMERA_MOVED
             TrackBreakReason.TRACK_ENDED -> extraWarnings += TRACK_LOST
@@ -337,6 +343,7 @@ class AnalysisPipeline(
         const val POSE_LOW_CONFIDENCE = "POSE_LOW_CONFIDENCE"
         const val CAMERA_MOVED = "CAMERA_MOVED"
         const val TRACK_LOST = "TRACK_LOST"
+        const val LATERAL_DRIFT = "LATERAL_DRIFT"
         const val ANGLES_UNAVAILABLE_OCCLUSION = "ANGLES_UNAVAILABLE_OCCLUSION"
     }
 }
