@@ -15,6 +15,8 @@ import com.vbtdroid.app.analysis.FrameAngles
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.metrics.RepMetrics
 import com.vbtdroid.core.model.Lift
+import com.vbtdroid.app.ui.report.phaseLabelRes
+import com.vbtdroid.core.phases.Phase
 import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.phases.RepTimeline
@@ -34,7 +36,7 @@ import kotlin.math.min
  * Colours/labels come from the shared theme and string resources, so the burned video matches the
  * report style and has no duplicate English labels.
  */
-internal class OverlayCards(context: Context, private val result: AnalysisResult) {
+internal class OverlayCards(private val context: Context, private val result: AnalysisResult) {
     private enum class CardKind { MAIN, VELOCITY, POSE, BAR_PATH, REP_BARS }
 
     private data class BarBounds(
@@ -410,6 +412,10 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         drawTextFitted(canvas, value, left, valueBaseline, valuePaint, maxWidth)
     }
 
+    /**
+     * One phase at a time: eccentric playback draws the eccentric curve, concentric draws the
+     * concentric curve, with both phase durations in the free bottom row.
+     */
     private fun drawVelocityCard(
         canvas: Canvas,
         rect: RectF,
@@ -422,72 +428,123 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         val titleBaseline = rect.top + pad + titlePaint.textSize
         drawTextFitted(canvas, velocityTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
 
-        val chartTop = titleBaseline + 6f * uiScale
-        val chartLeft = rect.left + pad
-        val chartHeight = rect.bottom - pad - chartTop
         val samples = active?.let { velocityByRep[it.index] }.orEmpty()
-        if (active == null || samples.size < 2 || chartHeight <= 1f) {
+        if (active == null) {
+            drawEmpty(canvas, rect)
+            return
+        }
+        val phase = displayVelocityPhase(active, cueSec)
+        val phaseSamples = if (phase != null) {
+            samples.filter { it.tSec >= phase.startSec && it.tSec <= phase.endSec }
+        } else {
+            samples
+        }
+        if (phaseSamples.size < 2) {
             drawEmpty(canvas, rect)
             return
         }
 
-        val inset = 12f * uiScale
-        val mapLeft = chartLeft + inset
+        val labelRowHeight = labelPaint.textSize + 5f * uiScale
+        val chartTop = titleBaseline + 6f * uiScale
+        val chartBottom = rect.bottom - pad - labelRowHeight
+        val chartHeight = chartBottom - chartTop
+        if (chartHeight <= 1f) return
+
+        val startSec = phase?.startSec ?: active.startSec
+        val endSec = phase?.endSec ?: active.endSec
+        val inset = 10f * uiScale
+        val mapLeft = rect.left + pad + inset
         val mapWidth = (contentWidth - inset * 2f).coerceAtLeast(1f)
-        var minVelocity = min(0.0, samples.minOf { it.vyMps })
-        var maxVelocity = max(0.0, samples.maxOf { it.vyMps })
+        var minVelocity = min(0.0, phaseSamples.minOf { it.vyMps })
+        var maxVelocity = max(0.0, phaseSamples.maxOf { it.vyMps })
         if (maxVelocity - minVelocity < 1e-9) {
             minVelocity -= 0.5
             maxVelocity += 0.5
         }
         val velocitySpan = maxVelocity - minVelocity
         val usableHeight = (chartHeight - inset * 2f).coerceAtLeast(1f)
-        fun xFor(t: Double): Float? =
-            overlayTimeToX(t, active.startSec, active.endSec, mapLeft, mapWidth)
-
+        fun xFor(t: Double): Float? = overlayTimeToX(t, startSec, endSec, mapLeft, mapWidth)
         fun yFor(velocity: Double): Float =
             chartTop + inset + usableHeight * (1f - ((velocity - minVelocity) / velocitySpan).toFloat())
 
-        // Phase bands behind the curve, 12% alpha, matching the report preview.
-        active.phases.forEach { phase ->
-            val left = xFor(phase.startSec) ?: return@forEach
-            val right = xFor(phase.endSec) ?: return@forEach
-            chartRect.set(left, chartTop, max(left, right), chartTop + chartHeight)
-            bandPaints[phase.type]?.let { canvas.drawRect(chartRect, it) }
-        }
-
         val zeroY = yFor(0.0).coerceIn(chartTop, chartTop + chartHeight)
-        canvas.drawLine(chartLeft, zeroY, chartLeft + contentWidth, zeroY, axisPaint)
-        active.let { rep ->
-            metricsByRep[rep.index]?.mcvMps?.takeIf { it.isFinite() }?.let { mean ->
+        canvas.drawLine(rect.left + pad, zeroY, rect.left + pad + contentWidth, zeroY, axisPaint)
+
+        // MCV is a concentric mean; showing it during the eccentric phase is misleading.
+        if (phase?.type == PhaseType.CONCENTRIC) {
+            metricsByRep[active.index]?.mcvMps?.takeIf { it.isFinite() }?.let { mean ->
                 val meanY = yFor(mean).coerceIn(chartTop, chartTop + chartHeight)
-                canvas.drawLine(chartLeft, meanY, chartLeft + contentWidth, meanY, meanPaint)
+                canvas.drawLine(
+                    rect.left + pad, meanY, rect.left + pad + contentWidth, meanY, meanPaint,
+                )
             }
         }
 
+        linePaint.color = if (phase?.type == PhaseType.ECCENTRIC) {
+            OverlayStyle.ECCENTRIC.toInt()
+        } else {
+            OverlayStyle.TRAIL.toInt()
+        }
         path.reset()
-        samples.forEachIndexed { index, sample ->
+        phaseSamples.forEachIndexed { index, sample ->
             val x = xFor(sample.tSec) ?: return@forEachIndexed
             val y = yFor(sample.vyMps).coerceIn(chartTop, chartTop + chartHeight)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         canvas.drawPath(path, linePaint)
 
-        val cursorX = xFor(cueSec)
+        val cursorX = xFor(cueSec.coerceIn(startSec, endSec))
         if (cursorX != null) {
             canvas.drawLine(cursorX, chartTop, cursorX, chartTop + chartHeight, cursorPaint)
         }
 
-        samples.maxOfOrNull { it.vyMps }?.let { peak ->
-            val text = String.format(Locale.US, peakLabelFormat, String.format(Locale.US, "%.2f", peak))
-            drawTextRightFitted(
-                canvas,
-                text,
-                rect.right - pad - 8f * uiScale,
-                rect.bottom - pad - 8f * uiScale,
-                labelPaint,
-                contentWidth,
+        // Bottom row: eccentric / concentric label + duration, in phase colours.
+        val labelBaseline = rect.bottom - pad
+        val eccentric = active.phases.firstOrNull { it.type == PhaseType.ECCENTRIC }
+        val concentric = active.phases.firstOrNull { it.type == PhaseType.CONCENTRIC }
+        drawPhaseDuration(
+            canvas, eccentric, rect.left + pad, labelBaseline, labelPaint, uiScale,
+            OverlayStyle.ECCENTRIC.toInt(), contentWidth / 2f,
+        )
+        drawPhaseDuration(
+            canvas, concentric, rect.left + pad + contentWidth / 2f, labelBaseline, labelPaint,
+            uiScale, OverlayStyle.TRAIL.toInt(), contentWidth / 2f,
+        )
+    }
+
+    private fun displayVelocityPhase(rep: RepSlice, tSec: Double): Phase? {
+        val current = RepTimeline.phaseAt(rep, tSec.coerceIn(rep.startSec, rep.endSec))
+        if (current?.type == PhaseType.ECCENTRIC || current?.type == PhaseType.CONCENTRIC) {
+            return current
+        }
+        return rep.phases.lastOrNull {
+            it.endSec <= tSec && (it.type == PhaseType.ECCENTRIC || it.type == PhaseType.CONCENTRIC)
+        } ?: rep.phases.firstOrNull {
+            it.type == PhaseType.ECCENTRIC || it.type == PhaseType.CONCENTRIC
+        }
+    }
+
+    private fun drawPhaseDuration(
+        canvas: Canvas,
+        phase: Phase?,
+        left: Float,
+        baseline: Float,
+        paint: Paint,
+        uiScale: Float,
+        color: Int,
+        maxWidth: Float,
+    ) {
+        if (phase == null) return
+        val name = context.getString(phaseLabelRes(result.lift, phase.type))
+        val seconds = String.format(Locale.US, "%.1fs", (phase.endSec - phase.startSec).coerceAtLeast(0.0))
+        val previous = paint.color
+        paint.color = color
+        try {
+            drawTextFitted(
+                canvas, "$name $seconds", left, baseline, paint, (maxWidth - 4f * uiScale).coerceAtLeast(1f),
             )
+        } finally {
+            paint.color = previous
         }
     }
 
@@ -659,17 +716,18 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
                 canvas.drawRoundRect(barRect, 6f * uiScale, 6f * uiScale, selectionPaint)
             }
             val centerX = (left + right) / 2f
+            // The block itself carries the value; the rep index below was redundant.
+            val valueText = formatMcv(rep.mcvMps) ?: missing
             val numberPaint = if (selected) valuePaint else labelPaint
             val numberBaseline = top + numberPaint.textSize + 3f * uiScale
             if (height >= numberPaint.textSize + 3f * uiScale) {
                 drawTextCenteredFitted(
-                    canvas, rep.repIndex.toString(), centerX, numberBaseline, numberPaint, columnWidth,
+                    canvas, valueText, centerX, numberBaseline, numberPaint, columnWidth,
                 )
             } else {
-                // Too short for an inside label: put the number just above the block.
                 drawTextCenteredFitted(
                     canvas,
-                    rep.repIndex.toString(),
+                    valueText,
                     centerX,
                     (top - 3f * uiScale).coerceAtLeast(chartTop + numberPaint.textSize),
                     numberPaint,

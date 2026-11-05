@@ -203,4 +203,5 @@
     <string name="quality_track_lost">Tracking lost; later reps were not counted</string>
     <string name="report_pose_unavailable">Pose unavailable</string>
     <string name="quality_lateral_drift">Lateral drift detected; the bar path may have followed the wrong plate</string>
+    <string name="report_export_saved">Saved to Pictures/VBTdroid/%1$s</string>
 </resources>

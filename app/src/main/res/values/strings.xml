@@ -23,7 +23,7 @@
     <string name="report_repetitions">逐次指标</string>
     <string name="report_rep">次数</string>
     <string name="report_rep_number">第 %1$d 次</string>
-    <string name="report_velocity_chart">杠铃垂直速度</string>
+    <string name="report_velocity_chart">速度</string>
     <string name="report_bar_path_chart">杠铃轨迹</string>
     <string name="report_phase_timeline">阶段</string>
     <string name="report_phase_edit">手动校正</string>
@@ -206,4 +206,5 @@
     <string name="quality_track_lost">跟踪中断，后续次数未计入</string>
     <string name="report_pose_unavailable">姿态不可用</string>
     <string name="quality_lateral_drift">横向位移异常，轨迹可能跟错片</string>
+    <string name="report_export_saved">已保存到 Pictures/VBTdroid/%1$s</string>
 </resources>
