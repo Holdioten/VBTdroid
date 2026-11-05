@@ -128,6 +128,9 @@ class AnalysisPipeline(
         val frameAngles = mutableListOf<FrameAngles>()
         var decodedFrames = 0
         var missedFrames = 0
+        // The tracker may spend a few frames validating plate hypotheses and emit nothing yet;
+        // initialize must still run exactly once.
+        var trackerStarted = false
         var firstFrameSec: Double? = null
         var lastFrameSec: Double? = null
         var poseFailed = false
@@ -140,7 +143,8 @@ class AnalysisPipeline(
                 if (firstFrameSec == null) firstFrameSec = frame.tSec
                 lastFrameSec = frame.tSec
 
-                val observation = if (observations.isEmpty()) {
+                val observation = if (!trackerStarted) {
+                    trackerStarted = true
                     val roi = request.roi ?: tracker.initialRoi(frame.bitmap)
                         ?: throw IllegalStateException(
                             "No plate ROI available: select an ROI or configure a plate detector",

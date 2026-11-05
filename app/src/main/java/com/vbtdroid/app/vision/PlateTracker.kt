@@ -36,6 +36,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var consecutiveMisses = 0
     private var xReferencePx = Float.NaN
     private var detectorRegion: RectF? = null
+    private var probation: MutableList<InitCandidate>? = null
+    private var probationFrames = 0
 
     open fun initialRoi(bitmap: Bitmap): RectF? {
         val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
@@ -55,6 +57,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         consecutiveMisses = 0
         xReferencePx = Float.NaN
         detectorRegion = null
+        probation = null
+        probationFrames = 0
     }
 
     override fun close() = reset()
@@ -65,7 +69,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      * 期望半径取 ROI 短边的一半；圆检测对孔洞、反光和多边形轮廓不敏感，避免椭圆拟合锁到
      * 内毂（尺寸不对）。霍夫失败时才退回轮廓椭圆拟合。
      */
-    open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation {
+    open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation? {
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
         val gray = toGray(bitmap)
@@ -73,50 +77,241 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val expectedRadius = min(roi.width(), roi.height()) / 2f
             val roiCenterX = (roi.left + roi.right) / 2f
             val roiCenterY = (roi.top + roi.bottom) / 2f
-            // The ROI is only a rough hint: a loose box makes minSide/2 too large and the fixed
-            // ±15% gate then rejects the real plate. Search a wide radius band and score rims.
-            val circle = findInitialCircle(gray, roi, expectedRadius, roiCenterX, roiCenterY)
-            val fitted = if (circle == null) findEllipse(gray, roi, null, null, null) else null
-            velocityX = 0f
-            velocityY = 0f
-            consecutiveMisses = 0
-            xReferencePx = circle?.centerX ?: fitted?.ellipse?.center?.x?.toFloat() ?: roiCenterX
+            val candidates = initialCandidates(gray, bitmap, roi, expectedRadius)
+            if (candidates.size >= 2) {
+                // Do not trust a single frame. Keep the best few hypotheses and let the next
+                // frames decide which one is actually the plate. A loose ROI or a phantom
+                // circle cannot survive ten frames of local Hough.
+                probation = candidates.toMutableList()
+                probationFrames = 0
+                candidates.forEach { it.lastSec = tSec }
+                val best = candidates.first()
+                axisReference = PlateAxisReference(best.radiusPx * 2f)
+                xReferencePx = best.cx
+                detectorRegion = analysisColumn(
+                    width = bitmap.width,
+                    height = bitmap.height,
+                    centerX = best.cx,
+                    halfWidth = maxOf(roi.width(), best.radiusPx * 3f),
+                )
+                velocityX = 0f
+                velocityY = 0f
+                consecutiveMisses = 0
+                return null
+            }
+            val single = candidates.firstOrNull()
+                ?: throw IllegalArgumentException(
+                    "Could not locate a plate circle or ellipse inside the selected ROI",
+                )
+            axisReference = PlateAxisReference(single.radiusPx * 2f)
+            xReferencePx = single.cx
             detectorRegion = analysisColumn(
                 width = bitmap.width,
                 height = bitmap.height,
-                centerX = xReferencePx,
-                halfWidth = maxOf(roi.width(), expectedRadius * 3f),
+                centerX = single.cx,
+                halfWidth = maxOf(roi.width(), single.radiusPx * 3f),
             )
-            return when {
-                circle != null -> {
-                    axisReference = PlateAxisReference(circle.radiusPx * 2f)
-                    commitSuccessfulFrame(gray, circle.centerX, circle.centerY, tSec)
-                    PlateObservation(
-                        tSec = tSec,
-                        xPx = circle.centerX.toDouble(),
-                        yPx = circle.centerY.toDouble(),
-                        majorAxisPx = (circle.radiusPx * 2f).toDouble(),
-                        confidence = circle.confidence.toDouble(),
-                    )
-                }
-                fitted != null -> {
-                    axisReference = PlateAxisReference(fitted.majorAxis)
-                    commitSuccessfulFrame(
-                        gray,
-                        fitted.ellipse.center.x.toFloat(),
-                        fitted.ellipse.center.y.toFloat(),
-                        tSec,
-                    )
-                    observation(tSec, fitted)
-                }
-                else -> throw IllegalArgumentException(
-                    "Could not locate a plate circle or ellipse inside the selected ROI",
-                )
-            }
+            velocityX = 0f
+            velocityY = 0f
+            consecutiveMisses = 0
+            commitSuccessfulFrame(gray, single.cx, single.cy, tSec)
+            return PlateObservation(
+                tSec = tSec,
+                xPx = single.cx.toDouble(),
+                yPx = single.cy.toDouble(),
+                majorAxisPx = (single.radiusPx * 2f).toDouble(),
+                confidence = single.support.toDouble().coerceIn(0.0, 1.0),
+            )
         } finally {
             gray.release()
         }
     }
+
+    /**
+     * Hypotheses for the first frames. Hough over a wide radius band around the ROI, then score
+     * rims by Canny edge support; the top few are validated by actual tracking.
+     */
+    private fun initialCandidates(
+        gray: Mat,
+        bitmap: Bitmap,
+        roi: RectF,
+        expectedRadius: Float,
+    ): List<InitCandidate> {
+        val minDimension = min(bitmap.width, bitmap.height).toFloat()
+        val minRadius = (minDimension * 0.05f).coerceAtLeast(6f)
+        val maxRadius = (minDimension * 0.30f).coerceAtLeast(minRadius + 4f)
+        val search = RectF(
+            roi.left - roi.width() * 0.5f,
+            roi.top - roi.height() * 0.5f,
+            roi.right + roi.width() * 0.5f,
+            roi.bottom + roi.height() * 0.5f,
+        )
+        val left = search.left.toInt().coerceIn(0, (gray.cols() - 1).coerceAtLeast(0))
+        val top = search.top.toInt().coerceIn(0, (gray.rows() - 1).coerceAtLeast(0))
+        val right = search.right.toInt().coerceIn(left + 1, gray.cols())
+        val bottom = search.bottom.toInt().coerceIn(top + 1, gray.rows())
+        if (right - left < 16 || bottom - top < 16) return emptyList()
+        val crop = gray.submat(Rect(left, top, right - left, bottom - top)).clone()
+        val blurred = Mat()
+        val circles = Mat()
+        try {
+            Imgproc.GaussianBlur(crop, blurred, org.opencv.core.Size(5.0, 5.0), 1.5)
+            Imgproc.HoughCircles(
+                blurred,
+                circles,
+                Imgproc.HOUGH_GRADIENT,
+                HOUGH_DP,
+                (minRadius * 0.8f).toDouble(),
+                HOUGH_PARAM1,
+                HOUGH_PARAM2,
+                minRadius.toInt(),
+                maxRadius.toInt(),
+            )
+            val raw = ArrayList<CircleCandidate>()
+            for (index in 0 until circles.cols()) {
+                val values = circles.get(0, index) ?: continue
+                if (values.size < 3) continue
+                val cx = (values[0] + left).toFloat()
+                val cy = (values[1] + top).toFloat()
+                val radius = values[2].toFloat()
+                if (radius < minRadius || radius > maxRadius) continue
+                raw += CircleCandidate(cx, cy, radius)
+            }
+            // Deduplicate near-identical circles before paying for rim fits.
+            val unique = ArrayList<CircleCandidate>()
+            for (candidate in raw) {
+                val duplicate = unique.any { existing ->
+                    hypot(existing.centerX - candidate.centerX, existing.centerY - candidate.centerY) <
+                        candidate.radiusPx * 0.35f &&
+                        abs(existing.radiusPx - candidate.radiusPx) / candidate.radiusPx < 0.2f
+                }
+                if (!duplicate) unique += candidate
+                if (unique.size >= 12) break
+            }
+            val roiHalf = min(roi.width(), roi.height()) / 2f
+            val scored = unique.map { candidate ->
+                val rim = rimFit(gray, candidate.centerX, candidate.centerY, candidate.radiusPx)
+                val support = rim?.second ?: 0f
+                val distance = hypot(candidate.centerX - roiCenterX(roi), candidate.centerY - roiCenterY(roi))
+                val radiusPenalty = abs(candidate.radiusPx - expectedRadius) / expectedRadius
+                InitCandidate(
+                    cx = rim?.first?.x?.toFloat() ?: candidate.centerX,
+                    cy = rim?.first?.y?.toFloat() ?: candidate.centerY,
+                    radiusPx = candidate.radiusPx,
+                    support = support - 0.2f * radiusPenalty - 0.1f * (distance / roiHalf.coerceAtLeast(1f)),
+                )
+            }.filter { it.support > 0f }
+            return scored.sortedByDescending { it.support }.take(6)
+        } catch (_: RuntimeException) {
+            return emptyList()
+        } finally {
+            crop.release()
+            blurred.release()
+            circles.release()
+        }
+    }
+
+    private fun roiCenterX(roi: RectF): Float = (roi.left + roi.right) / 2f
+
+    private fun roiCenterY(roi: RectF): Float = (roi.top + roi.bottom) / 2f
+
+    /**
+     * Runs every hypothesis for a few frames and commits the one that actually tracks. Until
+     * then no observation is emitted, so a wrong first frame can never seed the calibration.
+     */
+    private fun updateProbation(bitmap: Bitmap, tSec: Double): PlateObservation? {
+        val candidates = probation ?: return null
+        val gray = toGray(bitmap)
+        try {
+            val survivors = ArrayList<InitCandidate>(candidates.size)
+            for (candidate in candidates) {
+                val dt = (tSec - candidate.lastSec).coerceAtLeast(0.0).toFloat().coerceAtMost(1f)
+                val predictedX = candidate.cx + candidate.vx * dt
+                val predictedY = candidate.cy + candidate.vy * dt
+                val searchRadius = PlateRoi.localSearchRadiusPx(candidate.radiusPx * 2f)
+                val found = findCircle(
+                    gray,
+                    RectF(
+                        predictedX - searchRadius,
+                        predictedY - searchRadius,
+                        predictedX + searchRadius,
+                        predictedY + searchRadius,
+                    ),
+                    candidate.radiusPx,
+                    predictedX,
+                    predictedY,
+                    maxDistancePx = searchRadius,
+                )
+                if (found != null) {
+                    if (dt > 0f) {
+                        candidate.vx = (found.centerX - candidate.cx) / dt
+                        candidate.vy = (found.centerY - candidate.cy) / dt
+                    }
+                    candidate.cx = found.centerX
+                    candidate.cy = found.centerY
+                    candidate.hits++
+                    candidate.misses = 0
+                    candidate.lastSec = tSec
+                } else {
+                    candidate.misses++
+                }
+                if (candidate.misses < PROBATION_MAX_MISSES) survivors += candidate
+            }
+            probation = survivors.toMutableList()
+            probationFrames++
+
+            val best = survivors.maxWithOrNull(
+                compareBy<InitCandidate> { it.hits }.thenBy { it.support },
+            )
+            val ready = probationFrames >= PROBATION_FRAMES ||
+                (survivors.size == 1 && probationFrames >= PROBATION_MIN_FRAMES)
+            if (ready && best != null && best.hits > 0) {
+                axisReference = PlateAxisReference(best.radiusPx * 2f)
+                xReferencePx = best.cx
+                detectorRegion = analysisColumn(
+                    width = bitmap.width,
+                    height = bitmap.height,
+                    centerX = best.cx,
+                    halfWidth = maxOf(best.radiusPx * 6f, bitmap.width * 0.3f),
+                )
+                probation = null
+                probationFrames = 0
+                consecutiveMisses = 0
+                velocityX = 0f
+                velocityY = 0f
+                commitSuccessfulFrame(gray, best.cx, best.cy, tSec)
+                return PlateObservation(
+                    tSec = tSec,
+                    xPx = best.cx.toDouble(),
+                    yPx = best.cy.toDouble(),
+                    majorAxisPx = (best.radiusPx * 2f).toDouble(),
+                    confidence = best.support.toDouble().coerceIn(0.0, 1.0),
+                )
+            }
+            if (probationFrames >= PROBATION_TIMEOUT_FRAMES) {
+                // Nothing tracked cleanly: keep the provisional reference and let the normal
+                // path try instead of ending the track before the analysis starts.
+                probation = null
+                probationFrames = 0
+                return null
+            }
+            return null
+        } finally {
+            gray.release()
+        }
+    }
+
+    private class InitCandidate(
+        var cx: Float,
+        var cy: Float,
+        val radiusPx: Float,
+        val support: Float,
+        var vx: Float = 0f,
+        var vy: Float = 0f,
+        var hits: Int = 0,
+        var misses: Int = 0,
+        var lastSec: Double = 0.0,
+    )
 
     /**
      * 使用 PyrLK 光流/速度预测中心，再在局部搜索区（整块杠铃片 + 余量）内做主信号：
@@ -125,6 +320,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      */
     open fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
         ensureOpenCv()
+        probation?.let { return updateProbation(bitmap, tSec) }
         val reference = axisReference ?: return null
         val currentGray = toGray(bitmap)
         try {
@@ -709,6 +905,10 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val DETECTOR_RECOVERY_MISSES = 3
         const val MAX_LATERAL_DIAMETERS = 0.5f
         const val MIN_INIT_RIM_SUPPORT = 0.18f
+        const val PROBATION_FRAMES = 10
+        const val PROBATION_MIN_FRAMES = 6
+        const val PROBATION_MAX_MISSES = 4
+        const val PROBATION_TIMEOUT_FRAMES = 18
         const val MISS_VELOCITY_DECAY = 0.5f
         const val HOUGH_ACCEPT_BONUS = 0.15f
     }
