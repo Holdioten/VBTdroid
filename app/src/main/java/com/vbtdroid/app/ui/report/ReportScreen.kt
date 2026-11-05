@@ -1,8 +1,6 @@
 package com.vbtdroid.app.ui.report
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.vbtdroid.app.R
 import com.vbtdroid.app.analysis.AnalysisResult
+import com.vbtdroid.app.export.OverlaySaver
 import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
 import com.vbtdroid.app.ui.components.ChipTone
@@ -41,6 +40,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Video-first report. The burned-in overlay MP4 is the only content: Compose draws no data cards
@@ -94,27 +96,25 @@ fun ReportScreen(
         }
     }
 
-    val saveLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("video/mp4"),
-    ) { uri ->
-        val source = overlayFile
-        if (uri != null && source != null) {
-            saving = true
-            exportScope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching {
-                        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
-                            source.inputStream().use { input -> input.copyTo(out) }
-                        } ?: error("Could not open export destination")
-                    }.isSuccess
-                }
-                saving = false
-                flash(
-                    context.getString(
-                        if (ok) R.string.report_export_succeeded else R.string.report_export_failed,
-                    ),
-                )
+    val liftLabel = liftDisplayName(current.lift)
+
+    fun saveNow() {
+        val source = overlayFile ?: return
+        if (saving) return
+        saving = true
+        val name = overlayFileName(current, liftLabel)
+        exportScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                OverlaySaver.save(context, source, name)
             }
+            saving = false
+            flash(
+                if (saved != null) {
+                    context.getString(R.string.report_export_saved, name)
+                } else {
+                    context.getString(R.string.report_export_failed)
+                },
+            )
         }
     }
 
@@ -175,7 +175,7 @@ fun ReportScreen(
         ReportActions(
             onStages = { stageSheetOpen = true },
             onDetails = { detailSheetOpen = true },
-            onSave = { saveLauncher.launch("vbtdroid-overlay.mp4") },
+            onSave = { saveNow() },
             saveEnabled = overlayFile != null && !saving,
             modifier = actionModifier,
         )
@@ -230,6 +230,14 @@ fun ReportScreen(
             reps = reps,
         )
     }
+}
+
+/** `20261105-101530-深蹲-6reps-135kg.mp4`; weight is omitted when unknown. */
+private fun overlayFileName(result: AnalysisResult, liftLabel: String): String {
+    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+    val parts = mutableListOf(stamp, liftLabel, "${result.summary.repCount}reps")
+    result.loadKg?.takeIf { it > 0.0 }?.let { parts += "${formatKgValue(it)}kg" }
+    return parts.joinToString("-") + ".mp4"
 }
 
 @Composable
