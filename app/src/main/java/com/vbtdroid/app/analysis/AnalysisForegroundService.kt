@@ -217,6 +217,15 @@ class AnalysisForegroundService : Service() {
                     writer.println("${sample.tSec},${sample.yM},${sample.vyMps}")
                 }
             }
+            File(cacheDir, "debug-observations.csv").printWriter().use { writer ->
+                writer.println("t,x_px,y_px,diameter_px,confidence")
+                result.observations.forEach { observation ->
+                    writer.println(
+                        "${observation.tSec},${observation.xPx},${observation.yPx}," +
+                            "${observation.majorAxisPx},${observation.confidence}",
+                    )
+                }
+            }
             File(cacheDir, "debug-reps.txt").writeText(
                 buildString {
                     appendLine("reps=${result.reps.size} trackLostFromSec=${result.trackLostFromSec}")
