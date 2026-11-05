@@ -21,6 +21,7 @@ import com.vbtdroid.core.phases.RepTimeline
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sin
 import kotlin.math.min
 
 /**
@@ -203,6 +204,17 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         }
     }
 
+    /** Median bar x in output pixels; null when calibration is missing. */
+    private fun barMedianXpx(): Double? {
+        val calibration = result.calibration ?: return null
+        val samples = result.motionSamples
+        if (samples.isEmpty()) return null
+        val sinAngle = sin(Math.toRadians(calibration.cameraAngleDeg))
+        if (!sinAngle.isFinite() || sinAngle <= 1e-6) return null
+        val xs = samples.map { it.xM * calibration.pxPerM * sinAngle }.sorted()
+        return xs[xs.size / 2]
+    }
+
     private fun ensureSizes(uiScale: Float) {
         if (uiScale == lastUiScale) return
         lastUiScale = uiScale
@@ -257,7 +269,19 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         val desiredScale = baseScale * CONTENT_MULTIPLIER
         val margin = 12f * desiredScale
         val columnWidth = (width * 0.36f).coerceAtLeast(1f)
-        val top = (hudBottom + 8f * desiredScale).coerceAtLeast(margin)
+        // Cards sit opposite the bar path so they never cover it. The whole set uses one side
+        // (median x) so the column does not jump between reps.
+        val cardsOnRight = barMedianXpx()?.let { it < width / 2.0 } ?: false
+        val columnLeft = if (cardsOnRight) {
+            (width - margin - columnWidth).coerceAtLeast(margin)
+        } else {
+            margin
+        }
+        val top = if (cardsOnRight) {
+            margin
+        } else {
+            (hudBottom + 8f * desiredScale).coerceAtLeast(margin)
+        }
         val available = (height - top - margin).coerceAtLeast(1f)
 
         var contentScale = desiredScale
@@ -291,9 +315,9 @@ internal class OverlayCards(context: Context, private val result: AnalysisResult
         kinds.forEachIndexed { index, kind ->
             val cardHeight = heights[index].coerceAtLeast(0.5f)
             slots += kind to RectF(
-                margin,
+                columnLeft,
                 cursor,
-                margin + columnWidth,
+                columnLeft + columnWidth,
                 cursor + cardHeight,
             )
             cursor += cardHeight + gap
