@@ -94,15 +94,15 @@ class PlateRoiTest {
     }
 
     @Test
-    fun `local search radius covers the whole plate diameter plus margin`() {
+    fun `local search radius covers the plate radius plus margin`() {
         val diameter = 260f
 
         val radius = PlateRoi.localSearchRadiusPx(diameter)
 
-        assertEquals(diameter * 1.35f, radius, 1e-3f)
-        // The old 0.9x radius was smaller than the plate itself and only saw an arc.
-        assertTrue(radius > diameter)
-        assertTrue(diameter * 0.9f < diameter)
+        assertEquals(diameter * 1.35f / 2f, radius, 1e-3f)
+        // Half-window must contain the whole plate (radius) with margin, but not a second plate.
+        assertTrue(radius > diameter / 2f)
+        assertTrue(radius < diameter)
     }
 
     @Test

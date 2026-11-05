@@ -140,16 +140,12 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         val minDimension = min(bitmap.width, bitmap.height).toFloat()
         val minRadius = (minDimension * 0.05f).coerceAtLeast(6f)
         val maxRadius = (minDimension * 0.30f).coerceAtLeast(minRadius + 4f)
-        val search = RectF(
-            roi.left - roi.width() * 0.5f,
-            roi.top - roi.height() * 0.5f,
-            roi.right + roi.width() * 0.5f,
-            roi.bottom + roi.height() * 0.5f,
-        )
-        val left = search.left.toInt().coerceIn(0, (gray.cols() - 1).coerceAtLeast(0))
-        val top = search.top.toInt().coerceIn(0, (gray.rows() - 1).coerceAtLeast(0))
-        val right = search.right.toInt().coerceIn(left + 1, gray.cols())
-        val bottom = search.bottom.toInt().coerceIn(top + 1, gray.rows())
+        // The PC reference probe uses the whole frame; the ROI is only a ranking hint. A loose
+        // auto box must not exclude the real plate before tracking has a chance to score it.
+        val left = 0
+        val top = 0
+        val right = gray.cols()
+        val bottom = gray.rows()
         if (right - left < 16 || bottom - top < 16) return emptyList()
         val crop = gray.submat(Rect(left, top, right - left, bottom - top)).clone()
         val blurred = Mat()

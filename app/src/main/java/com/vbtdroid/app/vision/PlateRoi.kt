@@ -12,13 +12,13 @@ data class CircleCandidate(
 
 object PlateRoi {
     /**
-     * Local search ROI radius around the predicted plate center.
+     * Local search ROI half-size as a fraction of the plate **diameter**.
      *
-     * The reference major axis is the full plate diameter, so a factor below 1.0 (~0.9 used
-     * before PC tuning) clipped the plate and left the ellipse fit with a partial arc. 1.35
-     * covers the whole diameter plus margin for per-frame center prediction error.
+     * 0.675 × diameter = 1.35 × radius: the crop must contain the whole plate (radius + margin),
+     * not two plate diameters. The old 1.35 × diameter window was twice as wide as needed and
+     * regularly contained the plate on the other side of the bar.
      */
-    const val LOCAL_SEARCH_RADIUS_SCALE = 1.35f
+    const val LOCAL_SEARCH_RADIUS_SCALE = 0.675f
 
     /** Physical bars do not exceed roughly 8 plate diameters per second. */
     const val MAX_BAR_SPEED_DIAMETERS_PER_SEC = 8.0
