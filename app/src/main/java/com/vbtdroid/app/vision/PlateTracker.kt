@@ -73,7 +73,9 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val expectedRadius = min(roi.width(), roi.height()) / 2f
             val roiCenterX = (roi.left + roi.right) / 2f
             val roiCenterY = (roi.top + roi.bottom) / 2f
-            val circle = findCircle(gray, roi, expectedRadius, roiCenterX, roiCenterY)
+            // The ROI is only a rough hint: a loose box makes minSide/2 too large and the fixed
+            // ±15% gate then rejects the real plate. Search a wide radius band and score rims.
+            val circle = findInitialCircle(gray, roi, expectedRadius, roiCenterX, roiCenterY)
             val fitted = if (circle == null) findEllipse(gray, roi, null, null, null) else null
             velocityX = 0f
             velocityY = 0f
@@ -297,7 +299,14 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      * accumulator centres, which is several millimetres of lateral noise at 650 px/m.
      * A bad fit (moved more than 20% of the radius) is ignored.
      */
-    private fun refineCircleCenter(gray: Mat, cx: Float, cy: Float, radius: Float): Point? {
+    private fun refineCircleCenter(gray: Mat, cx: Float, cy: Float, radius: Float): Point? =
+        rimFit(gray, cx, cy, radius)?.first
+
+    /**
+     * Fits the rim and returns (sub-pixel centre, edge support in [0,1]).
+     * Support is the fraction of the circumference covered by Canny edge pixels.
+     */
+    private fun rimFit(gray: Mat, cx: Float, cy: Float, radius: Float): Pair<Point, Float>? {
         if (radius < 4f) return null
         val pad = (radius * 1.15f).toInt().coerceAtLeast(2)
         val left = (cx - pad).toInt().coerceIn(0, (gray.cols() - 1).coerceAtLeast(0))
@@ -324,6 +333,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 if (distance in minRadius..maxRadius) points += Point(px.toDouble(), py.toDouble())
             }
             if (points.size < 12) return null
+            val support = (points.size / (2.0 * PI * radius)).toFloat().coerceIn(0f, 1f)
             val mat = MatOfPoint2f(*points.toTypedArray())
             val ellipse = try {
                 Imgproc.fitEllipse(mat)
@@ -331,7 +341,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 mat.release()
             }
             if (hypot(ellipse.center.x - cx, ellipse.center.y - cy) > radius * 0.2) return null
-            return Point(ellipse.center.x, ellipse.center.y)
+            return Point(ellipse.center.x, ellipse.center.y) to support
         } catch (_: RuntimeException) {
             return null
         } finally {
@@ -418,6 +428,77 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private fun withinLateralGate(candidateX: Float, reference: PlateAxisReference): Boolean {
         if (!xReferencePx.isFinite()) return true
         return abs(candidateX - xReferencePx) <= reference.majorAxisPx * MAX_LATERAL_DIAMETERS
+    }
+
+    /**
+     * Initial plate search: Hough over a wide radius band, then score each rim by edge support.
+     * Picks the measured circle instead of trusting the ROI's half-short-side as the radius.
+     */
+    private fun findInitialCircle(
+        gray: Mat,
+        roi: RectF,
+        expectedRadius: Float,
+        roiCenterX: Float,
+        roiCenterY: Float,
+    ): HoughCircle? {
+        if (!expectedRadius.isFinite() || expectedRadius <= 2f) return null
+        val left = roi.left.toInt().coerceIn(0, (gray.cols() - 1).coerceAtLeast(0))
+        val top = roi.top.toInt().coerceIn(0, (gray.rows() - 1).coerceAtLeast(0))
+        val right = roi.right.toInt().coerceIn(left + 1, gray.cols())
+        val bottom = roi.bottom.toInt().coerceIn(top + 1, gray.rows())
+        if (right - left < 12 || bottom - top < 12) return null
+        val crop = gray.submat(Rect(left, top, right - left, bottom - top)).clone()
+        val blurred = Mat()
+        val circles = Mat()
+        try {
+            Imgproc.GaussianBlur(crop, blurred, org.opencv.core.Size(5.0, 5.0), 1.5)
+            Imgproc.HoughCircles(
+                blurred,
+                circles,
+                Imgproc.HOUGH_GRADIENT,
+                HOUGH_DP,
+                max(8.0, (expectedRadius * 0.9f).toDouble()),
+                HOUGH_PARAM1,
+                HOUGH_PARAM2,
+                (expectedRadius * 0.55f).toInt().coerceAtLeast(2),
+                (expectedRadius * 1.45f).toInt().coerceAtLeast(3),
+            )
+            val roiHalf = min(roi.width(), roi.height()) / 2f
+            var best: HoughCircle? = null
+            var bestScore = Float.NEGATIVE_INFINITY
+            for (index in 0 until circles.cols()) {
+                val values = circles.get(0, index) ?: continue
+                if (values.size < 3) continue
+                val cx = (values[0] + left).toFloat()
+                val cy = (values[1] + top).toFloat()
+                val radius = values[2].toFloat()
+                if (radius <= 2f) continue
+                val distance = hypot(cx - roiCenterX, cy - roiCenterY)
+                if (distance > roiHalf * 1.2f) continue
+                val rim = rimFit(gray, cx, cy, radius)
+                val support = rim?.second ?: 0f
+                val radiusPenalty = abs(radius - expectedRadius) / expectedRadius
+                val score = support - 0.15f * radiusPenalty - 0.1f * (distance / roiHalf)
+                if (score > bestScore) {
+                    bestScore = score
+                    best = HoughCircle(
+                        rim?.first?.x?.toFloat() ?: cx,
+                        rim?.first?.y?.toFloat() ?: cy,
+                        radius,
+                        HOUGH_ACCEPT_CONFIDENCE,
+                        distance,
+                    )
+                }
+            }
+            return best?.takeIf { bestScore >= MIN_INIT_RIM_SUPPORT }
+                ?: findCircle(gray, roi, expectedRadius, roiCenterX, roiCenterY)
+        } catch (_: RuntimeException) {
+            return null
+        } finally {
+            crop.release()
+            blurred.release()
+            circles.release()
+        }
     }
 
     /**
@@ -627,6 +708,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val HOUGH_ACCEPT_CONFIDENCE = 0.75f
         const val DETECTOR_RECOVERY_MISSES = 3
         const val MAX_LATERAL_DIAMETERS = 0.5f
+        const val MIN_INIT_RIM_SUPPORT = 0.18f
         const val MISS_VELOCITY_DECAY = 0.5f
         const val HOUGH_ACCEPT_BONUS = 0.15f
     }
