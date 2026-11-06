@@ -24,3 +24,11 @@
 `ml/train_detector.py` 仍提供个人自用 YOLOv8n（AGPL-3.0）训练路径：`ml/train_detector.py ... --train --license personal-agpl`。该路径与上方内置 MIT 检测模型相互独立；未经许可审查不得分发 AGPL 训练的模型或应用。不得把未授权数据或模型权重打包进应用。
 
 姿态估计模型文件名为 `pose_landmarker_lite.task`，放入本目录以启用 MediaPipe Pose Landmarker。模型缺失时，`MediaPipePoseEstimator` 会给出明确错误；初始化时优先尝试 GPU delegate，失败后回退到 CPU。模型获取与 SHA256 校验按上述 `ml/download_models.sh` 和 `ml/models.lock` 说明执行。
+
+
+## YOLO11n 杠铃片检测模型（自训）
+
+`plate_yolo.tflite`：YOLO11n，输入 `[1, 3, 416, 416]` float32 RGB（0..1，letterbox 114），
+输出 `[1, 4 + 2, anchors]`：归一化 `cx, cy, w, h` + `plate`/`bar_end` 分数。
+由本项目用自有视频标注训练；权重不进 git（`assets/models/*.tflite` 已忽略）。
+缺失时 `AnalysisForegroundService` 回退到旧的 EfficientDet `plate.tflite`。

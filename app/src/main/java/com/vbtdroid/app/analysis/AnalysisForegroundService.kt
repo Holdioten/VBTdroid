@@ -21,10 +21,12 @@ import com.vbtdroid.app.data.AppDatabase
 import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.vision.MediaPipePoseEstimator
+import com.vbtdroid.app.vision.PlateDetector
 import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.app.vision.TflitePlateDetector
+import com.vbtdroid.app.vision.YoloPlateDetector
 import com.vbtdroid.core.metrics.Point2
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -79,7 +81,11 @@ class AnalysisForegroundService : Service() {
     private val databaseDelegate = lazy { AppDatabase.build(applicationContext) }
     private val database by databaseDelegate
     private val repository by lazy { AnalysisRepository(database) }
-    private val plateDetectorDelegate = lazy { runCatching { TflitePlateDetector(applicationContext) }.getOrNull() }
+    private val plateDetectorDelegate = lazy<PlateDetector?> {
+        runCatching<PlateDetector> { YoloPlateDetector(applicationContext) }
+            .recoverCatching { TflitePlateDetector(applicationContext) }
+            .getOrNull()
+    }
     private val plateDetector by plateDetectorDelegate
     private val mediaPipePoseDelegate = lazy { runCatching { MediaPipePoseEstimator(applicationContext) }.getOrNull() }
     private val mediaPipePose by mediaPipePoseDelegate

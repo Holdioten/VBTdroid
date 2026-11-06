@@ -20,8 +20,10 @@ data class PlateDetection(
     val confidence: Float,
 )
 
-interface PlateDetector {
+interface PlateDetector : AutoCloseable {
     fun detect(bitmap: Bitmap): List<PlateDetection>
+
+    override fun close() = Unit
 }
 
 /**
