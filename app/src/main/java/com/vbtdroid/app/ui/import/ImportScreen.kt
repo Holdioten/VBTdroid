@@ -154,7 +154,8 @@ fun ImportScreen(
     var plateDiameterText by rememberSaveable { mutableStateOf(defaultPlateDiameter) }
     var cameraAngleText by rememberSaveable { mutableStateOf(defaultCameraAngle) }
     var cameraLevel by rememberSaveable { mutableStateOf(true) }
-    var analyzePose by rememberSaveable { mutableStateOf(true) }
+    // Bench pose tracking is unreliable; default it off and reset when the lift changes.
+    var analyzePose by rememberSaveable(lift) { mutableStateOf(lift != Lift.BENCH) }
 
     val currentPreview = preview
     DisposableEffect(currentPreview) {
