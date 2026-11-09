@@ -53,3 +53,10 @@ example/
 
 # JVM crash dumps
 *.hprof
+
+# Kotlin build cache
+.kotlin/
+
+# Signing keys
+*.jks
+keystore.properties
