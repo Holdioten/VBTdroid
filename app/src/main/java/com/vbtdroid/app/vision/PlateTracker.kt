@@ -70,8 +70,48 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      * 内毂（尺寸不对）。霍夫失败时才退回轮廓椭圆拟合。
      */
     open fun initialize(bitmap: Bitmap, roi: RectF, tSec: Double): PlateObservation? {
+        // The detector path still stores a gray frame for the shared bookkeeping helpers.
         ensureOpenCv()
         require(!roi.isEmpty && roi.width() >= 5f && roi.height() >= 5f) { "Plate ROI is too small" }
+        // Detection-first path: the model gives the plate directly; no Hough seeding.
+        // Pick the detection closest to the ROI centre so a manual tight box still chooses
+        // the intended plate when both ends are visible.
+        val roiCenterX = (roi.left + roi.right) / 2f
+        val roiCenterY = (roi.top + roi.bottom) / 2f
+        val detected = detector?.detect(bitmap)
+            ?.minByOrNull { hypot(it.cxPx - roiCenterX, it.cyPx - roiCenterY) }
+        if (detected != null) {
+            val diameter = max(detected.widthPx, detected.heightPx)
+            if (diameter >= MIN_DETECTED_DIAMETER_PX) {
+                axisReference = PlateAxisReference(diameter)
+                xReferencePx = detected.cxPx
+                detectorRegion = analysisColumn(
+                    width = bitmap.width,
+                    height = bitmap.height,
+                    centerX = detected.cxPx,
+                    halfWidth = max(diameter * 3f, bitmap.width * 0.3f),
+                )
+                velocityX = 0f
+                velocityY = 0f
+                consecutiveMisses = 0
+                probation = null
+                probationFrames = 0
+                val detectedGray = toGray(bitmap)
+                try {
+                    commitSuccessfulFrame(detectedGray, detected.cxPx, detected.cyPx, tSec)
+                } finally {
+                    detectedGray.release()
+                }
+                return PlateObservation(
+                    tSec = tSec,
+                    xPx = detected.cxPx.toDouble(),
+                    yPx = detected.cyPx.toDouble(),
+                    majorAxisPx = diameter.toDouble(),
+                    confidence = detected.confidence.toDouble(),
+                )
+            }
+        }
+        ensureOpenCv()
         val gray = toGray(bitmap)
         try {
             val expectedRadius = min(roi.width(), roi.height()) / 2f
@@ -315,6 +355,44 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      * 霍夫失败才退回轮廓椭圆，再失败才调用检测器恢复。
      */
     open fun update(bitmap: Bitmap, tSec: Double): PlateObservation? {
+        ensureOpenCv()
+        val detectedReference = axisReference
+        if (detector != null && detectedReference != null) {
+            // Every frame is a detection; the "tracker" is identity association against the
+            // previous centre plus the existing temporal smoothing downstream.
+            val detections = detector.detect(bitmap)
+            if (detections.isEmpty()) {
+                consecutiveMisses++
+                successfulPair.failed()
+                return null
+            }
+            val previousX = if (lastTimeSec != null) centerX else null
+            val previousY = if (lastTimeSec != null) centerY else null
+            val chosen = if (previousX != null && previousY != null) {
+                val gate = detectedReference.majorAxisPx * DETECTION_ASSOCIATION_DIAMETERS
+                detections
+                    .map { it to hypot(it.cxPx - previousX, it.cyPx - previousY) }
+                    .filter { it.second <= gate }
+                    .minByOrNull { it.second }
+                    ?.first
+            } else {
+                null
+            } ?: detections.maxByOrNull { it.widthPx * it.heightPx } ?: return null
+
+            val detectedGray = toGray(bitmap)
+            try {
+                updatePosition(chosen.cxPx, chosen.cyPx, tSec, detectedGray)
+            } finally {
+                detectedGray.release()
+            }
+            return PlateObservation(
+                tSec = tSec,
+                xPx = chosen.cxPx.toDouble(),
+                yPx = chosen.cyPx.toDouble(),
+                majorAxisPx = detectedReference.majorAxisPx.toDouble(),
+                confidence = chosen.confidence.toDouble(),
+            )
+        }
         ensureOpenCv()
         probation?.let { return updateProbation(bitmap, tSec) }
         val reference = axisReference ?: return null
@@ -900,6 +978,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val HOUGH_ACCEPT_CONFIDENCE = 0.75f
         const val DETECTOR_RECOVERY_MISSES = 3
         const val MAX_LATERAL_DIAMETERS = 0.5f
+        const val MIN_DETECTED_DIAMETER_PX = 8f
+        const val DETECTION_ASSOCIATION_DIAMETERS = 2.5f
         const val MIN_INIT_RIM_SUPPORT = 0.18f
         const val PROBATION_FRAMES = 10
         const val PROBATION_MIN_FRAMES = 6

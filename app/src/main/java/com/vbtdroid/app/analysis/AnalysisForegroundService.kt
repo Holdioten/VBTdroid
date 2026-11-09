@@ -82,9 +82,14 @@ class AnalysisForegroundService : Service() {
     private val database by databaseDelegate
     private val repository by lazy { AnalysisRepository(database) }
     private val plateDetectorDelegate = lazy<PlateDetector?> {
-        runCatching<PlateDetector> { YoloPlateDetector(applicationContext) }
-            .recoverCatching { TflitePlateDetector(applicationContext) }
-            .getOrNull()
+        runCatching<PlateDetector> {
+            YoloPlateDetector(applicationContext).also {
+                Log.d("VBTDebug", "Detector: YOLO plate_yolo.tflite")
+            }
+        }.recoverCatching { error ->
+            Log.e("VBTDebug", "YOLO detector init failed, falling back to EfficientDet", error)
+            TflitePlateDetector(applicationContext)
+        }.getOrNull()
     }
     private val plateDetector by plateDetectorDelegate
     private val mediaPipePoseDelegate = lazy { runCatching { MediaPipePoseEstimator(applicationContext) }.getOrNull() }
@@ -134,6 +139,7 @@ class AnalysisForegroundService : Service() {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
+                    Log.e("VBTDebug", "Analysis failed", error)
                     val message = error.message ?: error::class.java.simpleName
                     withContext(Dispatchers.Main.immediate) {
                         stateHolder.fail(message)
