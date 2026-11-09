@@ -23,6 +23,9 @@ object OverlayStyle {
     /** Lockout trail: phaseLockout #A6F0DC, drawn dim. */
     const val LOCKOUT = 0xFFA6F0DCL
 
+    /** Sticking region: orange #FF9F43. */
+    const val STICKING = 0xFFFF9F43L
+
     /** Speed readout text: #FFC247. */
     const val SPEED = 0xFFFFC247L
 

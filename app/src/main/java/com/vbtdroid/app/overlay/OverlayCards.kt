@@ -117,6 +117,16 @@ internal class OverlayCards(private val context: Context, private val result: An
     private val meanPaint = chartPaint(OverlayStyle.TRAIL).apply {
         alpha = 102
     }
+    private val stickingBandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = OverlayStyle.STICKING.toInt()
+        alpha = 70
+    }
+    private val stickingLinePaint = chartPaint(OverlayStyle.STICKING).apply {
+        style = Paint.Style.STROKE
+        alpha = 220
+        pathEffect = DashPathEffect(floatArrayOf(6f, 5f), 0f)
+    }
     private val cursorPaint = chartPaint(OverlayStyle.CARD_TEXT).apply {
         alpha = 230
     }
@@ -206,6 +216,13 @@ internal class OverlayCards(private val context: Context, private val result: An
         }
     }
 
+    /**
+     * Video-space lateral factor. The card must match the burned-in trail, which lives in image
+     * pixels; `xM` is already divided by sin(angle), so undo that for display.
+     */
+    private val lateralProjection: Double =
+        sin(Math.toRadians(result.cameraAngleDeg)).takeIf { it.isFinite() && it > 1e-6 } ?: 1.0
+
     /** Median bar x in output pixels; null when calibration is missing. */
     private fun barMedianXpx(): Double? {
         val calibration = result.calibration ?: return null
@@ -229,6 +246,8 @@ internal class OverlayCards(private val context: Context, private val result: An
         linePaint.strokeWidth = 3f * uiScale
         axisPaint.strokeWidth = max(0.8f, 1f * uiScale)
         meanPaint.strokeWidth = max(0.8f, 1f * uiScale)
+        stickingLinePaint.strokeWidth = max(1f, 1.4f * uiScale)
+        stickingLinePaint.pathEffect = DashPathEffect(floatArrayOf(6f * uiScale, 5f * uiScale), 0f)
         cursorPaint.strokeWidth = max(1f, 1.5f * uiScale)
         borderPaint.strokeWidth = max(0.8f, 1f * uiScale)
         dotRingPaint.strokeWidth = max(1.2f, 2f * uiScale)
@@ -250,20 +269,29 @@ internal class OverlayCards(private val context: Context, private val result: An
         baseScale: Float,
         hudBottom: Float,
     ): LayoutResult {
-        val kinds = CardKind.values().toList()
+        val kinds = CardKind.values().filter { it != CardKind.POSE || result.analyzePose }
         if (width > height) {
             val stripHeight = min(height * 0.32f, 320f * baseScale).coerceAtLeast(1f)
             val gap = 8f * baseScale
             val margin = 12f * baseScale
-            val cardWidth = (
-                (width - margin * 2f - gap * (kinds.size - 1)) / kinds.size
-                ).coerceAtLeast(1f)
+            val usable = (width - margin * 2f - gap * (kinds.size - 1)).coerceAtLeast(1f)
+            val weights = kinds.map { kind ->
+                when (kind) {
+                    CardKind.VELOCITY -> 1.7f
+                    CardKind.BAR_PATH -> 1.2f
+                    else -> 1f
+                }
+            }
+            val totalWeight = weights.sum()
             val top = (height - margin - stripHeight).coerceAtLeast(0f)
             val contentScale = min(baseScale * CONTENT_MULTIPLIER, stripHeight / cardHeight(CardKind.MAIN, 1f))
                 .coerceAtLeast(0.4f)
+            var left = margin
             val slots = kinds.mapIndexed { index, kind ->
-                val left = margin + index * (cardWidth + gap)
-                kind to RectF(left, top, left + cardWidth, top + stripHeight)
+                val cardWidth = (usable * weights[index] / totalWeight).coerceAtLeast(1f)
+                val slot = kind to RectF(left, top, left + cardWidth, top + stripHeight)
+                left += cardWidth + gap
+                slot
             }
             return LayoutResult(slots, contentScale)
         }
@@ -349,7 +377,7 @@ internal class OverlayCards(private val context: Context, private val result: An
                 pad + title + gap + rows * row + (rows - 1) * gap + pad
             }
 
-            CardKind.BAR_PATH -> pad + title + gap + 96f * scale + pad
+            CardKind.BAR_PATH -> (pad + title + gap + 96f * scale + pad) * 1.5f
             CardKind.REP_BARS -> pad + title + gap + 56f * scale + pad
         }
     }
@@ -467,6 +495,38 @@ internal class OverlayCards(private val context: Context, private val result: An
         fun yFor(velocity: Double): Float =
             chartTop + inset + usableHeight * (1f - ((velocity - minVelocity) / velocitySpan).toFloat())
 
+        val isConcentric = phase?.type == PhaseType.CONCENTRIC
+        var peakIndex = -1
+        var stickIndex = -1
+        var regionStart = -1
+        var regionEnd = -1
+        if (isConcentric && phaseSamples.size >= 3) {
+            peakIndex = phaseSamples.indices.maxByOrNull { phaseSamples[it].vyMps } ?: -1
+            if (peakIndex >= 0) {
+                stickIndex = (peakIndex + 1 until phaseSamples.lastIndex).firstOrNull { index ->
+                    val before = phaseSamples[index - 1].vyMps
+                    val current = phaseSamples[index].vyMps
+                    val after = phaseSamples[index + 1].vyMps
+                    current <= before + 1e-9 && current <= after + 1e-9
+                } ?: -1
+            }
+            if (stickIndex > 0) {
+                val vmin = phaseSamples[stickIndex].vyMps
+                val threshold = vmin + max(0.03, abs(vmin) * 0.08)
+                regionStart = stickIndex
+                while (regionStart > peakIndex && phaseSamples[regionStart - 1].vyMps <= threshold) regionStart--
+                regionEnd = stickIndex
+                while (regionEnd < phaseSamples.lastIndex && phaseSamples[regionEnd + 1].vyMps <= threshold) regionEnd++
+            }
+        }
+        if (regionStart in 0..regionEnd && regionEnd < phaseSamples.size) {
+            val startX = xFor(phaseSamples[regionStart].tSec)
+            val endX = xFor(phaseSamples[regionEnd].tSec)
+            if (startX != null && endX != null && endX > startX) {
+                canvas.drawRect(startX, chartTop, endX, chartTop + chartHeight, stickingBandPaint)
+            }
+        }
+
         val zeroY = yFor(0.0).coerceIn(chartTop, chartTop + chartHeight)
         canvas.drawLine(rect.left + pad, zeroY, rect.left + pad + contentWidth, zeroY, axisPaint)
 
@@ -496,6 +556,37 @@ internal class OverlayCards(private val context: Context, private val result: An
         val cursorX = xFor(cueSec.coerceIn(startSec, endSec))
         if (cursorX != null) {
             canvas.drawLine(cursorX, chartTop, cursorX, chartTop + chartHeight, cursorPaint)
+        }
+
+        if (isConcentric && peakIndex >= 0) {
+            val peak = phaseSamples[peakIndex]
+            val peakX = xFor(peak.tSec)
+            val peakY = yFor(peak.vyMps).coerceIn(chartTop, chartTop + chartHeight)
+            if (peakX != null) {
+                canvas.drawCircle(peakX, peakY, 3f * uiScale, dotPaint)
+                drawTextFitted(
+                    canvas,
+                    String.format(Locale.US, "%.2f", peak.vyMps),
+                    peakX + 4f * uiScale,
+                    (peakY - 5f * uiScale).coerceAtLeast(chartTop + valuePaint.textSize),
+                    valuePaint,
+                    contentWidth,
+                )
+            }
+        }
+        if (isConcentric && stickIndex > 0) {
+            val startX = xFor(phaseSamples[regionStart].tSec)
+            val endX = xFor(phaseSamples[regionEnd].tSec)
+            if (startX != null) {
+                canvas.drawLine(startX, chartTop, startX, chartTop + chartHeight, stickingLinePaint)
+            }
+            if (endX != null) {
+                canvas.drawLine(endX, chartTop, endX, chartTop + chartHeight, stickingLinePaint)
+            }
+            val stick = phaseSamples[stickIndex]
+            xFor(stick.tSec)?.let { x ->
+                canvas.drawCircle(x, yFor(stick.vyMps).coerceIn(chartTop, chartTop + chartHeight), 3f * uiScale, dotPaint)
+            }
         }
 
         // Bottom row: eccentric / concentric label + duration, in phase colours.
@@ -604,9 +695,9 @@ internal class OverlayCards(private val context: Context, private val result: An
         frame?.let { joint.value(it) }?.takeIf { it.isFinite() }
 
     /**
-     * Up to three rep paths. The window follows the current rep; the current one is drawn live
-     * up to the playhead, its neighbours are complete trajectories. All three share one
-     * equal-scale fit so their shapes can be compared directly.
+     * Up to three rep paths. The current rep is drawn live up to the playhead; its neighbours
+     * are complete. All three share one y-axis so heights are directly comparable; each rep is
+     * centred horizontally in its own column using its own x range.
      */
     private fun drawBarPathCard(
         canvas: Canvas,
@@ -633,14 +724,13 @@ internal class OverlayCards(private val context: Context, private val result: An
             drawEmpty(canvas, rect)
             return
         }
-        val union = bounds.reduce { acc, next ->
-            BarBounds(
-                minX = min(acc.minX, next.minX),
-                maxX = max(acc.maxX, next.maxX),
-                minY = min(acc.minY, next.minY),
-                maxY = max(acc.maxY, next.maxY),
-            )
+        val yMin = bounds.minOf { it.minY }
+        val yMax = bounds.maxOf { it.maxY }
+        val ySpan = (yMax - yMin).coerceAtLeast(1e-6)
+        val xSpans = visible.mapNotNull { rep ->
+            barBoundsByRep[rep.index]?.let { (it.maxX - it.minX) * lateralProjection }
         }
+        val maxXSpan = (xSpans.maxOrNull() ?: 0.0).coerceAtLeast(1e-6)
 
         val labelHeight = labelPaint.textSize + 4f * uiScale
         val chartTop = titleBaseline + 6f * uiScale
@@ -650,24 +740,31 @@ internal class OverlayCards(private val context: Context, private val result: An
         val gap = 8f * uiScale
         val columnWidth = ((contentWidth - gap * (visible.size - 1)) / visible.size)
             .coerceAtLeast(1f)
+        val inset = 7f * uiScale
+        val usableHeight = (chartHeight - inset * 2f).coerceAtLeast(1f)
+        val usableWidth = (columnWidth - inset * 2f).coerceAtLeast(1f)
+        // One pixel-per-metre for x and y, shared by all three reps: the card's aspect ratio
+        // matches the burned-in trail. If the path is tall and narrow it stays tall and narrow.
+        val scale = min(usableHeight / ySpan.toFloat(), usableWidth / maxXSpan.toFloat())
+            .coerceAtLeast(0.0001f)
+        val yPadding = ((usableHeight - ySpan.toFloat() * scale) / 2f).coerceAtLeast(0f)
 
         visible.forEachIndexed { index, rep ->
             val left = rect.left + pad + index * (columnWidth + gap)
-            val fit = fitOverlayBarPath(
-                minX = union.minX,
-                maxX = union.maxX,
-                minY = union.minY,
-                maxY = union.maxY,
-                widthPx = columnWidth,
-                heightPx = chartHeight,
-                paddingPx = 7f * uiScale,
-            )
-            fun point(sample: MotionSample): PointF = PointF(
-                (left + fit.x(sample.xM)).coerceIn(left, left + columnWidth),
-                (chartTop + fit.y(sample.yM)).coerceIn(chartTop, chartTop + chartHeight),
-            )
-            // Faint baseline only; three sets of axes would be noise.
-            val axisY = (chartTop + fit.bottomPx).coerceIn(chartTop, chartTop + chartHeight)
+            val repBounds = barBoundsByRep[rep.index] ?: return@forEachIndexed
+            val repCenterX = (repBounds.minX + repBounds.maxX) / 2.0 * lateralProjection
+            val columnCenterX = left + columnWidth / 2f
+            fun point(sample: MotionSample): PointF {
+                val x = columnCenterX + ((sample.xM * lateralProjection - repCenterX) * scale).toFloat()
+                val y = chartTop + inset + yPadding +
+                    ((yMax - sample.yM) * scale).toFloat()
+                return PointF(
+                    x.coerceIn(left, left + columnWidth),
+                    y.coerceIn(chartTop, chartTop + chartHeight),
+                )
+            }
+            // Shared y-axis baseline.
+            val axisY = chartTop + inset + yPadding + ySpan.toFloat() * scale
             canvas.drawLine(left, axisY, left + columnWidth, axisY, axisPaint)
 
             val isCurrent = rep.index == active?.index
@@ -728,7 +825,10 @@ internal class OverlayCards(private val context: Context, private val result: An
         val chartBottom = rect.bottom - pad
         val chartTop = titleBaseline + 6f * uiScale
         val maxValue = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return
-        val barMaxHeight = (chartBottom - chartTop).coerceAtLeast(3f)
+        // Values sit above the blocks; reserve a row so a full-height bar cannot cover them.
+        val valueRow = valuePaint.textSize + 4f * uiScale
+        val barTopLimit = chartTop + valueRow
+        val barMaxHeight = (chartBottom - barTopLimit).coerceAtLeast(3f)
 
         visible.forEachIndexed { index, rep ->
             val selected = rep.repIndex == active?.index
@@ -752,21 +852,14 @@ internal class OverlayCards(private val context: Context, private val result: An
             // The block itself carries the value; the rep index below was redundant.
             val valueText = formatMcv(rep.mcvMps) ?: missing
             val numberPaint = if (selected) valuePaint else labelPaint
-            val numberBaseline = top + numberPaint.textSize + 3f * uiScale
-            if (height >= numberPaint.textSize + 3f * uiScale) {
-                drawTextCenteredFitted(
-                    canvas, valueText, centerX, numberBaseline, numberPaint, columnWidth,
-                )
-            } else {
-                drawTextCenteredFitted(
-                    canvas,
-                    valueText,
-                    centerX,
-                    (top - 3f * uiScale).coerceAtLeast(chartTop + numberPaint.textSize),
-                    numberPaint,
-                    columnWidth,
-                )
-            }
+            drawTextCenteredFitted(
+                canvas,
+                valueText,
+                centerX,
+                (top - 3f * uiScale).coerceAtLeast(chartTop + numberPaint.textSize),
+                numberPaint,
+                columnWidth,
+            )
         }
     }
 
