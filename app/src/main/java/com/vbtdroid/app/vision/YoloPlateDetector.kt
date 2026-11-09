@@ -37,7 +37,7 @@ class YoloPlateDetector(context: Context) : PlateDetector, AutoCloseable {
     private val anchorCount: Int
     private val classCount: Int
     private val inputBuffer: ByteBuffer
-    private val outputBuffer: FloatArray
+    private val outputBuffer: Array<Array<FloatArray>>
 
     init {
         val modelFile = "models/plate_yolo.tflite"
@@ -103,9 +103,13 @@ class YoloPlateDetector(context: Context) : PlateDetector, AutoCloseable {
             anchorCount = outShape[2]
             inputBuffer = ByteBuffer.allocateDirect(1 * 3 * inputWidth * inputHeight * 4)
                 .order(ByteOrder.nativeOrder())
-            outputBuffer = FloatArray(outShape[1] * outShape[2])
+            outputBuffer = Array(1) { Array(outShape[1]) { FloatArray(outShape[2]) } }
             interpreter = created
             gpuDelegate = delegate
+            android.util.Log.d(
+                "VBTDebug",
+                "YOLO ready input=${inputWidth}x${inputHeight} anchors=$anchorCount classes=$classCount gpu=${delegate != null}",
+            )
         } catch (error: Throwable) {
             created.close()
             delegate?.close()
@@ -153,26 +157,31 @@ class YoloPlateDetector(context: Context) : PlateDetector, AutoCloseable {
             if (!canvasBitmap.isRecycled) canvasBitmap.recycle()
         }
 
-        interpreter.run(inputBuffer, outputBuffer)
+        try {
+            interpreter.run(inputBuffer, outputBuffer)
+        } catch (error: Exception) {
+            android.util.Log.e("VBTDebug", "YOLO inference failed", error)
+            throw error
+        }
 
         val detections = ArrayList<PlateDetection>()
         for (anchor in 0 until anchorCount) {
-            val score = outputBuffer[4 * anchorCount + anchor]
+            val score = outputBuffer[0][4][anchor]
             if (!score.isFinite() || score < MIN_CONFIDENCE) continue
             var bestClass = 0
             var bestScore = score
             for (cls in 1 until classCount) {
-                val candidate = outputBuffer[(4 + cls) * anchorCount + anchor]
+                val candidate = outputBuffer[0][4 + cls][anchor]
                 if (candidate > bestScore) {
                     bestScore = candidate
                     bestClass = cls
                 }
             }
             if (bestClass != PLATE_CLASS) continue
-            val cx = outputBuffer[anchor] * inputWidth
-            val cy = outputBuffer[anchorCount + anchor] * inputHeight
-            val width = outputBuffer[2 * anchorCount + anchor] * inputWidth
-            val height = outputBuffer[3 * anchorCount + anchor] * inputHeight
+            val cx = outputBuffer[0][0][anchor] * inputWidth
+            val cy = outputBuffer[0][1][anchor] * inputHeight
+            val width = outputBuffer[0][2][anchor] * inputWidth
+            val height = outputBuffer[0][3][anchor] * inputHeight
             if (width <= 1f || height <= 1f) continue
             val left = ((cx - width / 2f) - padX) / scale
             val top = ((cy - height / 2f) - padY) / scale
@@ -191,7 +200,16 @@ class YoloPlateDetector(context: Context) : PlateDetector, AutoCloseable {
                 confidence = bestScore,
             )
         }
-        return nonMaximumSuppression(detections, NMS_IOU)
+        val kept = nonMaximumSuppression(detections, NMS_IOU)
+        if (kept.isEmpty()) {
+            android.util.Log.w("VBTDebug", "YOLO no plate: raw=$detections")
+        } else {
+            android.util.Log.d(
+                "VBTDebug",
+                "YOLO plates=${kept.size} best=${kept.first().confidence} box=${kept.first().cxPx},${kept.first().cyPx},${kept.first().widthPx}x${kept.first().heightPx}",
+            )
+        }
+        return kept
     }
 
     private fun nonMaximumSuppression(
