@@ -603,6 +603,11 @@ internal class OverlayCards(private val context: Context, private val result: An
     private fun angleValue(frame: FrameAngles?, joint: JointSpec): Double? =
         frame?.let { joint.value(it) }?.takeIf { it.isFinite() }
 
+    /**
+     * Up to three rep paths. The window follows the current rep; the current one is drawn live
+     * up to the playhead, its neighbours are complete trajectories. All three share one
+     * equal-scale fit so their shapes can be compared directly.
+     */
     private fun drawBarPathCard(
         canvas: Canvas,
         rect: RectF,
@@ -614,56 +619,84 @@ internal class OverlayCards(private val context: Context, private val result: An
         val contentWidth = rect.width() - pad * 2f
         val titleBaseline = rect.top + pad + titlePaint.textSize
         drawTextFitted(canvas, barPathTitle, rect.left + pad, titleBaseline, titlePaint, contentWidth)
-        val bounds = active?.let { barBoundsByRep[it.index] }
-        if (active == null || bounds == null) {
+        val reps = result.repSlices
+        if (reps.isEmpty()) {
             drawEmpty(canvas, rect)
             return
         }
+        val activePosition = reps.indexOfFirst { it.index == active?.index }.takeIf { it >= 0 } ?: 0
+        val windowSize = min(3, reps.size)
+        val start = (activePosition - 1).coerceIn(0, (reps.size - windowSize).coerceAtLeast(0))
+        val visible = reps.subList(start, start + windowSize)
+        val bounds = visible.mapNotNull { barBoundsByRep[it.index] }
+        if (bounds.isEmpty()) {
+            drawEmpty(canvas, rect)
+            return
+        }
+        val union = bounds.reduce { acc, next ->
+            BarBounds(
+                minX = min(acc.minX, next.minX),
+                maxX = max(acc.maxX, next.maxX),
+                minY = min(acc.minY, next.minY),
+                maxY = max(acc.maxY, next.maxY),
+            )
+        }
 
-        val chartLeft = rect.left + pad
+        val labelHeight = labelPaint.textSize + 4f * uiScale
         val chartTop = titleBaseline + 6f * uiScale
-        val chartHeight = rect.bottom - pad - chartTop
+        val chartBottom = rect.bottom - pad - labelHeight
+        val chartHeight = chartBottom - chartTop
         if (chartHeight <= 1f) return
-        val fit = fitOverlayBarPath(
-            minX = bounds.minX,
-            maxX = bounds.maxX,
-            minY = bounds.minY,
-            maxY = bounds.maxY,
-            widthPx = contentWidth,
-            heightPx = chartHeight,
-            paddingPx = 12f * uiScale,
-        )
-        fun point(sample: MotionSample): PointF = PointF(
-            (chartLeft + fit.x(sample.xM)).coerceIn(chartLeft, chartLeft + contentWidth),
-            (chartTop + fit.y(sample.yM)).coerceIn(chartTop, chartTop + chartHeight),
-        )
+        val gap = 8f * uiScale
+        val columnWidth = ((contentWidth - gap * (visible.size - 1)) / visible.size)
+            .coerceAtLeast(1f)
 
-        // Faint equal-scale axes, same as the report chart.
-        val axisX = (chartLeft + fit.leftPx).coerceIn(chartLeft, chartLeft + contentWidth)
-        val axisY = (chartTop + fit.bottomPx).coerceIn(chartTop, chartTop + chartHeight)
-        canvas.drawLine(axisX, chartTop, axisX, chartTop + chartHeight, axisPaint)
-        canvas.drawLine(chartLeft, axisY, chartLeft + contentWidth, axisY, axisPaint)
+        visible.forEachIndexed { index, rep ->
+            val left = rect.left + pad + index * (columnWidth + gap)
+            val fit = fitOverlayBarPath(
+                minX = union.minX,
+                maxX = union.maxX,
+                minY = union.minY,
+                maxY = union.maxY,
+                widthPx = columnWidth,
+                heightPx = chartHeight,
+                paddingPx = 7f * uiScale,
+            )
+            fun point(sample: MotionSample): PointF = PointF(
+                (left + fit.x(sample.xM)).coerceIn(left, left + columnWidth),
+                (chartTop + fit.y(sample.yM)).coerceIn(chartTop, chartTop + chartHeight),
+            )
+            // Faint baseline only; three sets of axes would be noise.
+            val axisY = (chartTop + fit.bottomPx).coerceIn(chartTop, chartTop + chartHeight)
+            canvas.drawLine(left, axisY, left + columnWidth, axisY, axisPaint)
 
-        // Trail advances by frame; this card intentionally has no playback cursor.
-        val runs = RepTimeline.trailRuns(result.motionSamples, active, cueSec)
-        var firstPoint: PointF? = null
-        var lastPoint: PointF? = null
-        for (run in runs) {
-            if (run.samples.size < 2) continue
-            path.reset()
-            run.samples.forEachIndexed { index, sample ->
-                val p = point(sample)
-                if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+            val isCurrent = rep.index == active?.index
+            val upTo = if (isCurrent) cueSec else rep.endSec
+            val runs = RepTimeline.trailRuns(result.motionSamples, rep, upTo)
+            var firstPoint: PointF? = null
+            var lastPoint: PointF? = null
+            for (run in runs) {
+                if (run.samples.size < 2) continue
+                path.reset()
+                run.samples.forEachIndexed { sampleIndex, sample ->
+                    val p = point(sample)
+                    if (sampleIndex == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+                }
+                canvas.drawPath(path, barPathPaints.getValue(run.type))
+                if (firstPoint == null) firstPoint = point(run.samples.first())
+                lastPoint = point(run.samples.last())
             }
-            canvas.drawPath(path, barPathPaints.getValue(run.type))
-            if (firstPoint == null) firstPoint = point(run.samples.first())
-            lastPoint = point(run.samples.last())
-        }
-        firstPoint?.let {
-            canvas.drawCircle(it.x, it.y, 5f * uiScale, dotRingPaint)
-        }
-        lastPoint?.let {
-            canvas.drawCircle(it.x, it.y, 5f * uiScale, dotPaint)
+            firstPoint?.let { canvas.drawCircle(it.x, it.y, 3.5f * uiScale, dotRingPaint) }
+            lastPoint?.let { canvas.drawCircle(it.x, it.y, 3.5f * uiScale, dotPaint) }
+
+            drawTextCenteredFitted(
+                canvas,
+                rep.index.toString(),
+                left + columnWidth / 2f,
+                rect.bottom - pad,
+                if (isCurrent) valuePaint else labelPaint,
+                columnWidth,
+            )
         }
     }
 
@@ -695,7 +728,6 @@ internal class OverlayCards(private val context: Context, private val result: An
         val chartBottom = rect.bottom - pad
         val chartTop = titleBaseline + 6f * uiScale
         val maxValue = reps.maxOfOrNull { it.mcvMps }?.takeIf { it > 0.0 } ?: return
-        val bestIndex = reps.first { it.mcvMps == maxValue }.repIndex
         val barMaxHeight = (chartBottom - chartTop).coerceAtLeast(3f)
 
         visible.forEachIndexed { index, rep ->
@@ -706,7 +738,8 @@ internal class OverlayCards(private val context: Context, private val result: An
             val right = left + (columnWidth - 8f * uiScale).coerceAtLeast(1f)
             val top = chartBottom - height
             barRect.set(left, top, right, chartBottom)
-            barPaint.color = if (rep.repIndex == bestIndex) {
+            // The current rep is the highlighted block, wherever the sliding window puts it.
+            barPaint.color = if (selected) {
                 OverlayStyle.TRAIL.toInt()
             } else {
                 (OverlayStyle.TRAIL.toInt() and 0x00FFFFFF) or (115 shl 24)
