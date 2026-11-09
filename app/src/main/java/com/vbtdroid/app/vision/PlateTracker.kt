@@ -369,15 +369,29 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val previousX = if (lastTimeSec != null) centerX else null
             val previousY = if (lastTimeSec != null) centerY else null
             val chosen = if (previousX != null && previousY != null) {
-                val gate = detectedReference.majorAxisPx * DETECTION_ASSOCIATION_DIAMETERS
+                // A plate centre never moves more than one radius sideways; reject the other
+                // plate. Vertical travel is allowed to be much larger (fast concentric).
+                val lateralLimit = detectedReference.majorAxisPx * DETECTION_LATERAL_DIAMETERS
+                val verticalLimit = detectedReference.majorAxisPx * DETECTION_VERTICAL_DIAMETERS
                 detections
                     .map { it to hypot(it.cxPx - previousX, it.cyPx - previousY) }
-                    .filter { it.second <= gate }
+                    .filter { (detection, _) ->
+                        abs(detection.cxPx - xReferencePx) <= lateralLimit &&
+                            abs(detection.cyPx - previousY) <= verticalLimit
+                    }
                     .minByOrNull { it.second }
                     ?.first
             } else {
                 null
-            } ?: detections.maxByOrNull { it.widthPx * it.heightPx } ?: return null
+            } ?: if (previousX == null) {
+                detections.maxByOrNull { it.widthPx * it.heightPx }
+            } else {
+                null
+            } ?: run {
+                consecutiveMisses++
+                successfulPair.failed()
+                return null
+            }
 
             val detectedGray = toGray(bitmap)
             try {
@@ -979,7 +993,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val DETECTOR_RECOVERY_MISSES = 3
         const val MAX_LATERAL_DIAMETERS = 0.5f
         const val MIN_DETECTED_DIAMETER_PX = 8f
-        const val DETECTION_ASSOCIATION_DIAMETERS = 2.5f
+        const val DETECTION_LATERAL_DIAMETERS = 0.5f
+        const val DETECTION_VERTICAL_DIAMETERS = 2.5f
         const val MIN_INIT_RIM_SUPPORT = 0.18f
         const val PROBATION_FRAMES = 10
         const val PROBATION_MIN_FRAMES = 6
