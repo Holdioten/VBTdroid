@@ -14,6 +14,7 @@ import com.vbtdroid.app.analysis.AnalysisResult
 import com.vbtdroid.app.analysis.FrameAngles
 import com.vbtdroid.core.metrics.MotionSample
 import com.vbtdroid.core.metrics.RepMetrics
+import com.vbtdroid.core.metrics.StickingRegionDetector
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.app.ui.report.phaseLabelRes
 import com.vbtdroid.core.phases.Phase
@@ -496,32 +497,24 @@ internal class OverlayCards(private val context: Context, private val result: An
             chartTop + inset + usableHeight * (1f - ((velocity - minVelocity) / velocitySpan).toFloat())
 
         val isConcentric = phase?.type == PhaseType.CONCENTRIC
-        var peakIndex = -1
-        var stickIndex = -1
-        var regionStart = -1
-        var regionEnd = -1
-        if (isConcentric && phaseSamples.size >= 3) {
-            peakIndex = phaseSamples.indices.maxByOrNull { phaseSamples[it].vyMps } ?: -1
-            if (peakIndex >= 0) {
-                stickIndex = (peakIndex + 1 until phaseSamples.lastIndex).firstOrNull { index ->
-                    val before = phaseSamples[index - 1].vyMps
-                    val current = phaseSamples[index].vyMps
-                    val after = phaseSamples[index + 1].vyMps
-                    current <= before + 1e-9 && current <= after + 1e-9
-                } ?: -1
-            }
-            if (stickIndex > 0) {
-                val vmin = phaseSamples[stickIndex].vyMps
-                val threshold = vmin + max(0.03, abs(vmin) * 0.08)
-                regionStart = stickIndex
-                while (regionStart > peakIndex && phaseSamples[regionStart - 1].vyMps <= threshold) regionStart--
-                regionEnd = stickIndex
-                while (regionEnd < phaseSamples.lastIndex && phaseSamples[regionEnd + 1].vyMps <= threshold) regionEnd++
-            }
+        val peakIndex = if (isConcentric) {
+            phaseSamples.indices.maxByOrNull { phaseSamples[it].vyMps } ?: -1
+        } else {
+            -1
         }
-        if (regionStart in 0..regionEnd && regionEnd < phaseSamples.size) {
-            val startX = xFor(phaseSamples[regionStart].tSec)
-            val endX = xFor(phaseSamples[regionEnd].tSec)
+        val stickingRegion = if (isConcentric && phaseSamples.size >= 3) {
+            StickingRegionDetector.detect(
+                samples = phaseSamples,
+                startY = phaseSamples.first().yM,
+                romConcentric = (phaseSamples.maxOf { it.yM } - phaseSamples.minOf { it.yM })
+                    .coerceAtLeast(1e-6),
+            )
+        } else {
+            null
+        }
+        if (stickingRegion != null) {
+            val startX = xFor(phaseSamples[stickingRegion.peakIndex].tSec)
+            val endX = xFor(phaseSamples[stickingRegion.minIndex].tSec)
             if (startX != null && endX != null && endX > startX) {
                 canvas.drawRect(startX, chartTop, endX, chartTop + chartHeight, stickingBandPaint)
             }
@@ -574,18 +567,23 @@ internal class OverlayCards(private val context: Context, private val result: An
                 )
             }
         }
-        if (isConcentric && stickIndex > 0) {
-            val startX = xFor(phaseSamples[regionStart].tSec)
-            val endX = xFor(phaseSamples[regionEnd].tSec)
+        if (stickingRegion != null) {
+            val startX = xFor(phaseSamples[stickingRegion.peakIndex].tSec)
+            val endX = xFor(phaseSamples[stickingRegion.minIndex].tSec)
             if (startX != null) {
                 canvas.drawLine(startX, chartTop, startX, chartTop + chartHeight, stickingLinePaint)
             }
             if (endX != null) {
                 canvas.drawLine(endX, chartTop, endX, chartTop + chartHeight, stickingLinePaint)
             }
-            val stick = phaseSamples[stickIndex]
+            val stick = phaseSamples[stickingRegion.minIndex]
             xFor(stick.tSec)?.let { x ->
-                canvas.drawCircle(x, yFor(stick.vyMps).coerceIn(chartTop, chartTop + chartHeight), 3f * uiScale, dotPaint)
+                canvas.drawCircle(
+                    x,
+                    yFor(stick.vyMps).coerceIn(chartTop, chartTop + chartHeight),
+                    3f * uiScale,
+                    dotPaint,
+                )
             }
         }
 
