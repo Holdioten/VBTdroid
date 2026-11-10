@@ -51,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -133,7 +134,7 @@ fun ImportScreen(
     onAnalyze: (AnalysisRequest) -> Unit = {},
     onCancel: () -> Unit = {},
     onShowHistory: () -> Unit = {},
-    suggestRoi: (Bitmap) -> RectF? = { null },
+    suggestRois: (Bitmap) -> List<RectF> = { emptyList() },
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
@@ -156,6 +157,9 @@ fun ImportScreen(
     var cameraLevel by rememberSaveable { mutableStateOf(true) }
     // Bench pose tracking is unreliable; default it off and reset when the lift changes.
     var analyzePose by rememberSaveable(lift) { mutableStateOf(lift != Lift.BENCH) }
+    var roiCandidates by remember { mutableStateOf<List<RectF>>(emptyList()) }
+    var autoRoi by remember { mutableStateOf<RectF?>(null) }
+    var selectedCandidate by rememberSaveable { mutableStateOf(0) }
 
     val currentPreview = preview
     DisposableEffect(currentPreview) {
@@ -176,6 +180,9 @@ fun ImportScreen(
         roi = null
         roiConfirmed = false
         autoRoiUnavailable = false
+        roiCandidates = emptyList()
+        autoRoi = null
+        selectedCandidate = 0
         videoError = null
         loading = false
     }
@@ -217,15 +224,18 @@ fun ImportScreen(
                 val meta = decoder.readMeta(uri)
                 VideoLimits.requireSupportedDuration(meta.durationSec)
                 val firstFrame = decoder.readFirstFrame(uri)
-                val suggestion = runCatching { suggestRoi(firstFrame) }.getOrNull()
-                Triple(meta, firstFrame, suggestion)
+                val suggestions = runCatching { suggestRois(firstFrame) }.getOrDefault(emptyList())
+                Triple(meta, firstFrame, suggestions)
             }
             videoMeta = loaded.first
             preview = loaded.second
+            roiCandidates = loaded.third
+            selectedCandidate = 0
+            autoRoi = loaded.third.firstOrNull()
             if (restoredRoi == null) {
-                roi = loaded.third
+                roi = autoRoi
                 roiConfirmed = false
-                autoRoiUnavailable = loaded.third == null
+                autoRoiUnavailable = autoRoi == null
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -324,8 +334,9 @@ fun ImportScreen(
                     onNext = { goTo(pagerState.currentPage + 1) },
                     onBackToRoi = { goTo(PAGE_ROI) },
                     onReset = {
-                        roi = null
+                        roi = autoRoi
                         roiConfirmed = false
+                        selectedCandidate = 0
                     },
                     onConfirm = { roiConfirmed = true },
                     onAnalyze = ::startAnalysis,
@@ -403,6 +414,15 @@ fun ImportScreen(
                         PAGE_ROI -> RoiPage(
                             preview = preview,
                             roi = roi,
+                            candidates = roiCandidates,
+                            selectedCandidate = selectedCandidate,
+                            onSelectCandidate = { index ->
+                                roiCandidates.getOrNull(index)?.let { candidate ->
+                                    roi = candidate
+                                    roiConfirmed = false
+                                    selectedCandidate = index
+                                }
+                            },
                             roiConfirmed = roiConfirmed,
                             autoRoiUnavailable = autoRoiUnavailable,
                             onRoiChanged = {
@@ -412,8 +432,9 @@ fun ImportScreen(
                             editable = RoiEditPolicy.canEdit(roiConfirmed, analyzing),
                             onModify = { roiConfirmed = false },
                             onReset = {
-                                roi = null
+                                roi = autoRoi
                                 roiConfirmed = false
+                                selectedCandidate = 0
                             },
                             onGoVideo = { goTo(PAGE_VIDEO) },
                         )
@@ -645,6 +666,9 @@ private fun SettingsPage(
 private fun RoiPage(
     preview: Bitmap?,
     roi: RectF?,
+    candidates: List<RectF>,
+    selectedCandidate: Int,
+    onSelectCandidate: (Int) -> Unit,
     roiConfirmed: Boolean,
     autoRoiUnavailable: Boolean,
     onRoiChanged: (RectF) -> Unit,
@@ -683,6 +707,24 @@ private fun RoiPage(
             tone = chipTone,
             modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
         )
+    }
+    if (editable && candidates.size > 1) {
+        Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+            candidates.forEachIndexed { index, _ ->
+                FilterChip(
+                    selected = index == selectedCandidate,
+                    onClick = { onSelectCandidate(index) },
+                    label = {
+                        Text(
+                            stringResource(
+                                if (index == 0) R.string.import_roi_candidate_far
+                                else R.string.import_roi_candidate_near,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
     }
     if (roiConfirmed) {
         Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {

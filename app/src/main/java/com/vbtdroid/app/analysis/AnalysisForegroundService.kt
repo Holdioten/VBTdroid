@@ -64,7 +64,9 @@ class AnalysisForegroundService : Service() {
         fun consumeError(): String? = stateHolder.consumeError()
         fun cancel() = cancelAnalysis()
         fun isRunning(): Boolean = runGate.isRunning()
-        fun suggestRoi(bitmap: Bitmap): RectF? = PlateTracker(plateDetector).use { it.initialRoi(bitmap) }
+        fun suggestRois(bitmap: Bitmap): List<RectF> =
+            PlateTracker(plateDetector).use { it.initialRois(bitmap) }
+        fun suggestRoi(bitmap: Bitmap): RectF? = suggestRois(bitmap).firstOrNull()
     }
 
     private val binder = AnalysisBinder()

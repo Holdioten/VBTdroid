@@ -257,7 +257,7 @@ private fun AnalysisApp(session: AnalysisSession) {
                 analysisError = null
             },
             onShowHistory = ::openHistory,
-            suggestRoi = { bitmap -> serviceBinder?.suggestRoi(bitmap) },
+            suggestRois = { bitmap -> serviceBinder?.suggestRois(bitmap).orEmpty() },
         )
     }
 }

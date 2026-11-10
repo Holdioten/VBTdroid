@@ -1,6 +1,8 @@
 package com.vbtdroid.app.vision
 
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Detected circle in image coordinates (public so the radius gate is unit-testable). */
@@ -48,6 +50,39 @@ object PlateRoi {
 
     fun selectLargest(detections: List<PlateDetection>): PlateDetection? =
         detections.maxByOrNull { it.widthPx.coerceAtLeast(0f) * it.heightPx.coerceAtLeast(0f) }
+
+    /** Smallest side still worth tracking; below this the centre quantisation dominates. */
+    const val MIN_PREFERRED_SIDE_PX = 16f
+
+    /** A box this elongated is almost certainly a strong ellipse, not the plate we want. */
+    const val MAX_PREFERRED_ASPECT = 1.6f
+
+    /** Aspect score reaches zero at this much elongation. */
+    const val PREFERRED_ASPECT_SPAN = 0.4f
+
+    /**
+     * Cheap far/near choice without contour geometry: a plate seen closer to face-on has a
+     * square-ish box, while the near plate is a stronger ellipse. Combine aspect closeness with
+     * detector confidence; this favours the far, rounder plate when both are detected, and falls
+     * back to the largest box when neither is plausible.
+     */
+    fun selectPreferred(detections: List<PlateDetection>): PlateDetection? {
+        val viable = detections.filter { detection ->
+            val width = detection.widthPx
+            val height = detection.heightPx
+            if (width <= 0f || height <= 0f) return@filter false
+            val shortSide = min(width, height)
+            val longSide = max(width, height)
+            shortSide >= MIN_PREFERRED_SIDE_PX && longSide / shortSide <= MAX_PREFERRED_ASPECT
+        }
+        if (viable.isEmpty()) return selectLargest(detections)
+        return viable.maxByOrNull { detection ->
+            val aspect = max(detection.widthPx, detection.heightPx) /
+                min(detection.widthPx, detection.heightPx)
+            val aspectScore = (1f - (aspect - 1f) / PREFERRED_ASPECT_SPAN).coerceIn(0f, 1f)
+            0.7f * detection.confidence + 0.3f * aspectScore
+        }
+    }
 
     /**
      * Picks the Hough circle that best matches the reference plate.

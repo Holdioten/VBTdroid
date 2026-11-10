@@ -207,4 +207,6 @@
     <string name="report_pose_unavailable">姿态不可用</string>
     <string name="quality_lateral_drift">横向位移异常，轨迹可能跟错片</string>
     <string name="report_export_saved">已保存到 Pictures/VBTdroid/%1$s</string>
+    <string name="import_roi_candidate_far">远端片</string>
+    <string name="import_roi_candidate_near">近端片</string>
 </resources>

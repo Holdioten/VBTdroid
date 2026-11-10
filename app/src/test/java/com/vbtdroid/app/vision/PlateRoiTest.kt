@@ -94,6 +94,22 @@ class PlateRoiTest {
     }
 
     @Test
+    fun `prefers the squarer far plate over the larger near plate`() {
+        val near = PlateDetection(100f, 100f, 200f, 140f, 0.95f)
+        val far = PlateDetection(300f, 100f, 120f, 120f, 0.80f)
+
+        assertEquals(far, PlateRoi.selectPreferred(listOf(near, far)))
+    }
+
+    @Test
+    fun `falls back to the largest box when every candidate is too elongated`() {
+        val small = PlateDetection(100f, 100f, 60f, 20f, 0.9f)
+        val large = PlateDetection(200f, 100f, 120f, 40f, 0.6f)
+
+        assertEquals(large, PlateRoi.selectPreferred(listOf(small, large)))
+    }
+
+    @Test
     fun `local search radius covers the plate radius plus margin`() {
         val diameter = 260f
 

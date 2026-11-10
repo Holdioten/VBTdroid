@@ -39,15 +39,33 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var probation: MutableList<InitCandidate>? = null
     private var probationFrames = 0
 
-    open fun initialRoi(bitmap: Bitmap): RectF? {
-        val detection = detector?.let { PlateRoi.selectLargest(it.detect(bitmap)) } ?: return null
-        return RectF(
-            detection.cxPx - detection.widthPx / 2f,
-            detection.cyPx - detection.heightPx / 2f,
-            detection.cxPx + detection.widthPx / 2f,
-            detection.cyPx + detection.heightPx / 2f,
+    /**
+     * Two auto candidates: preferred (rounder/smaller, usually the far plate) first, then the
+     * largest box (usually the near plate). The import screen lets the user pick one.
+     */
+    open fun initialRois(bitmap: Bitmap): List<RectF> {
+        val detections = detector?.detect(bitmap).orEmpty()
+        if (detections.isEmpty()) return emptyList()
+        val preferred = PlateRoi.selectPreferred(detections)
+        val largest = PlateRoi.selectLargest(detections)
+        val candidates = listOfNotNull(preferred, largest).distinctBy {
+            "${it.cxPx},${it.cyPx},${it.widthPx}x${it.heightPx}"
+        }
+        android.util.Log.d(
+            "VBTDebug",
+            "Auto ROI candidates=" + candidates.joinToString { "${it.widthPx.toInt()}x${it.heightPx.toInt()}@${it.confidence}" },
         )
+        return candidates.map { detection ->
+            RectF(
+                detection.cxPx - detection.widthPx / 2f,
+                detection.cyPx - detection.heightPx / 2f,
+                detection.cxPx + detection.widthPx / 2f,
+                detection.cyPx + detection.heightPx / 2f,
+            )
+        }
     }
+
+    open fun initialRoi(bitmap: Bitmap): RectF? = initialRois(bitmap).firstOrNull()
 
     open fun reset() {
         successfulPair.clear()
