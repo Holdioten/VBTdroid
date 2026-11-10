@@ -224,7 +224,16 @@ fun ImportScreen(
                 val meta = decoder.readMeta(uri)
                 VideoLimits.requireSupportedDuration(meta.durationSec)
                 val firstFrame = decoder.readFirstFrame(uri)
-                val suggestions = runCatching { suggestRois(firstFrame) }.getOrDefault(emptyList())
+                // The first frame often has one plate occluded/out of frame. Probe a few more
+                // frames so both bar-end plates can become ROI candidates.
+                var suggestions = runCatching { suggestRois(firstFrame) }.getOrDefault(emptyList())
+                for (probeSec in listOf(0.5, 1.0)) {
+                    if (suggestions.size >= 2) break
+                    val probe = runCatching { decoder.readFrameAt(uri, probeSec) }.getOrNull() ?: continue
+                    val probeSuggestions = runCatching { suggestRois(probe) }.getOrDefault(emptyList())
+                    probe.recycle()
+                    if (probeSuggestions.size > suggestions.size) suggestions = probeSuggestions
+                }
                 Triple(meta, firstFrame, suggestions)
             }
             videoMeta = loaded.first

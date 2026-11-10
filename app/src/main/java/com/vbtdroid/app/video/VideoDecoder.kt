@@ -131,13 +131,20 @@ open class VideoDecoder(context: Context) {
         }
     }
 
-    open fun readFirstFrame(uri: Uri, maxLongSide: Int = 1920): Bitmap {
+    open fun readFirstFrame(uri: Uri, maxLongSide: Int = 1920): Bitmap =
+        readFrameAt(uri, 0.0, maxLongSide)
+
+    /** Frame at [tSec] (sync sample), rotated and scaled like [readFirstFrame]. */
+    open fun readFrameAt(uri: Uri, tSec: Double, maxLongSide: Int = 1920): Bitmap {
         require(maxLongSide > 0) { "maxLongSide must be positive" }
+        require(tSec.isFinite() && tSec >= 0.0) { "tSec must be finite and non-negative" }
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(appContext, uri)
-            val source = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                ?: error("Could not decode the first video frame")
+            val source = retriever.getFrameAtTime(
+                (tSec * 1_000_000.0).toLong(),
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            ) ?: error("Could not decode the video frame at $tSec s")
             val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
                 ?.toIntOrNull()?.let { ((it % 360) + 360) % 360 } ?: 0
             val scale = minOf(1.0, maxLongSide.toDouble() / maxOf(source.width, source.height))
