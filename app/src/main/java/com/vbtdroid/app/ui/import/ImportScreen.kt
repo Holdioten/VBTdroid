@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -102,11 +105,12 @@ import com.vbtdroid.app.ui.components.StatusChip
 import com.vbtdroid.app.ui.components.SwitchRow
 import com.vbtdroid.app.ui.components.primaryButtonColors
 import com.vbtdroid.app.ui.components.secondaryOutlinedColors
-import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
+import com.vbtdroid.app.ui.theme.VbtPalettes
 import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
+import com.vbtdroid.app.ui.theme.VbtThemeId
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.video.VideoLimits
 import com.vbtdroid.app.video.VideoMeta
@@ -135,6 +139,8 @@ fun ImportScreen(
     onCancel: () -> Unit = {},
     onShowHistory: () -> Unit = {},
     suggestRois: (Bitmap) -> List<RectF> = { emptyList() },
+    themeId: VbtThemeId = VbtThemeId.LIGHT_RED,
+    onThemeChange: (VbtThemeId) -> Unit = {},
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
@@ -299,7 +305,7 @@ fun ImportScreen(
     val barVisible = analyzing || selectedUri != null
 
     Scaffold(
-        containerColor = Bg,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -310,6 +316,7 @@ fun ImportScreen(
                     )
                 },
                 actions = {
+                    ThemeMenu(themeId = themeId, onThemeChange = onThemeChange, enabled = !analyzing)
                     TextButton(
                         onClick = onShowHistory,
                         enabled = !analyzing,
@@ -318,7 +325,7 @@ fun ImportScreen(
                         Text(stringResource(R.string.history_title))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -978,4 +985,55 @@ private suspend fun queryDisplayName(context: Context, uri: Uri): String = withC
             null
         }
     } ?: uri.lastPathSegment ?: uri.toString()
+}
+
+@Composable
+private fun ThemeMenu(
+    themeId: VbtThemeId,
+    onThemeChange: (VbtThemeId) -> Unit,
+    enabled: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            modifier = Modifier.heightIn(min = MinTouchTarget),
+        ) {
+            Text(stringResource(R.string.theme_label))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            VbtThemeId.values().forEach { id ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(themeLabel(id))) },
+                    leadingIcon = { ThemeSwatch(id) },
+                    trailingIcon = {
+                        if (id == themeId) {
+                            Text("✓", color = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    onClick = {
+                        onThemeChange(id)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatch(id: VbtThemeId) {
+    val palette = VbtPalettes.of(id)
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(palette.bg))
+        Box(Modifier.size(10.dp).clip(CircleShape).background(palette.primary))
+        Box(Modifier.size(10.dp).clip(CircleShape).background(palette.onSurface))
+    }
+}
+
+private fun themeLabel(id: VbtThemeId): Int = when (id) {
+    VbtThemeId.LIGHT_RED -> R.string.theme_light_red
+    VbtThemeId.DARK_RED -> R.string.theme_dark_red
+    VbtThemeId.ARCUS_VBT -> R.string.theme_arcus
 }

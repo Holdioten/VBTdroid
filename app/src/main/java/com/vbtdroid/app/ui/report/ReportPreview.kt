@@ -31,7 +31,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
-import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.app.video.VideoDecoder
 import kotlinx.coroutines.Dispatchers
@@ -84,7 +83,7 @@ fun ReportPreview(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            Box(Modifier.fillMaxSize().background(Bg.copy(alpha = 0.4f)))
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = 0.4f)))
         }
         if (current == null) {
             Text(

@@ -37,7 +37,9 @@ import com.vbtdroid.app.data.SetEntity
 import com.vbtdroid.app.ui.history.HistoryScreen
 import com.vbtdroid.app.ui.import.ImportScreen
 import com.vbtdroid.app.ui.report.ReportScreen
+import com.vbtdroid.app.ui.theme.ThemePreference
 import com.vbtdroid.app.ui.theme.VbtTheme
+import com.vbtdroid.app.ui.theme.VbtThemeId
 import kotlinx.coroutines.launch
 
 /**
@@ -57,8 +59,17 @@ class MainActivity : ComponentActivity() {
         }
         val session = ViewModelProvider(this)[AnalysisSession::class.java]
         setContent {
-            VbtTheme {
-                AnalysisApp(session)
+            var themeId by rememberSaveable { mutableStateOf(ThemePreference.load(this).name) }
+            val currentTheme = VbtThemeId.valueOf(themeId)
+            VbtTheme(currentTheme) {
+                AnalysisApp(
+                    session = session,
+                    themeId = currentTheme,
+                    onThemeChange = { id ->
+                        themeId = id.name
+                        ThemePreference.save(this, id)
+                    },
+                )
             }
         }
     }
@@ -67,7 +78,11 @@ class MainActivity : ComponentActivity() {
 private enum class AppScreen { IMPORT, REPORT, HISTORY }
 
 @Composable
-private fun AnalysisApp(session: AnalysisSession) {
+private fun AnalysisApp(
+    session: AnalysisSession,
+    themeId: VbtThemeId,
+    onThemeChange: (VbtThemeId) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val database = remember(context) { AppDatabase.build(context) }
@@ -258,6 +273,8 @@ private fun AnalysisApp(session: AnalysisSession) {
             },
             onShowHistory = ::openHistory,
             suggestRois = { bitmap -> serviceBinder?.suggestRois(bitmap).orEmpty() },
+            themeId = themeId,
+            onThemeChange = onThemeChange,
         )
     }
 }

@@ -51,7 +51,6 @@ import com.vbtdroid.app.R
 import com.vbtdroid.app.ui.components.MessageBanner
 import com.vbtdroid.app.ui.components.SectionCard
 import com.vbtdroid.app.ui.components.SectionLabel
-import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.ShapePill
 import com.vbtdroid.app.ui.theme.VbtSpacing
@@ -66,12 +65,13 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Card scrim: #0A0E11 at 82%, so burned-in video text does not show through the cards. */
-internal val GlassColor = Bg.copy(alpha = 0.82f)
+internal val GlassColor: Color
+    @Composable get() = MaterialTheme.colorScheme.background.copy(alpha = 0.82f)
 
 /**
  * Full-bleed video layer that letterboxes the frame instead of cropping it. The overlay burns its
  * card column into the source frame, so cover-scaling would cut those cards off; fit keeps the
- * whole frame visible and lets [Bg] fill the bars.
+ * whole frame visible and lets the theme background fill the bars.
  */
 @Composable
 internal fun FitVideo(uri: Uri, playback: OverlayPlayback, modifier: Modifier = Modifier) {

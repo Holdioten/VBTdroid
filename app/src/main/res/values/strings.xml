@@ -210,4 +210,8 @@
     <string name="import_roi_candidate_far">远端片</string>
     <string name="import_roi_candidate_near">近端片</string>
     <string name="quality_track_noisy">轨迹抖动较大，峰值速度可信度下降</string>
+    <string name="theme_label">主题</string>
+    <string name="theme_light_red">浅色红</string>
+    <string name="theme_dark_red">深色红</string>
+    <string name="theme_arcus">Arcus VBT</string>
 </resources>

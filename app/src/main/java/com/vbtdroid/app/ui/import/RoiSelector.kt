@@ -27,7 +27,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
-import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.VbtTheme
 import kotlin.math.max
 import kotlin.math.min
@@ -58,7 +57,7 @@ fun RoiSelector(
     val handleColor = MaterialTheme.colorScheme.primary
     val activeHandleColor = VbtTheme.colors.speed
     val handleStrokeColor = VbtTheme.colors.skeleton
-    val dimColor = Bg.copy(alpha = 0.45f)
+    val dimColor = MaterialTheme.colorScheme.background.copy(alpha = 0.45f)
 
     Box(
         modifier.fillMaxWidth()

@@ -207,4 +207,8 @@
     <string name="import_roi_candidate_far">Far plate</string>
     <string name="import_roi_candidate_near">Near plate</string>
     <string name="quality_track_noisy">Bar tracking is noisy; peak velocity is less reliable</string>
+    <string name="theme_label">Theme</string>
+    <string name="theme_light_red">Light red</string>
+    <string name="theme_dark_red">Dark red</string>
+    <string name="theme_arcus">Arcus VBT</string>
 </resources>

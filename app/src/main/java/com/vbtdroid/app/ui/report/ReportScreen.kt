@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,7 +32,6 @@ import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
 import com.vbtdroid.app.ui.components.ChipTone
 import com.vbtdroid.app.ui.components.StatusChip
-import com.vbtdroid.app.ui.theme.Bg
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.phases.RepTimeline
@@ -193,7 +193,7 @@ fun ReportScreen(
         }
     }
 
-    Box(modifier.fillMaxSize().background(Bg)) {
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         backgroundLayer(Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             header(Modifier)
