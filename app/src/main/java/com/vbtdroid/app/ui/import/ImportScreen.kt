@@ -703,20 +703,6 @@ private fun RoiPage(
         autoRoiUnavailable -> stringResource(R.string.import_status_manual) to ChipTone.WARNING
         else -> stringResource(R.string.import_status_suggested) to ChipTone.PRIMARY
     }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
-    ) {
-        RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged, editable = editable)
-        StatusChip(
-            text = chipText,
-            tone = chipTone,
-            modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
-        )
-    }
     if (editable && candidates.size > 1) {
         Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
             candidates.forEachIndexed { index, _ ->
@@ -734,6 +720,20 @@ private fun RoiPage(
                 )
             }
         }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(BorderStroke(1.dp, VbtTheme.colors.outline.copy(alpha = 0.6f)), shape),
+    ) {
+        RoiSelector(bitmap = preview, roi = roi, onRoiChanged = onRoiChanged, editable = editable)
+        StatusChip(
+            text = chipText,
+            tone = chipTone,
+            modifier = Modifier.align(Alignment.TopStart).padding(VbtSpacing.s),
+        )
     }
     if (roiConfirmed) {
         Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
