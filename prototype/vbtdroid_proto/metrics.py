@@ -45,40 +45,73 @@ def calculate_metrics(rep, samples, load_kg=None):
     if rom_concentric <= 0:
         raise ValueError("向心端点位移非正，向心 ROM 不可用")
     peak_velocity = velocities[peak_index]
-    # Sticking region = morphological Vpeak1 -> Vmin descending segment: the first local
-    # velocity peak after the start, then the first local minimum after it. The terminal
-    # braking phase after Vpeak2 is not sticking, so negative acceleration is not the test.
-    prominence = max(0.03, peak_velocity * 0.05)
-    vpeak1 = next(
-        (
-            index
-            for index in range(1, len(concentric) - 1)
-            if velocities[index] >= velocities[index - 1]
-            and velocities[index] > velocities[index + 1]
-            and velocities[index] - velocities[0] >= prominence
-        ),
-        peak_index,
-    )
-    vmin = next(
-        (
-            index
-            for index in range(vpeak1 + 1, len(concentric) - 1)
-            if velocities[index] <= velocities[index - 1]
-            and velocities[index] <= velocities[index + 1]
-        ),
-        None,
-    )
+    # Sticking region = morphological Vpeak1 -> Vmin descending segment. The terminal braking
+    # phase after Vpeak2 is not sticking, so negative acceleration is not the test. The
+    # thresholds and the start-position floor match the Kotlin detector so both implementations
+    # classify the same curve identically.
+    prominence = max(0.05, peak_velocity * 0.08)
+    maxima = [
+        index
+        for index in range(1, len(concentric) - 1)
+        if velocities[index] >= velocities[index - 1]
+        and velocities[index] > velocities[index + 1]
+    ]
+    minima = [
+        index
+        for index in range(1, len(concentric) - 1)
+        if velocities[index] <= velocities[index - 1]
+        and velocities[index] <= velocities[index + 1]
+    ]
+
+    def collapse(indices, better):
+        kept = []
+        for index in indices:
+            if kept and concentric[index]["t_sec"] - concentric[kept[-1]]["t_sec"] < 0.10:
+                if better(index, kept[-1]):
+                    kept[-1] = index
+            else:
+                kept.append(index)
+        return kept
+
+    maxima = collapse(maxima, lambda a, b: velocities[a] > velocities[b])
+    minima = collapse(minima, lambda a, b: velocities[a] < velocities[b])
+
     sticking_point = None
-    if vmin is not None:
+    for vpeak1 in maxima:
+        start_pct = (concentric[vpeak1]["y_m"] - cfirst["y_m"]) / rom_concentric * 100.0
+        if start_pct < 15.0:
+            continue
+        if velocities[vpeak1] - velocities[0] < prominence:
+            continue
+        limit = len(concentric)
+        for index in range(vpeak1 + 1, len(concentric)):
+            if velocities[index] > velocities[vpeak1]:
+                limit = index
+                break
+        vmin = next(
+            (
+                index
+                for index in minima
+                if vpeak1 < index < limit
+                and velocities[vpeak1] - velocities[index] >= prominence
+            ),
+            None,
+        )
+        if vmin is None:
+            continue
+        rise = max(velocities[vmin + 1:], default=float("-inf"))
+        if rise - velocities[vmin] < prominence:
+            continue
         while (
-            vmin + 1 < len(concentric) - 1
+            vmin + 1 < limit
             and abs(velocities[vmin + 1] - velocities[vmin]) <= 1e-9
         ):
             vmin += 1
-        if velocities[vpeak1] - velocities[vmin] >= prominence:
-            sticking_point = (
-                concentric[vmin]["y_m"] - cfirst["y_m"]
-            ) / rom_concentric * 100.0
+        end_pct = (concentric[vmin]["y_m"] - cfirst["y_m"]) / rom_concentric * 100.0
+        if end_pct <= start_pct:
+            continue
+        sticking_point = end_pct
+        break
 
     metrics = {
         "rep_duration_s": rep["end_sec"] - rep["start_sec"],

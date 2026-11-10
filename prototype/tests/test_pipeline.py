@@ -89,3 +89,8 @@ def test_no_sticking_region_on_monotonic_or_flat_curve():
     assert calculate_metrics(rep, samples)["sticking_point_pct"] is None
     rep, samples = _curve([0.50, 0.60, 0.58, 0.62, 0.65])
     assert calculate_metrics(rep, samples)["sticking_point_pct"] is None
+
+
+def test_no_sticking_region_without_reacceleration():
+    rep, samples = _curve([0.10, 0.60, 0.20, 0.22, 0.24])
+    assert calculate_metrics(rep, samples)["sticking_point_pct"] is None

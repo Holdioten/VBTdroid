@@ -62,6 +62,28 @@ class StickingRegionTest {
     }
 
     @Test
+    fun `no re-acceleration after the valley is not a sticking region`() {
+        val region = StickingRegionDetector.detect(
+            samples = samples(listOf(0.10, 0.60, 0.20, 0.22, 0.24)),
+            startY = 0.0,
+            romConcentric = 0.20,
+        )
+
+        assertNull(region)
+    }
+
+    @Test
+    fun `peaks inside the first 15 percent of the rom are ignored`() {
+        val region = StickingRegionDetector.detect(
+            samples = samples(listOf(0.10, 0.60, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60)),
+            startY = 0.0,
+            romConcentric = 0.40,
+        )
+
+        assertNull(region)
+    }
+
+    @Test
     fun `flat minimum resolves to its last equal sample`() {
         val region = StickingRegionDetector.detect(
             samples = samples(listOf(0.10, 0.50, 0.20, 0.20, 0.20, 0.60)),
@@ -85,7 +107,7 @@ class StickingRegionTest {
         )
         assertNull(
             StickingRegionDetector.detect(
-                samples = samples(listOf(0.10, 0.50, 0.20)),
+                samples = samples(listOf(0.10, 0.50, 0.20, 0.30, 0.40)),
                 startY = 0.0,
                 romConcentric = 0.0,
             )
