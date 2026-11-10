@@ -45,21 +45,40 @@ def calculate_metrics(rep, samples, load_kg=None):
     if rom_concentric <= 0:
         raise ValueError("向心端点位移非正，向心 ROM 不可用")
     peak_velocity = velocities[peak_index]
+    # Sticking region = morphological Vpeak1 -> Vmin descending segment: the first local
+    # velocity peak after the start, then the first local minimum after it. The terminal
+    # braking phase after Vpeak2 is not sticking, so negative acceleration is not the test.
+    prominence = max(0.03, peak_velocity * 0.05)
+    vpeak1 = next(
+        (
+            index
+            for index in range(1, len(concentric) - 1)
+            if velocities[index] >= velocities[index - 1]
+            and velocities[index] > velocities[index + 1]
+            and velocities[index] - velocities[0] >= prominence
+        ),
+        peak_index,
+    )
+    vmin = next(
+        (
+            index
+            for index in range(vpeak1 + 1, len(concentric) - 1)
+            if velocities[index] <= velocities[index - 1]
+            and velocities[index] <= velocities[index + 1]
+        ),
+        None,
+    )
     sticking_point = None
-    if rom_concentric > 0:
-        for index in range(peak_index + 1, len(concentric) - 1):
-            before, current, after = velocities[index - 1:index + 2]
-            if current <= before + 1e-9 and current <= after + 1e-9:
-                plateau = index
-                while (
-                    plateau + 1 < len(concentric) - 1
-                    and abs(velocities[plateau + 1] - velocities[plateau]) <= 1e-9
-                ):
-                    plateau += 1
-                sticking_point = (
-                    concentric[plateau]["y_m"] - cfirst["y_m"]
-                ) / rom_concentric * 100.0
-                break
+    if vmin is not None:
+        while (
+            vmin + 1 < len(concentric) - 1
+            and abs(velocities[vmin + 1] - velocities[vmin]) <= 1e-9
+        ):
+            vmin += 1
+        if velocities[vpeak1] - velocities[vmin] >= prominence:
+            sticking_point = (
+                concentric[vmin]["y_m"] - cfirst["y_m"]
+            ) / rom_concentric * 100.0
 
     metrics = {
         "rep_duration_s": rep["end_sec"] - rep["start_sec"],

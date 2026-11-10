@@ -5,12 +5,14 @@ import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.PlateObservation
 import com.vbtdroid.core.phases.PhaseSegmenter
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -54,7 +56,14 @@ class GoldenParityTest {
         assertEquals(expected.getValue("mcv_mps").jsonPrimitive.double, actual.mcvMps, 1e-9)
         assertEquals(expected.getValue("mpv_mps").jsonPrimitive.double, actual.mpvMps!!, 1e-9)
         assertEquals(expected.getValue("peak_velocity_mps").jsonPrimitive.double, actual.peakVelocityMps!!, 1e-9)
-        assertEquals(expected.getValue("sticking_point_pct").jsonPrimitive.double, actual.stickingPointPct!!, 1e-9)
+        // The synthetic curve has no significant velocity dip, so the Vpeak1 -> Vmin
+        // definition (correctly) reports no sticking region.
+        val expectedSticking = expected.getValue("sticking_point_pct")
+        if (expectedSticking is JsonNull) {
+            assertNull(actual.stickingPointPct)
+        } else {
+            assertEquals(expectedSticking.jsonPrimitive.double, actual.stickingPointPct!!, 1e-9)
+        }
         assertTrue(goldenText.contains("\"rep_duration_s\""))
         assertFalse(goldenText.contains("\"duration_s\""))
     }
