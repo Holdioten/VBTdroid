@@ -99,7 +99,9 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         val detected = detector?.detect(bitmap)
             ?.minByOrNull { hypot(it.cxPx - roiCenterX, it.cyPx - roiCenterY) }
         if (detected != null) {
-            val diameter = max(detected.widthPx, detected.heightPx)
+            // For an azimuth-oblique, level camera the plate is foreshortened horizontally:
+            // the box height is the true diameter, while max(w,h) can pick up a loose width.
+            val diameter = detected.heightPx
             if (diameter >= MIN_DETECTED_DIAMETER_PX) {
                 axisReference = PlateAxisReference(diameter)
                 xReferencePx = detected.cxPx
