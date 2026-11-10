@@ -23,12 +23,15 @@ import com.vbtdroid.core.phases.PhaseSegmenter
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.Quality
 import com.vbtdroid.core.quality.QualityFlags
+import com.vbtdroid.core.signal.SampleWindow
 import com.vbtdroid.core.signal.TrackBreakReason
 import com.vbtdroid.core.signal.TrackContinuity
 import com.vbtdroid.core.signal.TrackSmoother
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
+import kotlin.math.hypot
+import kotlin.math.sqrt
 import kotlin.math.roundToInt
 
 data class AnalysisRequest(
@@ -198,15 +201,35 @@ class AnalysisPipeline(
         // moved closer/farther or zoomed) must not be merged into the same track. Report where
         // the track stops instead of silently dropping or invalidating the reps before it.
         val trackBreak = TrackContinuity.detect(observations, durationSec = lastFrameSec)
-        val cleanedObservations = TrackSmoother.smooth(observations)
+        val cleanedObservations = TrackSmoother.smoothByTime(
+            observations,
+            windowSec = FilterProfile.trackSmoothWindowSec(request.lift),
+            polyOrder = FILTER_ORDER,
+        )
+        // The tracker refines the reference diameter from the first frames (median box height)
+        // and, when the rim is clean enough, from the plate's outer edge. A single frame's box
+        // height carries a 5-10% scale error straight into every velocity.
+        val calibrationDiameterPx = tracker.calibrationDiameterPx()?.toDouble()
+            ?: cleanedObservations.first().majorAxisPx
         val calibration = Calibration.fromPlate(
             plateDiameterM = request.plateDiameterM,
-            majorAxisPx = cleanedObservations.first().majorAxisPx,
+            majorAxisPx = calibrationDiameterPx,
             cameraAngleDeg = request.cameraAngleDeg,
         ).copy(cameraLevel = request.cameraLevel)
         val barSamples = cleanedObservations.map(calibration::toMeters)
-        val motionSamples = Kinematics.derive(barSamples, window = MEAN_FILTER_WINDOW, polyOrder = FILTER_ORDER)
-        val peakMotionSamples = Kinematics.derive(barSamples, window = PEAK_FILTER_WINDOW, polyOrder = FILTER_ORDER)
+        val sampleTimes = DoubleArray(barSamples.size) { barSamples[it].tSec }
+        val meanWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.meanWindowSec(request.lift))
+        val peakWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.peakWindowSec(request.lift))
+        val motionSamples = Kinematics.deriveByTime(
+            barSamples,
+            windowSec = FilterProfile.meanWindowSec(request.lift),
+            polyOrder = FILTER_ORDER,
+        )
+        val peakMotionSamples = Kinematics.deriveByTime(
+            barSamples,
+            windowSec = FilterProfile.peakWindowSec(request.lift),
+            polyOrder = FILTER_ORDER,
+        )
         val segmentation = PhaseSegmenter.segmentDetailed(motionSamples, request.lift)
         val segmentedReps = segmentation.reps
         val computation = computeValidReps(
@@ -223,6 +246,10 @@ class AnalysisPipeline(
         val lateralRangePx = observations.maxOf { it.xPx } - observations.minOf { it.xPx }
         if (lateralRangePx > cleanedObservations.first().majorAxisPx * 0.5) {
             extraWarnings += LATERAL_DRIFT
+        }
+        val trackNoiseMm = trackNoiseMm(cleanedObservations, calibration.pxPerM)
+        if (trackNoiseMm != null && trackNoiseMm > TRACK_NOISE_WARNING_MM) {
+            extraWarnings += TRACK_NOISY
         }
         when (trackBreak?.reason) {
             TrackBreakReason.SCALE_CHANGE -> extraWarnings += CAMERA_MOVED
@@ -300,10 +327,12 @@ class AnalysisPipeline(
             peakMotionSamples = peakMotionSamples,
             repSlices = validSlices,
             filterConfig = FilterConfigExport(
-                meanWindow = MEAN_FILTER_WINDOW,
+                meanWindow = meanWindowSamples,
                 meanPolyOrder = FILTER_ORDER,
-                peakWindow = PEAK_FILTER_WINDOW,
+                peakWindow = peakWindowSamples,
                 peakPolyOrder = FILTER_ORDER,
+                meanWindowSec = FilterProfile.meanWindowSec(request.lift),
+                peakWindowSec = FilterProfile.peakWindowSec(request.lift),
                 meanAppliesTo = listOf("mcv_mps", "mpv_mps", "mean_force_n", "mean_power_w"),
                 peakAppliesTo = listOf("peak_velocity_mps", "peak_acceleration_mps2", "peak_force_n", "peak_power_w"),
             ),
@@ -338,9 +367,11 @@ class AnalysisPipeline(
 
     private companion object {
         const val POSE_FRAME_STRIDE = 3
-        const val MEAN_FILTER_WINDOW = 9
-        const val PEAK_FILTER_WINDOW = 5
         const val FILTER_ORDER = 2
+
+        /** High-frequency position residual above which the velocity peak is not trustworthy. */
+        const val TRACK_NOISE_WARNING_MM = 1.5
+        const val TRACK_NOISY = "TRACK_NOISY"
         const val POSE_LOW_CONFIDENCE_THRESHOLD = 0.6
         const val POSE_UNAVAILABLE = "POSE_UNAVAILABLE"
         const val POSE_PARTIAL = "POSE_PARTIAL"
@@ -359,6 +390,30 @@ internal data class RepComputation(
 )
 
 /** Computes every MCV before assigning velocity loss against the full-set best. */
+/**
+ * RMS of the short-window position residual (5-sample centred mean), converted to millimetres.
+ * Real bar travel is smooth at this scale, so what remains is detector jitter; it sets how much
+ * the reported peak velocity can be trusted.
+ */
+private fun trackNoiseMm(observations: List<PlateObservation>, pxPerM: Double): Double? {
+    if (observations.size < 5 || !pxPerM.isFinite() || pxPerM <= 0.0) return null
+    fun residualRms(values: List<Double>): Double {
+        var sum = 0.0
+        var count = 0
+        for (index in 2 until values.size - 2) {
+            val mean = (values[index - 2] + values[index - 1] + values[index] +
+                values[index + 1] + values[index + 2]) / 5.0
+            val residual = values[index] - mean
+            sum += residual * residual
+            count++
+        }
+        return if (count == 0) 0.0 else sqrt(sum / count)
+    }
+    val xRms = residualRms(observations.map { it.xPx })
+    val yRms = residualRms(observations.map { it.yPx })
+    return hypot(xRms, yRms) / pxPerM * 1000.0
+}
+
 internal fun computeValidReps(
     segmentedReps: List<RepSlice>,
     motionSamples: List<MotionSample>,

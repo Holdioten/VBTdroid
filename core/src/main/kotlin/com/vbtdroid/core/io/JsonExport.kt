@@ -38,6 +38,9 @@ data class FilterConfigExport(
     @SerialName("peak_poly_order") val peakPolyOrder: Int,
     @SerialName("mean_applies_to") val meanAppliesTo: List<String>,
     @SerialName("peak_applies_to") val peakAppliesTo: List<String>,
+    /** Effective window in seconds; present on new exports so 30/60 fps clips are comparable. */
+    @SerialName("mean_window_sec") val meanWindowSec: Double? = null,
+    @SerialName("peak_window_sec") val peakWindowSec: Double? = null,
 )
 
 @Serializable

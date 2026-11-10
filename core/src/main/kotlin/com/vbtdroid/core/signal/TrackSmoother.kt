@@ -37,7 +37,31 @@ object TrackSmoother {
     const val SMOOTH_WINDOW = 5
     const val SMOOTH_ORDER = 2
 
-    fun smooth(observations: List<PlateObservation>): List<PlateObservation> {
+    /**
+     * Smoothing window in seconds, converted with the clip's median frame interval so 30 fps and
+     * 60 fps recordings get the same effective smoothing.
+     */
+    fun smoothByTime(
+        observations: List<PlateObservation>,
+        windowSec: Double,
+        polyOrder: Int = SMOOTH_ORDER,
+    ): List<PlateObservation> {
+        require(windowSec.isFinite() && windowSec > 0.0) { "windowSec must be positive and finite" }
+        val times = observations
+            .asSequence()
+            .filter { it.tSec.isFinite() }
+            .map { it.tSec }
+            .toList()
+            .toDoubleArray()
+        val window = SampleWindow.samplesFor(times, windowSec)
+        return smooth(observations, smoothWindow = window, smoothOrder = polyOrder)
+    }
+
+    fun smooth(
+        observations: List<PlateObservation>,
+        smoothWindow: Int = SMOOTH_WINDOW,
+        smoothOrder: Int = SMOOTH_ORDER,
+    ): List<PlateObservation> {
         val ordered = observations
             .filter { observation ->
                 observation.tSec.isFinite() &&
@@ -79,13 +103,13 @@ object TrackSmoother {
 
         val smoothedX = SavitzkyGolay.smooth(
             cleaned.map { it.xPx }.toDoubleArray(),
-            window = SMOOTH_WINDOW,
-            polyOrder = SMOOTH_ORDER,
+            window = smoothWindow,
+            polyOrder = smoothOrder,
         )
         val smoothedY = SavitzkyGolay.smooth(
             cleaned.map { it.yPx }.toDoubleArray(),
-            window = SMOOTH_WINDOW,
-            polyOrder = SMOOTH_ORDER,
+            window = smoothWindow,
+            polyOrder = smoothOrder,
         )
         return cleaned.mapIndexed { index, observation ->
             observation.copy(xPx = smoothedX[index], yPx = smoothedY[index])

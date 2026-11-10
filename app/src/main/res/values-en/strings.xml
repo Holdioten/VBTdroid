@@ -206,4 +206,5 @@
     <string name="report_export_saved">Saved to Pictures/VBTdroid/%1$s</string>
     <string name="import_roi_candidate_far">Far plate</string>
     <string name="import_roi_candidate_near">Near plate</string>
+    <string name="quality_track_noisy">Bar tracking is noisy; peak velocity is less reliable</string>
 </resources>

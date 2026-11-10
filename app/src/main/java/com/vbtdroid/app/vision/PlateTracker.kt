@@ -6,6 +6,7 @@ import com.vbtdroid.core.model.PlateObservation
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
+import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfFloat
@@ -38,6 +39,9 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var detectorRegion: RectF? = null
     private var probation: MutableList<InitCandidate>? = null
     private var probationFrames = 0
+    private val initialDiameterSamples = ArrayList<Float>()
+    private val rimDiameterSamples = ArrayList<Float>()
+    private var initializedAtSec = Double.NaN
 
     /**
      * Two auto candidates: preferred (rounder/smaller, usually the far plate) first, then the
@@ -77,6 +81,9 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         detectorRegion = null
         probation = null
         probationFrames = 0
+        initialDiameterSamples.clear()
+        rimDiameterSamples.clear()
+        initializedAtSec = Double.NaN
     }
 
     override fun close() = reset()
@@ -116,8 +123,12 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 consecutiveMisses = 0
                 probation = null
                 probationFrames = 0
+                initialDiameterSamples.clear()
+                rimDiameterSamples.clear()
+                initializedAtSec = tSec
                 val detectedGray = toGray(bitmap)
                 try {
+                    collectCalibrationSample(detected, detectedGray, tSec)
                     commitSuccessfulFrame(detectedGray, detected.cxPx, detected.cyPx, tSec)
                 } finally {
                     detectedGray.release()
@@ -415,6 +426,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
 
             val detectedGray = toGray(bitmap)
             try {
+                collectCalibrationSample(chosen, detectedGray, tSec)
                 updatePosition(chosen.cxPx, chosen.cyPx, tSec, detectedGray)
             } finally {
                 detectedGray.release()
@@ -683,6 +695,110 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
 
     private fun commitSuccessfulFrame(gray: Mat, x: Float, y: Float, tSec: Double) {
         successfulPair.matched(gray.clone(), x, y, tSec)
+    }
+
+    /**
+     * Reference plate diameter for calibration, refined from the first frames and, when the
+     * outer rim is clean, from an edge scan. Returns null while no usable sample exists so the
+     * pipeline can fall back to the first observation.
+     */
+    open fun calibrationDiameterPx(): Float? {
+        val rim = median(rimDiameterSamples).takeIf { rimDiameterSamples.size >= MIN_RIM_SAMPLES }
+        val box = median(initialDiameterSamples).takeIf {
+            initialDiameterSamples.size >= MIN_INITIAL_DIAMETER_SAMPLES
+        }
+        android.util.Log.d(
+            "VBTDebug",
+            "Calibration diameter box=$box rim=$rim samples=${initialDiameterSamples.size}/" +
+                "${rimDiameterSamples.size}",
+        )
+        return rim ?: box
+    }
+
+    private fun collectCalibrationSample(detection: PlateDetection, gray: Mat, tSec: Double) {
+        if (initialDiameterSamples.size >= MAX_INITIAL_DIAMETER_SAMPLES) return
+        if (initializedAtSec.isFinite() && tSec - initializedAtSec > INITIAL_DIAMETER_SEC + 1e-9) {
+            return
+        }
+        initialDiameterSamples.add(detection.heightPx)
+        estimateRimDiameterPx(
+            gray = gray,
+            cx = detection.cxPx.toDouble(),
+            cy = detection.cyPx.toDouble(),
+            expectedDiameterPx = detection.heightPx.toDouble(),
+        )?.let { rimDiameterSamples.add(it.toFloat()) }
+    }
+
+    /**
+     * Outer-rim diameter from a radial edge scan around the detected box centre.
+     *
+     * Only used for calibration, never for per-frame positions: a weak rim or heavy occlusion
+     * simply fails the support/consistency gates and the caller keeps the median box height.
+     */
+    private fun estimateRimDiameterPx(
+        gray: Mat,
+        cx: Double,
+        cy: Double,
+        expectedDiameterPx: Double,
+    ): Double? {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) return null
+        val radius = expectedDiameterPx / 2.0
+        if (!radius.isFinite() || radius < 6.0) return null
+        val radii = ArrayList<Double>(RIM_RAY_COUNT)
+        val start = radius * RIM_SEARCH_MIN_FACTOR
+        val end = radius * RIM_SEARCH_MAX_FACTOR
+        for (ray in 0 until RIM_RAY_COUNT) {
+            val angle = ray * 2.0 * PI / RIM_RAY_COUNT
+            val dx = kotlin.math.cos(angle)
+            val dy = kotlin.math.sin(angle)
+            var bestGradient = 0.0
+            var bestRadius = Double.NaN
+            var sampleRadius = start
+            while (sampleRadius <= end) {
+                val inner = sampleGray(
+                    gray,
+                    cx + dx * (sampleRadius - RIM_GRADIENT_STEP),
+                    cy + dy * (sampleRadius - RIM_GRADIENT_STEP),
+                )
+                val outer = sampleGray(gray, cx + dx * sampleRadius, cy + dy * sampleRadius)
+                if (inner != null && outer != null) {
+                    val gradient = abs(outer - inner)
+                    if (gradient > bestGradient) {
+                        bestGradient = gradient
+                        bestRadius = sampleRadius
+                    }
+                }
+                sampleRadius += 1.0
+            }
+            if (bestGradient >= RIM_MIN_GRADIENT && bestRadius.isFinite()) radii.add(bestRadius)
+        }
+        if (radii.size < RIM_RAY_COUNT / 2) return null
+        radii.sort()
+        val medianRadius = radii[radii.size / 2]
+        val lower = radii[radii.size / 4]
+        val upper = radii[(radii.size * 3) / 4]
+        if (!medianRadius.isFinite() || medianRadius <= 0.0) return null
+        if ((upper - lower) / medianRadius > RIM_MAX_IQR_FRACTION) return null
+        val diameter = medianRadius * 2.0
+        if (diameter < expectedDiameterPx * RIM_MIN_DIAMETER_FACTOR ||
+            diameter > expectedDiameterPx * RIM_MAX_DIAMETER_FACTOR
+        ) {
+            return null
+        }
+        return diameter
+    }
+
+    private fun sampleGray(gray: Mat, x: Double, y: Double): Double? {
+        val xi = kotlin.math.round(x).toInt()
+        val yi = kotlin.math.round(y).toInt()
+        if (xi < 0 || yi < 0 || xi >= gray.cols() || yi >= gray.rows()) return null
+        return gray.get(yi, xi)[0]
+    }
+
+    private fun median(values: List<Float>): Float? {
+        if (values.isEmpty()) return null
+        val sorted = values.sorted()
+        return sorted[sorted.size / 2]
     }
 
     private fun toGray(bitmap: Bitmap): Mat {
@@ -1016,6 +1132,18 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val DETECTION_LATERAL_DIAMETERS = 0.5f
         const val DETECTION_VERTICAL_DIAMETERS = 2.5f
         const val MIN_INIT_RIM_SUPPORT = 0.18f
+        const val INITIAL_DIAMETER_SEC = 0.30
+        const val MAX_INITIAL_DIAMETER_SAMPLES = 24
+        const val MIN_INITIAL_DIAMETER_SAMPLES = 5
+        const val MIN_RIM_SAMPLES = 5
+        const val RIM_RAY_COUNT = 36
+        const val RIM_SEARCH_MIN_FACTOR = 0.90
+        const val RIM_SEARCH_MAX_FACTOR = 1.35
+        const val RIM_GRADIENT_STEP = 3.0
+        const val RIM_MIN_GRADIENT = 18.0
+        const val RIM_MAX_IQR_FRACTION = 0.08
+        const val RIM_MIN_DIAMETER_FACTOR = 0.90
+        const val RIM_MAX_DIAMETER_FACTOR = 1.45
         const val PROBATION_FRAMES = 10
         const val PROBATION_MIN_FRAMES = 6
         const val PROBATION_MAX_MISSES = 4

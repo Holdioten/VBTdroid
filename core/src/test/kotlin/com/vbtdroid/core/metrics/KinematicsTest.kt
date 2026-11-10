@@ -6,7 +6,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 
 class KinematicsTest {
     @Test
@@ -57,6 +59,26 @@ class KinematicsTest {
         val out = Kinematics.derive(listOf(BarSample(0.0, 0.0, 0.0))).single()
 
         assertNull(out.ayMps2)
+    }
+
+    @Test
+    fun `time based window keeps 30 and 60 fps velocities comparable`() {
+        fun samples(fps: Int): List<BarSample> {
+            val dt = 1.0 / fps
+            return (0..(2 * fps)).map { index ->
+                val t = index * dt
+                BarSample(t, 0.0, 0.3 * kotlin.math.sin(2.0 * PI * 1.5 * t))
+            }
+        }
+        val fast = Kinematics.deriveByTime(samples(60), windowSec = 0.30)
+        val slow = Kinematics.deriveByTime(samples(30), windowSec = 0.30)
+        val slowByTime = slow.associateBy { kotlin.math.round(it.tSec * 1000.0).toLong() }
+
+        val compared = fast.drop(20).dropLast(20).mapNotNull { sample ->
+            slowByTime[kotlin.math.round(sample.tSec * 1000.0).toLong()]?.let { sample.vyMps - it.vyMps }
+        }
+        assertTrue(compared.size > 30)
+        assertTrue(compared.all { abs(it) < 0.08 }, "max difference ${compared.maxOf { abs(it) }}")
     }
 
     @Test
