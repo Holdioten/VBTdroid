@@ -8,6 +8,8 @@ import com.vbtdroid.app.vision.PlateTracker
 import com.vbtdroid.app.vision.PoseEstimator
 import com.vbtdroid.app.vision.PoseFrame
 import com.vbtdroid.core.calibration.Calibration
+import com.vbtdroid.core.calibration.PairCalibrator
+import com.vbtdroid.core.calibration.PairCalibration
 import com.vbtdroid.core.io.FilterConfigExport
 import com.vbtdroid.core.metrics.Kinematics
 import com.vbtdroid.core.metrics.LvpEstimate
@@ -20,6 +22,7 @@ import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.LiftVariant
 import com.vbtdroid.core.model.PlateObservation
 import com.vbtdroid.core.phases.PhaseSegmenter
+import com.vbtdroid.core.phases.PhaseType
 import com.vbtdroid.core.phases.RepSlice
 import com.vbtdroid.core.quality.Quality
 import com.vbtdroid.core.quality.QualityFlags
@@ -30,6 +33,7 @@ import com.vbtdroid.core.signal.TrackSmoother
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sqrt
 import kotlin.math.roundToInt
@@ -206,31 +210,67 @@ class AnalysisPipeline(
             windowSec = FilterProfile.trackSmoothWindowSec(request.lift),
             polyOrder = FILTER_ORDER,
         )
-        // The tracker refines the reference diameter from the first frames (median box height)
-        // and, when the rim is clean enough, from the plate's outer edge. A single frame's box
-        // height carries a 5-10% scale error straight into every velocity.
-        val calibrationDiameterPx = tracker.calibrationDiameterPx()?.toDouble()
+        // The tracker refines the reference diameter from the first frames (median box height).
+        // A single frame's box height carries a 5-10% scale error straight into every velocity.
+        val boxDiameterPx = tracker.calibrationDiameterPx()?.toDouble()
             ?: cleanedObservations.first().majorAxisPx
-        val calibration = Calibration.fromPlate(
+        val boxCalibration = Calibration.fromPlate(
             plateDiameterM = request.plateDiameterM,
-            majorAxisPx = calibrationDiameterPx,
+            majorAxisPx = boxDiameterPx,
             cameraAngleDeg = request.cameraAngleDeg,
         ).copy(cameraLevel = request.cameraLevel)
-        val barSamples = cleanedObservations.map(calibration::toMeters)
-        val sampleTimes = DoubleArray(barSamples.size) { barSamples[it].tSec }
-        val meanWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.meanWindowSec(request.lift))
-        val peakWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.peakWindowSec(request.lift))
-        val motionSamples = Kinematics.deriveByTime(
-            barSamples,
+        val boxBarSamples = cleanedObservations.map(boxCalibration::toMeters)
+        val boxMotionSamples = Kinematics.deriveByTime(
+            boxBarSamples,
             windowSec = FilterProfile.meanWindowSec(request.lift),
             polyOrder = FILTER_ORDER,
         )
+        // First pass only defines the concentric windows; the scale is not final yet.
+        val segmentation = PhaseSegmenter.segmentDetailed(boxMotionSamples, request.lift)
+
+        // A barbell is rigid: both ends travel the same distance, so their image displacement
+        // ratio is their true diameter ratio. When the other end is visible, calibrate this
+        // plate against it and anchor the pair to the smaller detection box (the end whose box
+        // hugs the plate rim). Without a usable second track the box calibration is kept.
+        val pairCalibration = calibrateAgainstSecondPlate(
+            primaryBoxPx = boxDiameterPx,
+            primaryTrack = cleanedObservations,
+            tracker = tracker,
+            lift = request.lift,
+            reps = segmentation.reps,
+            polyOrder = FILTER_ORDER,
+        )
+        val calibration = if (pairCalibration.usedPair) {
+            Calibration.fromPlate(
+                plateDiameterM = request.plateDiameterM,
+                majorAxisPx = pairCalibration.diameterPx,
+                cameraAngleDeg = request.cameraAngleDeg,
+            ).copy(cameraLevel = request.cameraLevel)
+        } else {
+            boxCalibration
+        }
+        val barSamples = if (pairCalibration.usedPair) {
+            cleanedObservations.map(calibration::toMeters)
+        } else {
+            boxBarSamples
+        }
+        val sampleTimes = DoubleArray(barSamples.size) { barSamples[it].tSec }
+        val meanWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.meanWindowSec(request.lift))
+        val peakWindowSamples = SampleWindow.samplesFor(sampleTimes, FilterProfile.peakWindowSec(request.lift))
+        val motionSamples = if (pairCalibration.usedPair) {
+            Kinematics.deriveByTime(
+                barSamples,
+                windowSec = FilterProfile.meanWindowSec(request.lift),
+                polyOrder = FILTER_ORDER,
+            )
+        } else {
+            boxMotionSamples
+        }
         val peakMotionSamples = Kinematics.deriveByTime(
             barSamples,
             windowSec = FilterProfile.peakWindowSec(request.lift),
             polyOrder = FILTER_ORDER,
         )
-        val segmentation = PhaseSegmenter.segmentDetailed(motionSamples, request.lift)
         val segmentedReps = segmentation.reps
         val computation = computeValidReps(
             segmentedReps = segmentedReps,
@@ -390,6 +430,115 @@ internal data class RepComputation(
 )
 
 /** Computes every MCV before assigning velocity loss against the full-set best. */
+/**
+ * Calibrates [primaryTrack] against the other end of the same barbell when it was tracked.
+ *
+ * The ratio is measured only inside the concentric phases, where the velocity comparison
+ * happens; a whole-clip ratio mixes the eccentric and is biased by the bar path. The pair is
+ * anchored to the smaller detection box, so the far and near analyses of the same clip end up on
+ * one scale. Any failed gate returns the primary box unchanged instead of guessing.
+ */
+private fun calibrateAgainstSecondPlate(
+    primaryBoxPx: Double,
+    primaryTrack: List<PlateObservation>,
+    tracker: PlateTracker,
+    lift: Lift,
+    reps: List<RepSlice>,
+    polyOrder: Int,
+): PairCalibration {
+    val secondaryRaw = tracker.secondaryObservations()
+    val secondaryBoxPx = tracker.secondaryCalibrationDiameterPx()?.toDouble()
+    if (secondaryRaw.size < 2 || secondaryBoxPx == null) {
+        return PairCalibrator.calibrate(primaryBoxPx, null, emptyList(), 0.0, 0.0)
+    }
+    val secondary = TrackSmoother.smoothByTime(
+        secondaryRaw,
+        windowSec = FilterProfile.trackSmoothWindowSec(lift),
+        polyOrder = polyOrder,
+    )
+    val ratios = reps.mapNotNull { rep ->
+        val concentric = rep.phases.filter { it.type == PhaseType.CONCENTRIC }
+        if (concentric.isEmpty()) return@mapNotNull null
+        val startSec = concentric.first().startSec
+        val endSec = concentric.last().endSec
+        val primaryTravel = verticalTravelPx(primaryTrack, startSec, endSec) ?: return@mapNotNull null
+        val secondaryTravel = verticalTravelPx(secondary, startSec, endSec) ?: return@mapNotNull null
+        if (secondaryTravel <= 1e-6) null else primaryTravel / secondaryTravel
+    }
+    val coverage = secondaryRaw.size.toDouble() / primaryTrack.size
+    val correlation = trackCorrelation(primaryTrack, secondary)
+    val result = PairCalibrator.calibrate(
+        primaryBoxPx = primaryBoxPx,
+        secondaryBoxPx = secondaryBoxPx,
+        ratios = ratios,
+        coverage = coverage,
+        correlation = correlation,
+    )
+    android.util.Log.d(
+        "VBTDebug",
+        "Pair calibration used=${result.usedPair} ratio=${result.ratio} " +
+            "diameter=${result.diameterPx} reason=${result.fallbackReason} " +
+            "coverage=$coverage corr=$correlation ratios=$ratios",
+    )
+    return result
+}
+
+private fun verticalTravelPx(
+    track: List<PlateObservation>,
+    startSec: Double,
+    endSec: Double,
+): Double? {
+    val start = interpolateYPx(track, startSec) ?: return null
+    val end = interpolateYPx(track, endSec) ?: return null
+    return abs(end - start)
+}
+
+private fun interpolateYPx(track: List<PlateObservation>, tSec: Double): Double? {
+    if (track.size < 2) return null
+    if (tSec < track.first().tSec - 1e-6 || tSec > track.last().tSec + 1e-6) return null
+    var low = 0
+    var high = track.lastIndex
+    while (low < high) {
+        val middle = (low + high) / 2
+        if (track[middle].tSec < tSec) low = middle + 1 else high = middle
+    }
+    val after = track[low]
+    if (abs(after.tSec - tSec) <= 1e-9) return after.yPx
+    val before = track[low - 1]
+    val span = after.tSec - before.tSec
+    if (span <= 0.0) return after.yPx
+    val weight = (tSec - before.tSec) / span
+    return before.yPx + (after.yPx - before.yPx) * weight
+}
+
+private fun trackCorrelation(
+    primary: List<PlateObservation>,
+    secondary: List<PlateObservation>,
+): Double {
+    val primaryY = ArrayList<Double>(primary.size)
+    val secondaryY = ArrayList<Double>(primary.size)
+    for (observation in primary) {
+        val matched = interpolateYPx(secondary, observation.tSec) ?: continue
+        primaryY.add(observation.yPx)
+        secondaryY.add(matched)
+    }
+    if (primaryY.size < 3) return 0.0
+    val primaryMean = primaryY.average()
+    val secondaryMean = secondaryY.average()
+    var covariance = 0.0
+    var primaryVariance = 0.0
+    var secondaryVariance = 0.0
+    for (index in primaryY.indices) {
+        val dx = primaryY[index] - primaryMean
+        val dy = secondaryY[index] - secondaryMean
+        covariance += dx * dy
+        primaryVariance += dx * dx
+        secondaryVariance += dy * dy
+    }
+    val denominator = sqrt(primaryVariance * secondaryVariance)
+    return if (denominator <= 1e-12) 0.0 else covariance / denominator
+}
+
 /**
  * RMS of the short-window position residual (5-sample centred mean), converted to millimetres.
  * Real bar travel is smooth at this scale, so what remains is detector jitter; it sets how much

@@ -40,6 +40,13 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
     private var probationFrames = 0
     private val initialDiameterSamples = ArrayList<Float>()
     private var initializedAtSec = Double.NaN
+    private var secondaryAxisReference: PlateAxisReference? = null
+    private var secondaryXReferencePx = Float.NaN
+    private var secondaryPrevX = Float.NaN
+    private var secondaryPrevY = Float.NaN
+    private var secondaryInitializedAtSec = Double.NaN
+    private val secondaryInitialDiameters = ArrayList<Float>()
+    private val secondaryObservations = ArrayList<PlateObservation>()
 
     /**
      * Two auto candidates: preferred (rounder/smaller, usually the far plate) first, then the
@@ -81,6 +88,13 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         probationFrames = 0
         initialDiameterSamples.clear()
         initializedAtSec = Double.NaN
+        secondaryAxisReference = null
+        secondaryXReferencePx = Float.NaN
+        secondaryPrevX = Float.NaN
+        secondaryPrevY = Float.NaN
+        secondaryInitializedAtSec = Double.NaN
+        secondaryInitialDiameters.clear()
+        secondaryObservations.clear()
     }
 
     override fun close() = reset()
@@ -100,8 +114,8 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         // the intended plate when both ends are visible.
         val roiCenterX = (roi.left + roi.right) / 2f
         val roiCenterY = (roi.top + roi.bottom) / 2f
-        val detected = detector?.detect(bitmap)
-            ?.minByOrNull { hypot(it.cxPx - roiCenterX, it.cyPx - roiCenterY) }
+        val detections = detector?.detect(bitmap).orEmpty()
+        val detected = detections.minByOrNull { hypot(it.cxPx - roiCenterX, it.cyPx - roiCenterY) }
         if (detected != null) {
             // For an azimuth-oblique, level camera the plate is foreshortened horizontally:
             // the box height is the true diameter, while max(w,h) can pick up a loose width.
@@ -125,6 +139,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
                 val detectedGray = toGray(bitmap)
                 try {
                     collectCalibrationSample(detected, tSec)
+                    initializeSecondary(detections, detected, tSec)
                     commitSuccessfulFrame(detectedGray, detected.cxPx, detected.cyPx, tSec)
                 } finally {
                     detectedGray.release()
@@ -423,6 +438,7 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
             val detectedGray = toGray(bitmap)
             try {
                 collectCalibrationSample(chosen, tSec)
+                updateSecondary(detections, chosen, tSec)
                 updatePosition(chosen.cxPx, chosen.cyPx, tSec, detectedGray)
             } finally {
                 detectedGray.release()
@@ -698,6 +714,95 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
      * outer rim is clean, from an edge scan. Returns null while no usable sample exists so the
      * pipeline can fall back to the first observation.
      */
+    /** The other end of the barbell, tracked only to calibrate this plate; empty when absent. */
+    open fun secondaryObservations(): List<PlateObservation> = secondaryObservations.toList()
+
+    open fun secondaryCalibrationDiameterPx(): Float? {
+        val box = median(secondaryInitialDiameters).takeIf {
+            secondaryInitialDiameters.size >= MIN_INITIAL_DIAMETER_SAMPLES
+        }
+        return box
+    }
+
+    private fun initializeSecondary(
+        detections: List<PlateDetection>,
+        primary: PlateDetection,
+        tSec: Double,
+    ) {
+        secondaryAxisReference = null
+        secondaryXReferencePx = Float.NaN
+        secondaryPrevX = Float.NaN
+        secondaryPrevY = Float.NaN
+        secondaryInitializedAtSec = Double.NaN
+        secondaryInitialDiameters.clear()
+        secondaryObservations.clear()
+        if (detections.size < 2) return
+        val chosen = detections
+            .filter { detection ->
+                val shortSide = min(detection.widthPx, detection.heightPx)
+                val longSide = max(detection.widthPx, detection.heightPx)
+                val distance = hypot(detection.cxPx - primary.cxPx, detection.cyPx - primary.cyPx)
+                shortSide >= PlateRoi.MIN_PREFERRED_SIDE_PX &&
+                    longSide / shortSide <= PlateRoi.MAX_PREFERRED_ASPECT &&
+                    distance > primary.heightPx * SECONDARY_MIN_SEPARATION_DIAMETERS &&
+                    detection.confidence >= SECONDARY_MIN_CONFIDENCE
+            }
+            .maxByOrNull { it.widthPx * it.heightPx }
+            ?: return
+        secondaryAxisReference = PlateAxisReference(chosen.heightPx)
+        secondaryXReferencePx = chosen.cxPx
+        secondaryPrevX = chosen.cxPx
+        secondaryPrevY = chosen.cyPx
+        secondaryInitializedAtSec = tSec
+        secondaryInitialDiameters.add(chosen.heightPx)
+        secondaryObservations.add(
+            PlateObservation(
+                tSec = tSec,
+                xPx = chosen.cxPx.toDouble(),
+                yPx = chosen.cyPx.toDouble(),
+                majorAxisPx = chosen.heightPx.toDouble(),
+                confidence = chosen.confidence.toDouble(),
+            ),
+        )
+    }
+
+    private fun updateSecondary(
+        detections: List<PlateDetection>,
+        primary: PlateDetection,
+        tSec: Double,
+    ) {
+        val reference = secondaryAxisReference ?: return
+        val lateralLimit = reference.majorAxisPx * DETECTION_LATERAL_DIAMETERS
+        val verticalLimit = reference.majorAxisPx * DETECTION_VERTICAL_DIAMETERS
+        val minimumSeparation = primary.heightPx * SECONDARY_MIN_SEPARATION_DIAMETERS *
+            SECONDARY_SEPARATION_RELAXATION
+        val chosen = detections
+            .filter { detection ->
+                abs(detection.cxPx - secondaryXReferencePx) <= lateralLimit &&
+                    abs(detection.cyPx - secondaryPrevY) <= verticalLimit &&
+                    hypot(detection.cxPx - primary.cxPx, detection.cyPx - primary.cyPx) >=
+                    minimumSeparation
+            }
+            .minByOrNull { hypot(it.cxPx - secondaryPrevX, it.cyPx - secondaryPrevY) }
+            ?: return
+        secondaryPrevX = chosen.cxPx
+        secondaryPrevY = chosen.cyPx
+        if (secondaryInitialDiameters.size < MAX_INITIAL_DIAMETER_SAMPLES &&
+            tSec - secondaryInitializedAtSec <= INITIAL_DIAMETER_SEC + 1e-9
+        ) {
+            secondaryInitialDiameters.add(chosen.heightPx)
+        }
+        secondaryObservations.add(
+            PlateObservation(
+                tSec = tSec,
+                xPx = chosen.cxPx.toDouble(),
+                yPx = chosen.cyPx.toDouble(),
+                majorAxisPx = reference.majorAxisPx.toDouble(),
+                confidence = chosen.confidence.toDouble(),
+            ),
+        )
+    }
+
     open fun calibrationDiameterPx(): Float? {
         val box = median(initialDiameterSamples).takeIf {
             initialDiameterSamples.size >= MIN_INITIAL_DIAMETER_SAMPLES
@@ -1054,6 +1159,9 @@ open class PlateTracker(private val detector: PlateDetector? = null) : AutoClose
         const val DETECTION_LATERAL_DIAMETERS = 0.5f
         const val DETECTION_VERTICAL_DIAMETERS = 2.5f
         const val MIN_INIT_RIM_SUPPORT = 0.18f
+        const val SECONDARY_MIN_SEPARATION_DIAMETERS = 1.5f
+        const val SECONDARY_SEPARATION_RELAXATION = 0.8f
+        const val SECONDARY_MIN_CONFIDENCE = 0.5f
         const val INITIAL_DIAMETER_SEC = 0.30
         const val MAX_INITIAL_DIAMETER_SAMPLES = 24
         const val MIN_INITIAL_DIAMETER_SAMPLES = 5
