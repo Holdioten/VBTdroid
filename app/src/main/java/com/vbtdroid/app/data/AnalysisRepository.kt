@@ -74,9 +74,8 @@ class AnalysisRepository(private val database: AppDatabase) {
             }
             if (phaseEntities.isNotEmpty()) dao.insertPhases(phaseEntities)
 
-            val estimate = aggregateLvp(request.lift, request.variant)
-            val finalResult = result.copy(lvp = estimate, savedSetId = set.setId)
-            val finalExport = ExportMapper.toSetExport(finalResult, request, estimate)
+            val finalResult = result.copy(savedSetId = set.setId)
+            val finalExport = ExportMapper.toSetExport(finalResult, request, finalResult.lvp)
             val encoded = JsonExport.encode(finalExport)
             dao.updateSet(set.copy(metricsJson = encoded, qualityJson = encoded, exportJson = encoded))
             finalResult
@@ -143,6 +142,12 @@ class AnalysisRepository(private val database: AppDatabase) {
     /** Same-lift, same-variant rows at one external load, newest first. */
     suspend fun sameLoad(lift: Lift, variant: LiftVariant, loadKg: Double): List<SetEntity> =
         dao.setsForLiftVariantLoad(lift.name, variant.name, loadKg)
+
+    suspend fun saveOneRmEstimate(estimate: OneRmEstimateEntity) {
+        database.sessionDao().upsertOneRmEstimate(estimate)
+    }
+
+    suspend fun oneRmEstimates(): List<OneRmEstimateEntity> = database.sessionDao().oneRmEstimates()
 
     suspend fun profile(lift: Lift, variant: LiftVariant): LvpEstimate {
         val stored = dao.liftProfile(lift.name, variant.name)

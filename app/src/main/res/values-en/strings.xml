@@ -217,4 +217,15 @@
     <string name="settings_clear_cache">Clear cache</string>
     <string name="settings_clear_cache_confirm">This deletes exported overlay videos. History metrics and 1RM estimates are kept, but older reports will no longer play their overlay video. Clear?</string>
     <string name="settings_cache_cleared">Cache cleared</string>
+    <string name="lvp_title">Estimate 1RM</string>
+    <string name="lvp_select_hint">Pick sets of the same lift and variant; do not mix sumo/conventional or high/low bar.</string>
+    <string name="lvp_no_sets">No weighted sets for this lift/variant yet.</string>
+    <string name="lvp_selected">%1$d sets · %2$d distinct loads</string>
+    <string name="lvp_estimate">Estimate</string>
+    <string name="lvp_reference">For reference only</string>
+    <string name="lvp_fit">MVT %1$.2f m/s · R² %2$.2f · %3$d load points</string>
+    <string name="lvp_saved">Saved to history</string>
+    <string name="lvp_unavailable">Cannot estimate: %1$s</string>
+    <string name="lvp_below_lifted">Fit is below the lifted %1$.1f kg; no 1RM reported</string>
+    <string name="lvp_recent_title">1RM estimates</string>
 </resources>

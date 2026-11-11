@@ -220,4 +220,15 @@
     <string name="settings_clear_cache">清除缓存</string>
     <string name="settings_clear_cache_confirm">将删除已导出的叠加视频。历史指标和 1RM 估算记录会保留，但旧报告将无法再播放叠加视频。确定清除？</string>
     <string name="settings_cache_cleared">缓存已清除</string>
+    <string name="lvp_title">估算 1RM</string>
+    <string name="lvp_select_hint">选择同一动作、同一变式的组；相扑/传统、高杠/低杠不要混选。</string>
+    <string name="lvp_no_sets">该动作/变式还没有带负荷的历史组。</string>
+    <string name="lvp_selected">已选 %1$d 组 · %2$d 个不同负荷</string>
+    <string name="lvp_estimate">估算</string>
+    <string name="lvp_reference">仅供参考</string>
+    <string name="lvp_fit">MVT %1$.2f m/s · R² %2$.2f · %3$d 个负荷点</string>
+    <string name="lvp_saved">已保存到历史</string>
+    <string name="lvp_unavailable">无法估算：%1$s</string>
+    <string name="lvp_below_lifted">拟合结果低于已举起的 %1$.1f kg，无法给出 1RM</string>
+    <string name="lvp_recent_title">1RM 估算记录</string>
 </resources>

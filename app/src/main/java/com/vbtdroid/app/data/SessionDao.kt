@@ -28,6 +28,18 @@ interface SessionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLiftProfile(profile: LiftProfileEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertOneRmEstimate(estimate: OneRmEstimateEntity)
+
+    @Query("SELECT * FROM one_rm_estimates ORDER BY createdAtEpochMs DESC")
+    suspend fun oneRmEstimates(): List<OneRmEstimateEntity>
+
+    @Query(
+        "SELECT * FROM one_rm_estimates WHERE lift = :lift AND variant = :variant " +
+            "ORDER BY createdAtEpochMs DESC LIMIT 1",
+    )
+    suspend fun latestOneRmEstimate(lift: String, variant: String): OneRmEstimateEntity?
+
     @Query("SELECT * FROM sets WHERE lift = :lift ORDER BY createdAtEpochMs DESC")
     suspend fun setsForLift(lift: String): List<SetEntity>
 

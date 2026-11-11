@@ -14,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RepEntity::class,
         PhaseEntity::class,
         LiftProfileEntity::class,
+        OneRmEstimateEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -54,10 +55,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS one_rm_estimates (" +
+                        "estimateId TEXT NOT NULL PRIMARY KEY, lift TEXT NOT NULL, variant TEXT NOT NULL, " +
+                        "createdAtEpochMs INTEGER NOT NULL, estimateKg REAL NOT NULL, mvtMps REAL NOT NULL, " +
+                        "slope REAL NOT NULL, intercept REAL NOT NULL, r2 REAL NOT NULL, " +
+                        "pointCount INTEGER NOT NULL, setIds TEXT NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_one_rm_estimates_lift_variant_createdAtEpochMs " +
+                        "ON one_rm_estimates(lift, variant, createdAtEpochMs)",
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "vbtdroid.db",
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

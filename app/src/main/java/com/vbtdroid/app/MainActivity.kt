@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppScreen { IMPORT, REPORT, HISTORY }
+private enum class AppScreen { IMPORT, REPORT, HISTORY, LVP }
 
 @Composable
 private fun AnalysisApp(
@@ -98,6 +98,7 @@ private fun AnalysisApp(
     var progress by remember { mutableStateOf(0f) }
     var analysisError by remember { mutableStateOf<String?>(null) }
     var history by remember { mutableStateOf<List<SetEntity>>(emptyList()) }
+    var oneRmEstimates by remember { mutableStateOf<List<com.vbtdroid.app.data.OneRmEstimateEntity>>(emptyList()) }
     var historyDetail by remember { mutableStateOf<HistoryDetail?>(null) }
     val serviceUnavailable = stringResource(R.string.analysis_service_unavailable)
 
@@ -196,6 +197,7 @@ private fun AnalysisApp(
     fun openHistory() {
         scope.launch {
             history = repository.history()
+            oneRmEstimates = repository.oneRmEstimates()
             historyDetail = null
             screen = AppScreen.HISTORY
         }
@@ -203,7 +205,10 @@ private fun AnalysisApp(
 
     // Restored into HISTORY after recreation: the in-memory list is gone, so reload it.
     LaunchedEffect(Unit) {
-        if (screen == AppScreen.HISTORY) history = repository.history()
+        if (screen == AppScreen.HISTORY || screen == AppScreen.LVP) {
+            history = repository.history()
+            oneRmEstimates = repository.oneRmEstimates()
+        }
     }
 
     fun backFromReport() {
@@ -220,6 +225,7 @@ private fun AnalysisApp(
     BackHandler(enabled = screen != AppScreen.IMPORT) {
         when (screen) {
             AppScreen.HISTORY -> screen = if (resultState == null) AppScreen.IMPORT else AppScreen.REPORT
+            AppScreen.LVP -> screen = AppScreen.HISTORY
             AppScreen.REPORT -> backFromReport()
             AppScreen.IMPORT -> Unit
         }
@@ -236,12 +242,25 @@ private fun AnalysisApp(
         } ?: run { screen = AppScreen.IMPORT }
         AppScreen.HISTORY -> HistoryScreen(
             history = history,
+            estimates = oneRmEstimates,
             detail = historyDetail,
             onSelect = { setId ->
                 scope.launch { historyDetail = repository.detail(setId) }
             },
             onCloseDetail = { historyDetail = null },
             onBack = { screen = if (resultState == null) AppScreen.IMPORT else AppScreen.REPORT },
+            onEstimate1Rm = { screen = AppScreen.LVP },
+        )
+        AppScreen.LVP -> com.vbtdroid.app.ui.lvp.LvpEstimatorScreen(
+            history = history,
+            estimates = oneRmEstimates,
+            onSave = { estimate ->
+                scope.launch {
+                    repository.saveOneRmEstimate(estimate)
+                    oneRmEstimates = repository.oneRmEstimates()
+                }
+            },
+            onBack = { screen = AppScreen.HISTORY },
         )
         AppScreen.IMPORT -> ImportScreen(
             analyzing = analyzing,

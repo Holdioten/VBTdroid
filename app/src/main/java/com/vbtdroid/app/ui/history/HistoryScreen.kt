@@ -62,10 +62,12 @@ import com.vbtdroid.app.ui.report.phaseLabelRes
 @Composable
 fun HistoryScreen(
     history: List<SetEntity>,
+    estimates: List<com.vbtdroid.app.data.OneRmEstimateEntity>,
     detail: HistoryDetail?,
     onSelect: (String) -> Unit,
     onCloseDetail: () -> Unit,
     onBack: () -> Unit,
+    onEstimate1Rm: () -> Unit,
 ) {
     // Back inside a history detail returns to the list, not out of history.
     BackHandler(enabled = detail != null, onBack = onCloseDetail)
@@ -92,6 +94,10 @@ fun HistoryScreen(
                         TextButton(onClick = onCloseDetail, modifier = Modifier.heightIn(min = MinTouchTarget)) {
                             Text(stringResource(R.string.history_close_detail))
                         }
+                    } else {
+                        TextButton(onClick = onEstimate1Rm, modifier = Modifier.heightIn(min = MinTouchTarget)) {
+                            Text(stringResource(R.string.lvp_title))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -99,7 +105,13 @@ fun HistoryScreen(
         },
     ) { inner ->
         if (detail == null) {
-            HistoryList(history = history, onSelect = onSelect, onBack = onBack, modifier = Modifier.padding(inner))
+            HistoryList(
+                history = history,
+                estimates = estimates,
+                onSelect = onSelect,
+                onBack = onBack,
+                modifier = Modifier.padding(inner),
+            )
         } else {
             HistoryDetailContent(detail = detail, modifier = Modifier.padding(inner))
         }
@@ -109,6 +121,7 @@ fun HistoryScreen(
 @Composable
 private fun HistoryList(
     history: List<SetEntity>,
+    estimates: List<com.vbtdroid.app.data.OneRmEstimateEntity>,
     onSelect: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -127,6 +140,38 @@ private fun HistoryList(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = VbtSpacing.l, vertical = VbtSpacing.m),
         verticalArrangement = Arrangement.spacedBy(VbtSpacing.m),
     ) {
+        val latestEstimates = estimates.distinctBy { it.lift to it.variant }
+        if (latestEstimates.isNotEmpty()) {
+            item(key = "one_rm_estimates") {
+                SectionCard(padding = VbtSpacing.m) {
+                    SectionLabel(stringResource(R.string.lvp_recent_title))
+                    latestEstimates.forEach { estimate ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${liftLabel(estimate.lift)} / ${variantLabel(estimate.variant)}",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                String.format("%.1f", estimate.estimateKg),
+                                style = VbtTheme.numbers.displayMetricSm,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.unit_kg),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = VbtTheme.colors.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
         items(history, key = { it.setId }) { set ->
             SetCard(set = set, onClick = { onSelect(set.setId) })
         }
@@ -179,28 +224,7 @@ private fun HistoryHeader(export: SetExport, detail: HistoryDetail, missing: Str
                 ),
             )
         }
-        export.lvp?.let { lvp ->
-            val oneRm = lvp.estimated1RmKg
-            if (oneRm != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        String.format("%.1f", oneRm),
-                        style = VbtTheme.numbers.displayMetricSm,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(VbtSpacing.s))
-                    Text(stringResource(R.string.unit_kg), style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.width(VbtSpacing.s))
-                    StatusChip(stringResource(R.string.report_estimated_badge))
-                }
-            } else {
-                Text(
-                    stringResource(R.string.report_lvp_unavailable, lvp.unavailableReason.orEmpty()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VbtTheme.colors.onSurfaceVariant,
-                )
-            }
-        }
+
     }
 }
 
