@@ -231,4 +231,5 @@
     <string name="lvp_unavailable">无法估算：%1$s</string>
     <string name="lvp_below_lifted">拟合结果低于已举起的 %1$.1f kg，无法给出 1RM</string>
     <string name="lvp_recent_title">1RM 估算记录</string>
+    <string name="import_reused_analysis">已复用上次分析结果</string>
 </resources>

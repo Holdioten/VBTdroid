@@ -43,6 +43,7 @@ class AnalysisRepository(private val database: AppDatabase) {
                 cameraLevel = request.cameraLevel,
                 videoUri = request.uri.toString(),
                 mcvAvgMps = result.summary.mcvAvgMps,
+                analysisKey = request.analysisKey,
                 metricsJson = JsonExport.encode(initialExport),
                 qualityJson = JsonExport.encode(initialExport),
                 exportJson = JsonExport.encode(initialExport),
@@ -142,6 +143,9 @@ class AnalysisRepository(private val database: AppDatabase) {
     /** Same-lift, same-variant rows at one external load, newest first. */
     suspend fun sameLoad(lift: Lift, variant: LiftVariant, loadKg: Double): List<SetEntity> =
         dao.setsForLiftVariantLoad(lift.name, variant.name, loadKg)
+
+    suspend fun setByAnalysisKey(key: String): SetEntity? =
+        if (key.isBlank()) null else database.sessionDao().setByAnalysisKey(key)
 
     suspend fun saveOneRmEstimate(estimate: OneRmEstimateEntity) {
         database.sessionDao().upsertOneRmEstimate(estimate)

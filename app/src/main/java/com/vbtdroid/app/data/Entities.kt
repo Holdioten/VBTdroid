@@ -29,6 +29,7 @@ data class SessionEntity(
         Index("sessionId"),
         Index(value = ["lift", "createdAtEpochMs"]),
         Index(value = ["lift", "variant", "createdAtEpochMs"]),
+        Index("analysisKey"),
     ],
 )
 data class SetEntity(
@@ -46,6 +47,8 @@ data class SetEntity(
     val videoUri: String = "",
     val mcvAvgMps: Double? = null,
     val exportJson: String = "",
+    /** Fingerprint of video + settings + ROI; used to reuse a previous analysis. */
+    val analysisKey: String = "",
 )
 
 @Entity(

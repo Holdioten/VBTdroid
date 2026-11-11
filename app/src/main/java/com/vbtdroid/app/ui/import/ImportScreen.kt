@@ -305,6 +305,17 @@ fun ImportScreen(
                     analyzePose = analyzePose,
                     roi = RectF(roi ?: return@let),
                     themeId = themeId,
+                    analysisKey = buildAnalysisKey(
+                        uri = uri,
+                        meta = videoMeta,
+                        lift = lift,
+                        variant = variant,
+                        loadText = loadText,
+                        plateText = plateDiameterText,
+                        angleText = cameraAngleText,
+                        analyzePose = analyzePose,
+                        roi = roi,
+                    ),
                 ),
             )
         }
@@ -1131,6 +1142,33 @@ private fun ThemeSwatch(id: VbtThemeId) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(palette.primary))
         Box(Modifier.size(10.dp).clip(CircleShape).background(palette.onSurface))
     }
+}
+
+private fun buildAnalysisKey(
+    uri: Uri,
+    meta: VideoMeta?,
+    lift: Lift,
+    variant: LiftVariant,
+    loadText: String,
+    plateText: String,
+    angleText: String,
+    analyzePose: Boolean,
+    roi: RectF?,
+): String {
+    fun number(text: String): String = text.trim().toDoubleOrNull()?.toString() ?: text.trim()
+    val rect = roi?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "-"
+    return listOf(
+        uri.toString(),
+        meta?.durationSec?.toString() ?: "-",
+        "${meta?.width ?: 0}x${meta?.height ?: 0}",
+        lift.name,
+        variant.name,
+        number(loadText),
+        number(plateText),
+        number(angleText),
+        analyzePose.toString(),
+        rect,
+    ).joinToString("|")
 }
 
 private fun clearOverlayCache(context: android.content.Context) {

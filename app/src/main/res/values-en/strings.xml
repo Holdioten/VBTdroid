@@ -228,4 +228,5 @@
     <string name="lvp_unavailable">Cannot estimate: %1$s</string>
     <string name="lvp_below_lifted">Fit is below the lifted %1$.1f kg; no 1RM reported</string>
     <string name="lvp_recent_title">1RM estimates</string>
+    <string name="import_reused_analysis">Reused the previous analysis</string>
 </resources>

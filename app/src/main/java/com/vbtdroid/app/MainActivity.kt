@@ -267,21 +267,36 @@ private fun AnalysisApp(
             analysisProgress = progress,
             analysisError = analysisError,
             onAnalyze = { request ->
-                val binder = serviceBinder
-                if (binder == null) {
-                    analysisError = serviceUnavailable
-                } else {
-                    analyzing = true
-                    analysisError = null
-                    progress = 0f
-                    context.startForegroundService(Intent(context, AnalysisForegroundService::class.java))
-                    val startResult = binder.analyze(
-                        request = request,
-                        callbacks = callbacksFor(),
-                    )
-                    if (startResult == AnalysisStartResult.ALREADY_RUNNING) {
-                        // A run survived while this Activity was away: adopt it, do not restart.
-                        syncWithService(binder)
+                scope.launch {
+                    val cached = repository.setByAnalysisKey(request.analysisKey)
+                    if (cached != null) {
+                        historyDetail = repository.detail(cached.setId)
+                        screen = AppScreen.HISTORY
+                        android.widget.Toast.makeText(
+                            context,
+                            R.string.import_reused_analysis,
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        val binder = serviceBinder
+                        if (binder == null) {
+                            analysisError = serviceUnavailable
+                        } else {
+                            analyzing = true
+                            analysisError = null
+                            progress = 0f
+                            context.startForegroundService(
+                                Intent(context, AnalysisForegroundService::class.java),
+                            )
+                            val startResult = binder.analyze(
+                                request = request,
+                                callbacks = callbacksFor(),
+                            )
+                            if (startResult == AnalysisStartResult.ALREADY_RUNNING) {
+                                // A run survived while this Activity was away: adopt it, do not restart.
+                                syncWithService(binder)
+                            }
+                        }
                     }
                 }
             },

@@ -52,6 +52,8 @@ data class AnalysisRequest(
     val analyzePose: Boolean = true,
     /** Theme active when the analysis starts; the burned overlay cards follow it. */
     val themeId: VbtThemeId = VbtThemeId.LIGHT_RED,
+    /** Fingerprint of video + settings + ROI; used to reuse a previous analysis. */
+    val analysisKey: String = "",
 )
 
 data class SetSummary(
