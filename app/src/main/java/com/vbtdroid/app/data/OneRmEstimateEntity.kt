@@ -1,6 +1,7 @@
 package com.vbtdroid.app.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
@@ -8,7 +9,10 @@ import java.util.UUID
  * One manually computed 1RM estimate. The user picks the sets, so the record keeps the exact
  * inputs (set ids) and the fit parameters for later review.
  */
-@Entity(tableName = "one_rm_estimates")
+@Entity(
+    tableName = "one_rm_estimates",
+    indices = [Index(value = ["lift", "variant", "createdAtEpochMs"])],
+)
 data class OneRmEstimateEntity(
     @PrimaryKey val estimateId: String = UUID.randomUUID().toString(),
     val lift: String,

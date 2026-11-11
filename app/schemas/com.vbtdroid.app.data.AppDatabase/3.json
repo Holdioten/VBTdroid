@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 3,
-    "identityHash": "3970127efc9d75088b265f94d6b2d0f1",
+    "identityHash": "3e0df8f7e906c6a1777c0c215b9f0adf",
     "entities": [
       {
         "tableName": "sessions",
@@ -511,14 +511,26 @@
             "estimateId"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_one_rm_estimates_lift_variant_createdAtEpochMs",
+            "unique": false,
+            "columnNames": [
+              "lift",
+              "variant",
+              "createdAtEpochMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_one_rm_estimates_lift_variant_createdAtEpochMs` ON `${TABLE_NAME}` (`lift`, `variant`, `createdAtEpochMs`)"
+          }
+        ],
         "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3970127efc9d75088b265f94d6b2d0f1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3e0df8f7e906c6a1777c0c215b9f0adf')"
     ]
   }
 }
