@@ -148,6 +148,7 @@ fun ImportScreen(
     onCancel: () -> Unit = {},
     onShowHistory: () -> Unit = {},
     suggestRois: (Bitmap) -> List<RectF> = { emptyList() },
+    onLookupReuse: (suspend (AnalysisRequest) -> Boolean)? = null,
     themeId: VbtThemeId = VbtThemeId.LIGHT_RED,
     onThemeChange: (VbtThemeId) -> Unit = {},
 ) {
@@ -292,32 +293,46 @@ fun ImportScreen(
     val liftNames = Lift.entries.associateWith { liftDisplayName(it) }
     val variantNames = LiftVariant.entries.associateWith { variantDisplayName(it) }
 
+    fun currentRequest(): AnalysisRequest? {
+        val uri = selectedUri ?: return null
+        val angle = cameraAngle ?: return null
+        val plate = plateDiameterM ?: return null
+        val region = roi ?: return null
+        return AnalysisRequest(
+            uri = uri,
+            lift = lift,
+            variant = variant,
+            cameraAngleDeg = angle,
+            plateDiameterM = plate,
+            loadKg = if (loadText.isBlank()) null else loadKg,
+            analyzePose = analyzePose,
+            roi = RectF(region),
+            themeId = themeId,
+            analysisKey = buildAnalysisKey(
+                uri = uri,
+                meta = videoMeta,
+                lift = lift,
+                variant = variant,
+                loadText = loadText,
+                plateText = plateDiameterText,
+                angleText = cameraAngleText,
+                analyzePose = analyzePose,
+            ),
+        )
+    }
+
     fun startAnalysis() {
-        selectedUri?.let { uri ->
-            onAnalyze(
-                AnalysisRequest(
-                    uri = uri,
-                    lift = lift,
-                    variant = variant,
-                    cameraAngleDeg = cameraAngle ?: return@let,
-                    plateDiameterM = plateDiameterM ?: return@let,
-                    loadKg = if (loadText.isBlank()) null else loadKg,
-                    analyzePose = analyzePose,
-                    roi = RectF(roi ?: return@let),
-                    themeId = themeId,
-                    analysisKey = buildAnalysisKey(
-                        uri = uri,
-                        meta = videoMeta,
-                        lift = lift,
-                        variant = variant,
-                        loadText = loadText,
-                        plateText = plateDiameterText,
-                        angleText = cameraAngleText,
-                        analyzePose = analyzePose,
-                        roi = roi,
-                    ),
-                ),
-            )
+        currentRequest()?.let(onAnalyze)
+    }
+
+    // Tell the user up front that this exact video and input set already produced a result.
+    var alreadyAnalyzed by remember { mutableStateOf(false) }
+    val lookupKey = if (canAnalyze) currentRequest()?.analysisKey else null
+    LaunchedEffect(lookupKey) {
+        alreadyAnalyzed = false
+        if (lookupKey != null && onLookupReuse != null) {
+            val request = currentRequest() ?: return@LaunchedEffect
+            alreadyAnalyzed = runCatching { onLookupReuse(request) }.getOrDefault(false)
         }
     }
 
@@ -375,6 +390,7 @@ fun ImportScreen(
                     validRoi = validRoi,
                     validSettings = validSettings,
                     canAnalyze = canAnalyze,
+                    reused = alreadyAnalyzed,
                     onCancel = {
                         onCancel()
                         scope.launch { snackbar.showSnackbar(cancelledMessage) }
@@ -811,6 +827,7 @@ private fun ImportActionBar(
     validRoi: Boolean,
     validSettings: Boolean,
     canAnalyze: Boolean,
+    reused: Boolean,
     onCancel: () -> Unit,
     onNext: () -> Unit,
     onBackToRoi: () -> Unit,
@@ -896,9 +913,13 @@ private fun ImportActionBar(
                 }
             }
             !validSettings -> PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
-            else -> PrimaryActionBar {
+            else -> PrimaryActionBar(
+                hint = if (reused) stringResource(R.string.import_reuse_hint) else null,
+            ) {
                 PrimaryButton(
-                    text = stringResource(R.string.import_start_analysis),
+                    text = stringResource(
+                        if (reused) R.string.import_open_existing else R.string.import_start_analysis,
+                    ),
                     onClick = onAnalyze,
                     enabled = ImportFlowPolicy.showStart(page, roiConfirmed, validSettings) && canAnalyze,
                 )
@@ -1153,13 +1174,16 @@ private fun buildAnalysisKey(
     plateText: String,
     angleText: String,
     analyzePose: Boolean,
-    roi: RectF?,
 ): String {
     fun number(text: String): String = text.trim().toDoubleOrNull()?.toString() ?: text.trim()
-    val rect = roi?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "-"
+    // Duration comes from the container metadata as a float; rounding it keeps a re-probe from
+    // producing a different identity for the same file.
+    val durationKey = meta?.durationSec?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "-"
+    // The ROI is deliberately absent: the auto-detector can shift it a few pixels between imports
+    // of the same file, which used to make an already-analysed video look new.
     return listOf(
         uri.toString(),
-        meta?.durationSec?.toString() ?: "-",
+        durationKey,
         "${meta?.width ?: 0}x${meta?.height ?: 0}",
         lift.name,
         variant.name,
@@ -1167,7 +1191,6 @@ private fun buildAnalysisKey(
         number(plateText),
         number(angleText),
         analyzePose.toString(),
-        rect,
     ).joinToString("|")
 }
 

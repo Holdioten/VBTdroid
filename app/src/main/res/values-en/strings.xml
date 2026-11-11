@@ -232,4 +232,6 @@
     <string name="history_metric_load">Weight</string>
     <string name="history_metric_reps">Reps</string>
     <string name="history_metric_mcv">MCV</string>
+    <string name="import_reuse_hint">This video and these inputs were already analysed; the previous result opens directly</string>
+    <string name="import_open_existing">Open previous result</string>
 </resources>

@@ -266,9 +266,14 @@ private fun AnalysisApp(
             analyzing = analyzing,
             analysisProgress = progress,
             analysisError = analysisError,
+            onLookupReuse = { request -> repository.findReusable(request) != null },
             onAnalyze = { request ->
                 scope.launch {
-                    val cached = repository.setByAnalysisKey(request.analysisKey)
+                    val cached = repository.findReusable(request)
+                    android.util.Log.d(
+                        "VBTDebug",
+                        "reuse uri=${request.uri} key=${request.analysisKey} hit=${cached?.setId}",
+                    )
                     if (cached != null) {
                         historyDetail = repository.detail(cached.setId)
                         screen = AppScreen.HISTORY

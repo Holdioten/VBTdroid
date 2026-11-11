@@ -147,6 +147,34 @@ class AnalysisRepository(private val database: AppDatabase) {
     suspend fun setByAnalysisKey(key: String): SetEntity? =
         if (key.isBlank()) null else database.sessionDao().setByAnalysisKey(key)
 
+    /**
+     * Finds the run that already covers this video and these inputs.
+     *
+     * The exact fingerprint is tried first. It embeds the ROI, which the auto-detector may place
+     * a few pixels differently on every import, so a miss falls back to the durable identity:
+     * the same video, lift, variant, load, plate size and camera angle.
+     */
+    suspend fun findReusable(request: AnalysisRequest): SetEntity? {
+        setByAnalysisKey(request.analysisKey)?.let { return it }
+        val uri = request.uri.toString()
+        if (uri.isBlank()) return null
+        val expectedLoad = request.loadKg
+        val expectedPlateMm = request.plateDiameterM * 1000.0
+        return database.sessionDao().setsByVideoUri(uri).firstOrNull { set ->
+            set.lift == request.lift.name &&
+                set.variant == request.variant.name &&
+                sameLoad(set.loadKg, expectedLoad) &&
+                kotlin.math.abs(set.plateDiameterMm - expectedPlateMm) < 1.0 &&
+                kotlin.math.abs(set.cameraAngleDeg - request.cameraAngleDeg) < 0.51
+        }
+    }
+
+    private fun sameLoad(a: Double?, b: Double?): Boolean = when {
+        a == null && b == null -> true
+        a == null || b == null -> false
+        else -> kotlin.math.abs(a - b) < 1e-6
+    }
+
     suspend fun saveOneRmEstimate(estimate: OneRmEstimateEntity) {
         database.sessionDao().upsertOneRmEstimate(estimate)
     }

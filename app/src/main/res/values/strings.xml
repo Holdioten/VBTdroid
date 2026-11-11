@@ -235,4 +235,6 @@
     <string name="history_metric_load">重量</string>
     <string name="history_metric_reps">次数</string>
     <string name="history_metric_mcv">MCV</string>
+    <string name="import_reuse_hint">该视频与这组参数已分析过，将直接打开上次结果</string>
+    <string name="import_open_existing">查看上次结果</string>
 </resources>

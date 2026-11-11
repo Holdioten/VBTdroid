@@ -43,6 +43,9 @@ interface SessionDao {
     @Query("SELECT * FROM sets WHERE analysisKey = :key ORDER BY createdAtEpochMs DESC LIMIT 1")
     suspend fun setByAnalysisKey(key: String): SetEntity?
 
+    @Query("SELECT * FROM sets WHERE videoUri = :uri ORDER BY createdAtEpochMs DESC LIMIT 50")
+    suspend fun setsByVideoUri(uri: String): List<SetEntity>
+
     @Query("SELECT * FROM sets WHERE lift = :lift ORDER BY createdAtEpochMs DESC")
     suspend fun setsForLift(lift: String): List<SetEntity>
 
