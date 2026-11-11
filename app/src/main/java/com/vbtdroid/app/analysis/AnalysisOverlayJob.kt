@@ -15,7 +15,7 @@ object AnalysisOverlayJob {
     const val OVERLAY_FAILED_WARNING = "OVERLAY_EXPORT_FAILED"
 
     /** Number of overlay MP4s kept in cache; older files are deleted after each export. */
-    const val CACHE_FILES_TO_KEEP = 5
+    const val CACHE_FILES_TO_KEEP = 10
 
     fun analysisProgress(raw: Float): Float = raw.coerceIn(0f, 1f) * ANALYSIS_SHARE
 

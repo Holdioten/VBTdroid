@@ -31,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
@@ -48,6 +50,8 @@ import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.app.ui.common.liftDisplayName
 import com.vbtdroid.app.ui.common.variantDisplayName
+import com.vbtdroid.app.ui.report.FitVideo
+import com.vbtdroid.app.ui.report.OverlayPlayback
 import com.vbtdroid.app.ui.report.formatMcv
 import com.vbtdroid.app.ui.report.formatMetricValue
 import com.vbtdroid.app.ui.report.qualityWarningText
@@ -205,9 +209,48 @@ private fun HistoryDetailContent(detail: HistoryDetail, modifier: Modifier = Mod
         item(key = "header") {
             HistoryHeader(export = export, detail = detail, missing = missing)
         }
+        item(key = "overlay-video") { HistoryVideo(detail.set.createdAtEpochMs) }
         items(export.reps, key = { it.index }) { rep ->
             RepHistoryRow(rep = rep, lift = liftFromName(export.lift), maxMcv = maxMcv, missing = missing)
         }
+    }
+}
+
+/**
+ * The overlay MP4 is a cache artefact keyed by the analysis timestamp, so an old record may point
+ * at a file the cache has already evicted. Show the video when it is still there, and say so
+ * plainly when it is not.
+ */
+@Composable
+private fun HistoryVideo(createdAtEpochMs: Long) {
+    val context = LocalContext.current
+    val file = remember(createdAtEpochMs) {
+        java.io.File(context.cacheDir, "overlay-$createdAtEpochMs.mp4")
+            .takeIf { it.isFile && it.length() > 0L }
+    }
+    if (file == null) {
+        SectionCard(padding = VbtSpacing.m) {
+            Text(
+                stringResource(R.string.history_video_cleared),
+                style = MaterialTheme.typography.bodySmall,
+                color = VbtTheme.colors.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    val playback = remember(file) { OverlayPlayback() }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        FitVideo(
+            uri = android.net.Uri.fromFile(file),
+            playback = playback,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
