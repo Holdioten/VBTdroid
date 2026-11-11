@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -51,7 +50,7 @@ import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
 import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.metrics.Lvp
-import com.vbtdroid.core.metrics.LvpEstimate
+import com.vbtdroid.core.metrics.LvpModel
 import com.vbtdroid.core.metrics.LvpPoint
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.LiftVariant
@@ -60,10 +59,11 @@ import java.util.Date
 import java.util.Locale
 
 private data class EstimateOutcome(
-    val estimate: LvpEstimate,
+    val model: LvpModel?,
     val maxLoadKg: Double,
     val points: List<LvpPoint>,
     val saved: Boolean,
+    val error: String? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,7 +76,7 @@ fun LvpEstimatorScreen(
 ) {
     var lift by remember { mutableStateOf(Lift.SQUAT) }
     var variant by remember { mutableStateOf(defaultVariant(lift)) }
-    var selectedLoads by remember { mutableStateOf<Set<Double>>(emptySet()) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var outcome by remember { mutableStateOf<EstimateOutcome?>(null) }
 
     val eligible = history.filter {
@@ -88,14 +88,12 @@ fun LvpEstimatorScreen(
         compareByDescending<SetEntity> { it.loadKg ?: 0.0 }
             .thenByDescending { it.createdAtEpochMs },
     )
-    val loadGroups = remember(eligible) {
-        eligible.groupBy { it.loadKg!! }.toSortedMap(compareByDescending { it })
-    }
-    val selectedSets = eligible.filter { (it.loadKg ?: 0.0) in selectedLoads }
-    val canEstimate = selectedLoads.size >= 3
+    val selectedSets = eligible.filter { it.setId in selected }
+    val distinctLoads = selectedSets.mapNotNull { it.loadKg }.distinct().size
+    val canEstimate = distinctLoads >= 3
 
     fun resetSelection() {
-        selectedLoads = emptySet()
+        selected = emptySet()
         outcome = null
     }
 
@@ -168,26 +166,17 @@ fun LvpEstimatorScreen(
                 )
             } else {
                 LazyColumn(Modifier.weight(1f)) {
-                    items(loadGroups.entries.toList(), key = { it.key }) { entry ->
-                        val load = entry.key
-                        val sets = entry.value
-                        val checked = load in selectedLoads
-                        val avgMcv = sets.mapNotNull { it.mcvAvgMps }.average()
-                        val latest = sets.maxByOrNull { it.createdAtEpochMs }
-                        val reps = sets.mapNotNull {
-                            runCatching { JsonExport.decode(it.exportJson).reps.size }.getOrNull()
-                        }
-                        val repText = when {
-                            reps.isEmpty() -> "-"
-                            reps.min() == reps.max() -> reps.min().toString()
-                            else -> "${reps.min()}–${reps.max()}"
+                    items(eligible, key = { it.setId }) { set ->
+                        val checked = set.setId in selected
+                        val reps = remember(set.exportJson) {
+                            runCatching { JsonExport.decode(set.exportJson).reps.size }.getOrNull()
                         }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
-                                    selectedLoads = if (checked) selectedLoads - load else selectedLoads + load
+                                    selected = if (checked) selected - set.setId else selected + set.setId
                                     outcome = null
                                 }
                                 .padding(vertical = 6.dp),
@@ -196,32 +185,31 @@ fun LvpEstimatorScreen(
                             Checkbox(
                                 checked = checked,
                                 onCheckedChange = {
-                                    selectedLoads = if (checked) selectedLoads - load else selectedLoads + load
+                                    selected = if (checked) selected - set.setId else selected + set.setId
                                     outcome = null
                                 },
                             )
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    (latest?.let { formatDate(it.createdAtEpochMs) } ?: "-") +
-                                        " · ${sets.size} 组",
+                                    formatDate(set.createdAtEpochMs),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = VbtTheme.colors.onSurfaceVariant,
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
                                     EstimatorMetric(
                                         label = stringResource(R.string.history_metric_load),
-                                        value = formatKg(load),
+                                        value = formatKg(set.loadKg ?: 0.0),
                                         unit = stringResource(R.string.unit_kg),
                                         modifier = Modifier.weight(1f),
                                     )
                                     EstimatorMetric(
                                         label = stringResource(R.string.history_metric_reps),
-                                        value = repText,
+                                        value = reps?.toString() ?: "-",
                                         modifier = Modifier.weight(1f),
                                     )
                                     EstimatorMetric(
                                         label = stringResource(R.string.history_metric_mcv),
-                                        value = String.format(Locale.US, "%.3f", avgMcv),
+                                        value = String.format(Locale.US, "%.3f", set.mcvAvgMps ?: 0.0),
                                         unit = stringResource(R.string.unit_mps),
                                         modifier = Modifier.weight(1f),
                                     )
@@ -233,7 +221,7 @@ fun LvpEstimatorScreen(
                 }
             }
             Text(
-                stringResource(R.string.lvp_selected, selectedLoads.size, selectedSets.size),
+                stringResource(R.string.lvp_selected, selectedSets.size, distinctLoads),
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )
@@ -246,16 +234,10 @@ fun LvpEstimatorScreen(
             Button(
                 onClick = {
                     val points = selectedSets
-                        .groupBy { it.loadKg!! }
-                        .map { (load, sets) -> LvpPoint(load, sets.mapNotNull { it.mcvAvgMps }.average()) }
+                        .map { LvpPoint(it.loadKg!!, it.mcvAvgMps!!) }
                         .sortedBy { it.loadKg }
-                    val estimate = Lvp.estimate(
-                        points = points,
-                        lift = lift,
-                        v1rmMps = Lvp.defaultV1rmMps(lift),
-                    )
                     val maxLoad = points.maxOfOrNull { it.loadKg } ?: 0.0
-                    val model = estimate.model
+                    val model = runCatching { Lvp.fit(points, Lvp.defaultV1rmMps(lift)) }.getOrNull()
                     val valid = model != null && model.estimated1RmKg >= maxLoad
                     if (valid) {
                         onSave(
@@ -263,7 +245,7 @@ fun LvpEstimatorScreen(
                                 lift = lift.name,
                                 variant = variant.name,
                                 estimateKg = model!!.estimated1RmKg,
-                                mvtMps = estimate.v1rmMps,
+                                mvtMps = model.v1rmMps,
                                 slope = model.slope,
                                 intercept = model.intercept,
                                 r2 = model.r2,
@@ -272,7 +254,17 @@ fun LvpEstimatorScreen(
                             ),
                         )
                     }
-                    outcome = EstimateOutcome(estimate, maxLoad, points, saved = valid)
+                    outcome = EstimateOutcome(
+                        model = model,
+                        maxLoadKg = maxLoad,
+                        points = points,
+                        saved = valid,
+                        error = if (model == null) {
+                            "无法拟合：需要至少 3 个不同负荷，且速度随负荷下降"
+                        } else {
+                            null
+                        },
+                    )
                 },
                 enabled = canEstimate,
                 modifier = Modifier
@@ -288,7 +280,7 @@ fun LvpEstimatorScreen(
 
 @Composable
 private fun ResultCard(outcome: EstimateOutcome) {
-    val model = outcome.estimate.model
+    val model = outcome.model
     Column(
         Modifier
             .fillMaxWidth()
@@ -297,10 +289,8 @@ private fun ResultCard(outcome: EstimateOutcome) {
             .padding(VbtSpacing.m),
     ) {
         val text = when {
-            model == null -> stringResource(
-                R.string.lvp_unavailable,
-                outcome.estimate.unavailableReason.orEmpty(),
-            )
+            outcome.error != null -> outcome.error
+            model == null -> stringResource(R.string.lvp_unavailable, "")
             model.estimated1RmKg < outcome.maxLoadKg -> stringResource(
                 R.string.lvp_below_lifted,
                 outcome.maxLoadKg,
@@ -333,7 +323,7 @@ private fun ResultCard(outcome: EstimateOutcome) {
             Text(
                 stringResource(
                     R.string.lvp_fit,
-                    outcome.estimate.v1rmMps,
+                    m.v1rmMps,
                     m.r2,
                     outcome.points.size,
                 ),
