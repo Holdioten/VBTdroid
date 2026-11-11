@@ -221,7 +221,7 @@
     <string name="settings_clear_cache_confirm">将删除已导出的叠加视频。历史指标和 1RM 估算记录会保留，但旧报告将无法再播放叠加视频。确定清除？</string>
     <string name="settings_cache_cleared">缓存已清除</string>
     <string name="lvp_title">估算 1RM</string>
-    <string name="lvp_select_hint">选择同一动作、同一变式的组；相扑/传统、高杠/低杠不要混选。</string>
+    <string name="lvp_select_hint">同一动作/变式下按重量自动合并；同重量取 MCV 平均，行内显示组数与次数范围。</string>
     <string name="lvp_no_sets">该动作/变式还没有带负荷的历史组。</string>
     <string name="lvp_selected">已选 %1$d 个负荷 · %2$d 组</string>
     <string name="lvp_estimate">估算</string>
@@ -232,7 +232,7 @@
     <string name="lvp_below_lifted">拟合结果低于已举起的 %1$.1f kg，无法给出 1RM</string>
     <string name="lvp_recent_title">1RM 估算记录</string>
     <string name="import_reused_analysis">已复用上次分析结果</string>
-    <string name="history_metric_load">负荷</string>
+    <string name="history_metric_load">重量</string>
     <string name="history_metric_reps">次数</string>
     <string name="history_metric_mcv">MCV</string>
 </resources>

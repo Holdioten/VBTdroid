@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vbtdroid.app.R
 import com.vbtdroid.app.data.SetEntity
 import com.vbtdroid.app.ui.report.formatKgValue
@@ -75,7 +76,8 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
             ) {
                 MetricCell(
                     label = stringResource(R.string.history_metric_load),
-                    value = "${formatKgValue(set.loadKg) ?: missing} kg",
+                    value = formatKgValue(set.loadKg) ?: missing,
+                    unit = stringResource(R.string.unit_kg),
                     modifier = Modifier.weight(1f),
                 )
                 MetricCell(
@@ -87,22 +89,23 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
                     label = stringResource(R.string.history_metric_mcv),
                     value = formatMcv(set.mcvAvgMps) ?: missing,
                     unit = stringResource(R.string.unit_mps),
-                    highlight = true,
                     modifier = Modifier.weight(1f),
-                )
-            }
-            if (velocityLoss != null) {
-                Text(
-                    "${stringResource(R.string.report_mini_vl)} ${formatMetricValue(velocityLoss, MetricId.SET_VELOCITY_LOSS)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = VbtTheme.colors.onSurfaceVariant,
                 )
             }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
             ) {
+                if (velocityLoss != null) {
+                    Text(
+                        "${stringResource(R.string.report_mini_vl)} ${formatMetricValue(velocityLoss, MetricId.SET_VELOCITY_LOSS)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VbtTheme.colors.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
                 Icon(
                     Icons.Filled.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.history_open_detail),
@@ -119,7 +122,6 @@ private fun MetricCell(
     value: String,
     modifier: Modifier = Modifier,
     unit: String? = null,
-    highlight: Boolean = false,
 ) {
     Column(modifier) {
         Text(
@@ -130,8 +132,8 @@ private fun MetricCell(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 value,
-                style = if (highlight) VbtTheme.numbers.displayMetricSm else MaterialTheme.typography.titleMedium,
-                color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                style = VbtTheme.numbers.displayMetricSm.copy(fontSize = 26.sp, lineHeight = 30.sp),
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
             )
             if (unit != null) {
@@ -140,7 +142,7 @@ private fun MetricCell(
                     unit,
                     style = MaterialTheme.typography.labelLarge,
                     color = VbtTheme.colors.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = if (highlight) 6.dp else 0.dp),
+                    modifier = Modifier.padding(bottom = 4.dp),
                 )
             }
         }

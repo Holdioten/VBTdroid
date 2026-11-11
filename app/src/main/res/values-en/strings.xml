@@ -218,7 +218,7 @@
     <string name="settings_clear_cache_confirm">This deletes exported overlay videos. History metrics and 1RM estimates are kept, but older reports will no longer play their overlay video. Clear?</string>
     <string name="settings_cache_cleared">Cache cleared</string>
     <string name="lvp_title">Estimate 1RM</string>
-    <string name="lvp_select_hint">Pick sets of the same lift and variant; do not mix sumo/conventional or high/low bar.</string>
+    <string name="lvp_select_hint">Sets of the same lift and variant are grouped by weight; same-weight sets average their MCV. Sets and rep range are shown per row.</string>
     <string name="lvp_no_sets">No weighted sets for this lift/variant yet.</string>
     <string name="lvp_selected">%1$d loads · %2$d sets</string>
     <string name="lvp_estimate">Estimate</string>
@@ -229,7 +229,7 @@
     <string name="lvp_below_lifted">Fit is below the lifted %1$.1f kg; no 1RM reported</string>
     <string name="lvp_recent_title">1RM estimates</string>
     <string name="import_reused_analysis">Reused the previous analysis</string>
-    <string name="history_metric_load">Load</string>
+    <string name="history_metric_load">Weight</string>
     <string name="history_metric_reps">Reps</string>
     <string name="history_metric_mcv">MCV</string>
 </resources>

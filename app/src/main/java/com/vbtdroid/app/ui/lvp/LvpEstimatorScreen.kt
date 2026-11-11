@@ -174,8 +174,13 @@ fun LvpEstimatorScreen(
                         val checked = load in selectedLoads
                         val avgMcv = sets.mapNotNull { it.mcvAvgMps }.average()
                         val latest = sets.maxByOrNull { it.createdAtEpochMs }
-                        val reps = latest?.let {
+                        val reps = sets.mapNotNull {
                             runCatching { JsonExport.decode(it.exportJson).reps.size }.getOrNull()
+                        }
+                        val repText = when {
+                            reps.isEmpty() -> "-"
+                            reps.min() == reps.max() -> reps.min().toString()
+                            else -> "${reps.min()}–${reps.max()}"
                         }
                         Row(
                             modifier = Modifier
@@ -195,29 +200,33 @@ fun LvpEstimatorScreen(
                                     outcome = null
                                 },
                             )
-                            Column(Modifier.width(96.dp)) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    latest?.let { formatDate(it.createdAtEpochMs) } ?: "-",
+                                    (latest?.let { formatDate(it.createdAtEpochMs) } ?: "-") +
+                                        " · ${sets.size} 组",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = VbtTheme.colors.onSurfaceVariant,
                                 )
-                                Text(
-                                    "${sets.size} 组 · ${reps ?: "-"} 次",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = VbtTheme.colors.onSurfaceVariant,
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+                                    EstimatorMetric(
+                                        label = stringResource(R.string.history_metric_load),
+                                        value = formatKg(load),
+                                        unit = stringResource(R.string.unit_kg),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EstimatorMetric(
+                                        label = stringResource(R.string.history_metric_reps),
+                                        value = repText,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    EstimatorMetric(
+                                        label = stringResource(R.string.history_metric_mcv),
+                                        value = String.format(Locale.US, "%.3f", avgMcv),
+                                        unit = stringResource(R.string.unit_mps),
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
                             }
-                            Text(
-                                "${formatKg(load)} kg",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.width(84.dp),
-                            )
-                            Text(
-                                String.format(Locale.US, "MCV %.3f", avgMcv),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = VbtTheme.colors.onSurfaceVariant,
-                            )
                         }
                         HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.4f))
                     }
@@ -346,6 +355,39 @@ private fun ResultCard(outcome: EstimateOutcome) {
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun EstimatorMetric(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    unit: String? = null,
+) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value,
+                style = VbtTheme.numbers.displayMetricSm.copy(fontSize = 26.sp, lineHeight = 30.sp),
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+            )
+            if (unit != null) {
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    unit,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = VbtTheme.colors.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
         }
     }
 }
