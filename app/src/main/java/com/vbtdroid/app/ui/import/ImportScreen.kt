@@ -145,6 +145,7 @@ fun ImportScreen(
     analysisProgress: Float = 0f,
     analysisError: String? = null,
     onAnalyze: (AnalysisRequest) -> Unit = {},
+    onReanalyze: (AnalysisRequest) -> Unit = {},
     onCancel: () -> Unit = {},
     onShowHistory: () -> Unit = {},
     suggestRois: (Bitmap) -> List<RectF> = { emptyList() },
@@ -325,6 +326,10 @@ fun ImportScreen(
         currentRequest()?.let(onAnalyze)
     }
 
+    fun forceReanalysis() {
+        currentRequest()?.let(onReanalyze)
+    }
+
     // Tell the user up front that this exact video and input set already produced a result.
     var alreadyAnalyzed by remember { mutableStateOf(false) }
     val lookupKey = if (canAnalyze) currentRequest()?.analysisKey else null
@@ -404,6 +409,7 @@ fun ImportScreen(
                     },
                     onConfirm = { roiConfirmed = true },
                     onAnalyze = ::startAnalysis,
+                    onReanalyze = ::forceReanalysis,
                 )
             }
         },
@@ -828,6 +834,7 @@ private fun ImportActionBar(
     validSettings: Boolean,
     canAnalyze: Boolean,
     reused: Boolean,
+    onReanalyze: () -> Unit,
     onCancel: () -> Unit,
     onNext: () -> Unit,
     onBackToRoi: () -> Unit,
@@ -913,13 +920,37 @@ private fun ImportActionBar(
                 }
             }
             !validSettings -> PrimaryActionBar(hint = stringResource(R.string.import_invalid_settings)) {}
-            else -> PrimaryActionBar(
-                hint = if (reused) stringResource(R.string.import_reuse_hint) else null,
-            ) {
+            reused -> PrimaryActionBar(hint = stringResource(R.string.import_reuse_hint)) {
+                val enabled = ImportFlowPolicy.showStart(page, roiConfirmed, validSettings) && canAnalyze
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VbtSpacing.s)) {
+                    OutlinedButton(
+                        onClick = onReanalyze,
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f).heightIn(min = MinTouchTarget),
+                        colors = secondaryOutlinedColors(),
+                    ) {
+                        Text(
+                            stringResource(R.string.import_reanalyze),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    Button(
+                        onClick = onAnalyze,
+                        enabled = enabled,
+                        modifier = Modifier.weight(1.4f).height(52.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = primaryButtonColors(),
+                    ) {
+                        Text(
+                            stringResource(R.string.import_open_existing),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+            else -> PrimaryActionBar {
                 PrimaryButton(
-                    text = stringResource(
-                        if (reused) R.string.import_open_existing else R.string.import_start_analysis,
-                    ),
+                    text = stringResource(R.string.import_start_analysis),
                     onClick = onAnalyze,
                     enabled = ImportFlowPolicy.showStart(page, roiConfirmed, validSettings) && canAnalyze,
                 )

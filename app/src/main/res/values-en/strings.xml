@@ -234,4 +234,5 @@
     <string name="history_metric_mcv">MCV</string>
     <string name="import_reuse_hint">This video and these inputs were already analysed; the previous result opens directly</string>
     <string name="import_open_existing">Open previous result</string>
+    <string name="import_reanalyze">Analyse again</string>
 </resources>
