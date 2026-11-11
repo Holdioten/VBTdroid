@@ -52,7 +52,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +89,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vbtdroid.app.R
@@ -164,6 +171,7 @@ fun ImportScreen(
     // Bench pose tracking is unreliable; default it off and reset when the lift changes.
     var analyzePose by rememberSaveable(lift) { mutableStateOf(lift != Lift.BENCH) }
     var roiCandidates by remember { mutableStateOf<List<RectF>>(emptyList()) }
+    var showSettings by remember { mutableStateOf(false) }
     var autoRoi by remember { mutableStateOf<RectF?>(null) }
     var selectedCandidate by rememberSaveable { mutableStateOf(0) }
 
@@ -304,19 +312,29 @@ fun ImportScreen(
     // The bar only exists when there is a video or analysis is running (spec: no permanent bar).
     val barVisible = analyzing || selectedUri != null
 
+    if (showSettings) {
+        SettingsDialog(
+            themeId = themeId,
+            onThemeChange = onThemeChange,
+            onDismiss = { showSettings = false },
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.import_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
+            CenterAlignedTopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { showSettings = true }, enabled = !analyzing) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = stringResource(R.string.settings_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 },
+                title = { BrandLockup() },
                 actions = {
-                    ThemeMenu(themeId = themeId, onThemeChange = onThemeChange, enabled = !analyzing)
                     TextButton(
                         onClick = onShowHistory,
                         enabled = !analyzing,
@@ -325,7 +343,9 @@ fun ImportScreen(
                         Text(stringResource(R.string.history_title))
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -988,35 +1008,91 @@ private suspend fun queryDisplayName(context: Context, uri: Uri): String = withC
 }
 
 @Composable
-private fun ThemeMenu(
+private fun BrandLockup() {
+    val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            painter = painterResource(if (light) R.drawable.brand_mark_light else R.drawable.brand_mark_dark),
+            contentDescription = null,
+            modifier = Modifier.height(30.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "VBT",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            "droid",
+            fontSize = 17.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun SettingsDialog(
     themeId: VbtThemeId,
     onThemeChange: (VbtThemeId) -> Unit,
-    enabled: Boolean,
+    onDismiss: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            modifier = Modifier.heightIn(min = MinTouchTarget),
-        ) {
-            Text(stringResource(R.string.theme_label))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            VbtThemeId.values().forEach { id ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(themeLabel(id))) },
-                    leadingIcon = { ThemeSwatch(id) },
-                    trailingIcon = {
-                        if (id == themeId) {
-                            Text("✓", color = MaterialTheme.colorScheme.primary)
+    var showThemes by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxWidth().padding(VbtSpacing.l)) {
+                if (showThemes) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = { showThemes = false }) { Text("‹") }
+                        Text(
+                            stringResource(R.string.settings_theme),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                    Spacer(Modifier.height(VbtSpacing.s))
+                    VbtThemeId.values().forEach { id ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onThemeChange(id) }
+                                .padding(horizontal = VbtSpacing.s, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ThemeSwatch(id)
+                            Spacer(Modifier.width(VbtSpacing.m))
+                            Text(stringResource(themeLabel(id)), modifier = Modifier.weight(1f))
+                            if (id == themeId) {
+                                Text("✓", color = MaterialTheme.colorScheme.primary)
+                            }
                         }
-                    },
-                    onClick = {
-                        onThemeChange(id)
-                        expanded = false
-                    },
-                )
+                    }
+                } else {
+                    Text(
+                        stringResource(R.string.settings_title),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Spacer(Modifier.height(VbtSpacing.m))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showThemes = true }
+                            .padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.settings_theme), modifier = Modifier.weight(1f))
+                        Text(
+                            stringResource(themeLabel(themeId)),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(VbtSpacing.m))
+                    TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                        Text(stringResource(R.string.settings_close))
+                    }
+                }
             }
         }
     }

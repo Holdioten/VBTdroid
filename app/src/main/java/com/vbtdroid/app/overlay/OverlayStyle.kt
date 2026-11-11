@@ -30,13 +30,13 @@ object OverlayStyle {
     const val SPEED = 0xFFFFC247L
 
     /** HUD and angle bubbles: #0A0E11 at 72%. */
-    const val BUBBLE = 0xB80A0E11L
+    const val BUBBLE = 0xE00A0E11L
 
     /** Speed capsule: #14110A at 78%. */
-    const val SPEED_BUBBLE = 0xC714110AL
+    const val SPEED_BUBBLE = 0xE614110AL
 
     /** Data card background: #0A0E11 at 82%, matching the report GlassColor. */
-    const val CARD_BACKGROUND = 0xD10A0E11L
+    const val CARD_BACKGROUND = 0xF00A0E11L
 
     /** Data card hairline border: report outline #2B3742 at 50%. */
     const val CARD_BORDER = 0x802B3742L

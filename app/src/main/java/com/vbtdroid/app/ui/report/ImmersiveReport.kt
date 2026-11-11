@@ -66,7 +66,7 @@ import kotlin.math.roundToInt
 
 /** Card scrim: #0A0E11 at 82%, so burned-in video text does not show through the cards. */
 internal val GlassColor: Color
-    @Composable get() = MaterialTheme.colorScheme.background.copy(alpha = 0.82f)
+    @Composable get() = MaterialTheme.colorScheme.background.copy(alpha = 0.94f)
 
 /**
  * Full-bleed video layer that letterboxes the frame instead of cropping it. The overlay burns its
