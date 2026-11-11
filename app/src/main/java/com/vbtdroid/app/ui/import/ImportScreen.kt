@@ -2,6 +2,7 @@ package com.vbtdroid.app.ui.import
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.widget.Toast
 import android.graphics.RectF
 import android.net.Uri
 import android.provider.Settings
@@ -52,6 +53,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -167,7 +169,6 @@ fun ImportScreen(
     val defaultCameraAngle = stringResource(R.string.import_default_camera_angle)
     var plateDiameterText by rememberSaveable { mutableStateOf(defaultPlateDiameter) }
     var cameraAngleText by rememberSaveable { mutableStateOf(defaultCameraAngle) }
-    var cameraLevel by rememberSaveable { mutableStateOf(true) }
     // Bench pose tracking is unreliable; default it off and reset when the lift changes.
     var analyzePose by rememberSaveable(lift) { mutableStateOf(lift != Lift.BENCH) }
     var roiCandidates by remember { mutableStateOf<List<RectF>>(emptyList()) }
@@ -301,7 +302,6 @@ fun ImportScreen(
                     cameraAngleDeg = cameraAngle ?: return@let,
                     plateDiameterM = plateDiameterM ?: return@let,
                     loadKg = if (loadText.isBlank()) null else loadKg,
-                    cameraLevel = cameraLevel,
                     analyzePose = analyzePose,
                     roi = RectF(roi ?: return@let),
                     themeId = themeId,
@@ -442,8 +442,6 @@ fun ImportScreen(
                             angleText = cameraAngleText,
                             onAngle = { cameraAngleText = it },
                             validAngle = validAngle,
-                            cameraLevel = cameraLevel,
-                            onCameraLevel = { cameraLevel = it },
                             analyzePose = analyzePose,
                             onAnalyzePose = { analyzePose = it },
                             validSettings = validSettings,
@@ -607,8 +605,6 @@ private fun SettingsPage(
     angleText: String,
     onAngle: (String) -> Unit,
     validAngle: Boolean,
-    cameraLevel: Boolean,
-    onCameraLevel: (Boolean) -> Unit,
     analyzePose: Boolean,
     onAnalyzePose: (Boolean) -> Unit,
     validSettings: Boolean,
@@ -621,14 +617,16 @@ private fun SettingsPage(
         onSelect = onLift,
         enabled = enabled,
     )
-    SectionLabel(stringResource(R.string.import_variant))
-    SegmentedPicker(
-        options = variantsFor(lift),
-        selected = variant,
-        label = { variantNames.getValue(it) },
-        onSelect = onVariant,
-        enabled = enabled,
-    )
+    if (lift != Lift.BENCH) {
+        SectionLabel(stringResource(R.string.import_variant))
+        SegmentedPicker(
+            options = variantsFor(lift),
+            selected = variant,
+            label = { variantNames.getValue(it) },
+            onSelect = onVariant,
+            enabled = enabled,
+        )
+    }
 
     SectionLabel(stringResource(R.string.import_analysis_settings))
     SectionCard {
@@ -682,13 +680,6 @@ private fun SettingsPage(
     }
 
     SectionCard(padding = VbtSpacing.s) {
-        SwitchRow(
-            title = stringResource(R.string.import_camera_level),
-            checked = cameraLevel,
-            onCheckedChange = onCameraLevel,
-            enabled = enabled,
-        )
-        HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
         SwitchRow(
             title = stringResource(R.string.import_analyze_pose),
             checked = analyzePose,
@@ -1038,7 +1029,28 @@ private fun SettingsDialog(
     onThemeChange: (VbtThemeId) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var showThemes by remember { mutableStateOf(false) }
+    var confirmClearCache by remember { mutableStateOf(false) }
+    if (confirmClearCache) {
+        AlertDialog(
+            onDismissRequest = { confirmClearCache = false },
+            title = { Text(stringResource(R.string.settings_clear_cache)) },
+            text = { Text(stringResource(R.string.settings_clear_cache_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearCache = false
+                    clearOverlayCache(context)
+                    Toast.makeText(context, R.string.settings_cache_cleared, Toast.LENGTH_SHORT).show()
+                }) { Text(stringResource(R.string.settings_clear_cache)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearCache = false }) {
+                    Text(stringResource(R.string.settings_close))
+                }
+            },
+        )
+    }
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxWidth().padding(VbtSpacing.l)) {
@@ -1089,6 +1101,18 @@ private fun SettingsDialog(
                         )
                         Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { confirmClearCache = true }
+                            .padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.settings_clear_cache), modifier = Modifier.weight(1f))
+                        Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Spacer(Modifier.height(VbtSpacing.m))
                     TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                         Text(stringResource(R.string.settings_close))
@@ -1107,6 +1131,13 @@ private fun ThemeSwatch(id: VbtThemeId) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(palette.primary))
         Box(Modifier.size(10.dp).clip(CircleShape).background(palette.onSurface))
     }
+}
+
+private fun clearOverlayCache(context: android.content.Context) {
+    val cache = context.cacheDir ?: return
+    cache.listFiles { file ->
+        file.name.startsWith("overlay-") || file.name.startsWith("debug-")
+    }?.forEach { runCatching { it.delete() } }
 }
 
 private fun themeLabel(id: VbtThemeId): Int = when (id) {

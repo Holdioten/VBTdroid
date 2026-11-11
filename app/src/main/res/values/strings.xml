@@ -217,4 +217,7 @@
     <string name="settings_title">设置</string>
     <string name="settings_theme">主题</string>
     <string name="settings_close">关闭</string>
+    <string name="settings_clear_cache">清除缓存</string>
+    <string name="settings_clear_cache_confirm">将删除已导出的叠加视频。历史指标和 1RM 估算记录会保留，但旧报告将无法再播放叠加视频。确定清除？</string>
+    <string name="settings_cache_cleared">缓存已清除</string>
 </resources>
