@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -222,6 +223,10 @@ private fun AnalysisApp(
         screen = AppScreen.IMPORT
     }
 
+    // Keeps the import flow's saved state alive while another screen is shown, so returning
+    // lands on the same step with the same video and inputs instead of an empty first page.
+    val importStateHolder = rememberSaveableStateHolder()
+
     fun startRun(request: AnalysisRequest) {
         val binder = serviceBinder
         if (binder == null) {
@@ -280,7 +285,8 @@ private fun AnalysisApp(
             },
             onBack = { screen = AppScreen.HISTORY },
         )
-        AppScreen.IMPORT -> ImportScreen(
+        AppScreen.IMPORT -> importStateHolder.SaveableStateProvider("import") {
+            ImportScreen(
             analyzing = analyzing,
             analysisProgress = progress,
             analysisError = analysisError,
@@ -293,6 +299,10 @@ private fun AnalysisApp(
                         "reuse uri=${request.uri} key=${request.analysisKey} hit=${cached?.setId}",
                     )
                     if (cached != null) {
+                        // The list has not been loaded on this path; without it the detail screen's
+                        // back button lands on an empty history.
+                        history = repository.history()
+                        oneRmEstimates = repository.oneRmEstimates()
                         historyDetail = repository.detail(cached.setId)
                         screen = AppScreen.HISTORY
                         android.widget.Toast.makeText(
@@ -316,6 +326,7 @@ private fun AnalysisApp(
             suggestRois = { bitmap -> serviceBinder?.suggestRois(bitmap).orEmpty() },
             themeId = themeId,
             onThemeChange = onThemeChange,
-        )
+            )
+        }
     }
 }
