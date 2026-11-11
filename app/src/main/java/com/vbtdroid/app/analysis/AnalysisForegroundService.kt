@@ -18,6 +18,7 @@ import com.vbtdroid.app.MainActivity
 import com.vbtdroid.app.R
 import com.vbtdroid.app.data.AnalysisRepository
 import com.vbtdroid.app.data.AppDatabase
+import com.vbtdroid.app.overlay.OverlayStyle
 import com.vbtdroid.app.overlay.VideoOverlayExporter
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.vision.MediaPipePoseEstimator
@@ -183,6 +184,7 @@ class AnalysisForegroundService : Service() {
     ): AnalysisResult {
         val output = File(cacheDir, AnalysisOverlayJob.overlayFileName(analyzed.createdAtEpochMs))
         try {
+            OverlayStyle.apply(request.themeId)
             overlayExporter.exportToFile(
                 context = applicationContext,
                 sourceUri = request.uri,

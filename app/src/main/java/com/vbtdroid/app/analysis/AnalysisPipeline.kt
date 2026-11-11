@@ -2,6 +2,7 @@ package com.vbtdroid.app.analysis
 
 import android.graphics.RectF
 import android.net.Uri
+import com.vbtdroid.app.ui.theme.VbtThemeId
 import com.vbtdroid.app.video.VideoDecoder
 import com.vbtdroid.app.video.VideoLimits
 import com.vbtdroid.app.vision.PlateTracker
@@ -49,6 +50,8 @@ data class AnalysisRequest(
     val variant: LiftVariant = LiftVariant.DEFAULT,
     /** When false, pose estimation is skipped completely and no joint-angle data is produced. */
     val analyzePose: Boolean = true,
+    /** Theme active when the analysis starts; the burned overlay cards follow it. */
+    val themeId: VbtThemeId = VbtThemeId.LIGHT_RED,
 )
 
 data class SetSummary(

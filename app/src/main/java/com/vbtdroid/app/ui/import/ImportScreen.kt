@@ -304,6 +304,7 @@ fun ImportScreen(
                     cameraLevel = cameraLevel,
                     analyzePose = analyzePose,
                     roi = RectF(roi ?: return@let),
+                    themeId = themeId,
                 ),
             )
         }

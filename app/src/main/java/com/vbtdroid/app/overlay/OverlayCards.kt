@@ -144,7 +144,7 @@ internal class OverlayCards(private val context: Context, private val result: An
     }
     private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = OverlayStyle.SKELETON.toInt()
+        color = OverlayStyle.CARD_TEXT.toInt()
     }
     private val bandPaints: Map<PhaseType, Paint> = mapOf(
         PhaseType.ECCENTRIC to bandPaint(OverlayStyle.ECCENTRIC),

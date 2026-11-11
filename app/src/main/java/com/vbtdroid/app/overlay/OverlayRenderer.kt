@@ -70,7 +70,7 @@ class OverlayRenderer(private val context: Context, private val result: Analysis
         textAlign = Paint.Align.LEFT
     }
     private val hudTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = OverlayStyle.SKELETON.toInt()
+        color = OverlayStyle.BUBBLE_TEXT.toInt()
         textAlign = Paint.Align.LEFT
     }
     private val path = Path()
