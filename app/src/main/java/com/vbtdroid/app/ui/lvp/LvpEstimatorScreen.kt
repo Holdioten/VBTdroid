@@ -49,6 +49,7 @@ import com.vbtdroid.app.ui.components.SegmentedPicker
 import com.vbtdroid.app.ui.theme.MinTouchTarget
 import com.vbtdroid.app.ui.theme.VbtSpacing
 import com.vbtdroid.app.ui.theme.VbtTheme
+import com.vbtdroid.core.io.JsonExport
 import com.vbtdroid.core.metrics.Lvp
 import com.vbtdroid.core.metrics.LvpEstimate
 import com.vbtdroid.core.metrics.LvpPoint
@@ -75,7 +76,7 @@ fun LvpEstimatorScreen(
 ) {
     var lift by remember { mutableStateOf(Lift.SQUAT) }
     var variant by remember { mutableStateOf(defaultVariant(lift)) }
-    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedLoads by remember { mutableStateOf<Set<Double>>(emptySet()) }
     var outcome by remember { mutableStateOf<EstimateOutcome?>(null) }
 
     val eligible = history.filter {
@@ -83,13 +84,18 @@ fun LvpEstimatorScreen(
             it.variant == variant.name &&
             it.loadKg != null &&
             it.mcvAvgMps != null
+    }.sortedWith(
+        compareByDescending<SetEntity> { it.loadKg ?: 0.0 }
+            .thenByDescending { it.createdAtEpochMs },
+    )
+    val loadGroups = remember(eligible) {
+        eligible.groupBy { it.loadKg!! }.toSortedMap(compareByDescending { it })
     }
-    val selectedSets = eligible.filter { it.setId in selected }
-    val distinctLoads = selectedSets.mapNotNull { it.loadKg }.distinct().size
-    val canEstimate = distinctLoads >= 3
+    val selectedSets = eligible.filter { (it.loadKg ?: 0.0) in selectedLoads }
+    val canEstimate = selectedLoads.size >= 3
 
     fun resetSelection() {
-        selected = emptySet()
+        selectedLoads = emptySet()
         outcome = null
     }
 
@@ -162,14 +168,21 @@ fun LvpEstimatorScreen(
                 )
             } else {
                 LazyColumn(Modifier.weight(1f)) {
-                    items(eligible, key = { it.setId }) { set ->
-                        val checked = set.setId in selected
+                    items(loadGroups.entries.toList(), key = { it.key }) { entry ->
+                        val load = entry.key
+                        val sets = entry.value
+                        val checked = load in selectedLoads
+                        val avgMcv = sets.mapNotNull { it.mcvAvgMps }.average()
+                        val latest = sets.maxByOrNull { it.createdAtEpochMs }
+                        val reps = latest?.let {
+                            runCatching { JsonExport.decode(it.exportJson).reps.size }.getOrNull()
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
-                                    selected = if (checked) selected - set.setId else selected + set.setId
+                                    selectedLoads = if (checked) selectedLoads - load else selectedLoads + load
                                     outcome = null
                                 }
                                 .padding(vertical = 6.dp),
@@ -178,24 +191,30 @@ fun LvpEstimatorScreen(
                             Checkbox(
                                 checked = checked,
                                 onCheckedChange = {
-                                    selected = if (checked) selected - set.setId else selected + set.setId
+                                    selectedLoads = if (checked) selectedLoads - load else selectedLoads + load
                                     outcome = null
                                 },
                             )
+                            Column(Modifier.width(96.dp)) {
+                                Text(
+                                    latest?.let { formatDate(it.createdAtEpochMs) } ?: "-",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = VbtTheme.colors.onSurfaceVariant,
+                                )
+                                Text(
+                                    "${sets.size} 组 · ${reps ?: "-"} 次",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = VbtTheme.colors.onSurfaceVariant,
+                                )
+                            }
                             Text(
-                                formatDate(set.createdAtEpochMs),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = VbtTheme.colors.onSurfaceVariant,
-                                modifier = Modifier.width(96.dp),
-                            )
-                            Text(
-                                "${formatKg(set.loadKg ?: 0.0)} kg",
+                                "${formatKg(load)} kg",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.width(84.dp),
                             )
                             Text(
-                                String.format(Locale.US, "MCV %.3f", set.mcvAvgMps ?: 0.0),
+                                String.format(Locale.US, "MCV %.3f", avgMcv),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = VbtTheme.colors.onSurfaceVariant,
                             )
@@ -205,7 +224,7 @@ fun LvpEstimatorScreen(
                 }
             }
             Text(
-                stringResource(R.string.lvp_selected, selectedSets.size, distinctLoads),
+                stringResource(R.string.lvp_selected, selectedLoads.size, selectedSets.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = VbtTheme.colors.onSurfaceVariant,
             )

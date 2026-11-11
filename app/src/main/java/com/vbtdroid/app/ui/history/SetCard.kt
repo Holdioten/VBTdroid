@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -41,6 +42,7 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
     val missing = stringResource(R.string.report_value_missing)
     val export = remember(set.setId) { runCatching { JsonExport.decode(set.exportJson) }.getOrNull() }
     val velocityLoss = export?.summary?.velocityLossPct
+    val repCount = export?.reps?.size
     val pattern = stringResource(R.string.history_date_format)
     val date = remember(set.createdAtEpochMs, pattern) {
         SimpleDateFormat(pattern, Locale.getDefault()).format(Date(set.createdAtEpochMs))
@@ -67,36 +69,34 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
                     color = VbtTheme.colors.onSurfaceVariant,
                 )
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(VbtSpacing.xs)) {
-                    Text(
-                        formatMcv(set.mcvAvgMps) ?: missing,
-                        style = VbtTheme.numbers.displayMetricSm,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                    )
-                    Text(
-                        stringResource(R.string.unit_mps),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = VbtTheme.colors.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        stringResource(R.string.history_set_load, formatKgValue(set.loadKg) ?: missing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VbtTheme.colors.onSurfaceVariant,
-                    )
-                    if (velocityLoss != null) {
-                        Text(
-                            "${stringResource(R.string.report_mini_vl)} ${formatMetricValue(velocityLoss, MetricId.SET_VELOCITY_LOSS)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = VbtTheme.colors.onSurfaceVariant,
-                        )
-                    }
-                }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(VbtSpacing.m),
+            ) {
+                MetricCell(
+                    label = stringResource(R.string.history_metric_load),
+                    value = "${formatKgValue(set.loadKg) ?: missing} kg",
+                    modifier = Modifier.weight(1f),
+                )
+                MetricCell(
+                    label = stringResource(R.string.history_metric_reps),
+                    value = repCount?.toString() ?: missing,
+                    modifier = Modifier.weight(1f),
+                )
+                MetricCell(
+                    label = stringResource(R.string.history_metric_mcv),
+                    value = formatMcv(set.mcvAvgMps) ?: missing,
+                    unit = stringResource(R.string.unit_mps),
+                    highlight = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (velocityLoss != null) {
+                Text(
+                    "${stringResource(R.string.report_mini_vl)} ${formatMetricValue(velocityLoss, MetricId.SET_VELOCITY_LOSS)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VbtTheme.colors.onSurfaceVariant,
+                )
             }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
@@ -107,6 +107,40 @@ fun SetCard(set: SetEntity, onClick: () -> Unit, modifier: Modifier = Modifier) 
                     Icons.Filled.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.history_open_detail),
                     tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    unit: String? = null,
+    highlight: Boolean = false,
+) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = VbtTheme.colors.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value,
+                style = if (highlight) VbtTheme.numbers.displayMetricSm else MaterialTheme.typography.titleMedium,
+                color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            if (unit != null) {
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    unit,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = VbtTheme.colors.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = if (highlight) 6.dp else 0.dp),
                 )
             }
         }
