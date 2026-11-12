@@ -661,7 +661,10 @@ object PhaseSegmenter {
         runs.forEachIndexed { runIndex, run ->
             // Never let the bottom lookback reach into the previous pull's samples.
             val lookbackFloor = runs.getOrNull(runIndex - 1)?.endIndex?.plus(1) ?: 0
-            val candidate = deadliftRunToRep(run, samples, config, lookbackFloor)
+            // The concentric phase of a lift runs from the lowest point to the highest point; the
+            // velocity run only says where the pull is, not where it ends.
+            val topLimit = runs.getOrNull(runIndex + 1)?.startIndex?.minus(1) ?: samples.lastIndex
+            val candidate = deadliftRunToRep(run, samples, config, lookbackFloor, topLimit)
             if (candidate == null) {
                 incomplete++
             } else {
@@ -726,6 +729,7 @@ object PhaseSegmenter {
         samples: List<MotionSample>,
         config: PhaseConfig,
         lookbackFloorIndex: Int,
+        topLimitIndex: Int,
     ): RepSlice? {
         // The bottom is the local y minimum in the half second before the pull starts.
         var bottomIndex = run.startIndex
@@ -738,8 +742,12 @@ object PhaseSegmenter {
             index--
         }
         val startSec = samples[bottomIndex].tSec
-        // Include the boundary sample that ended the run: it holds the top of the pull.
-        val repEndIndex = (run.endIndex + 1).coerceAtMost(samples.lastIndex)
+        // Top of the pull: the highest sample before the next pull starts, never behind the run.
+        var repEndIndex = (run.endIndex + 1).coerceAtMost(samples.lastIndex)
+        val topCap = topLimitIndex.coerceIn(repEndIndex, samples.lastIndex)
+        for (index in repEndIndex..topCap) {
+            if (samples[index].yM > samples[repEndIndex].yM) repEndIndex = index
+        }
         val endSec = samples[repEndIndex].tSec
         val repSamples = samples.subList(bottomIndex, repEndIndex + 1)
         val romM = repSamples.maxOf { it.yM } - repSamples.minOf { it.yM }
@@ -976,8 +984,11 @@ object PhaseSegmenter {
     /** Hysteresis: a running pull only ends once velocity falls below this fraction of vEps. */
     private const val DEADLIFT_EXIT_EPS_FRACTION = 0.5
 
-    /** Two positive runs closer than this are candidates for the same rep. */
-    private const val DEADLIFT_GAP_MERGE_SEC = 0.18
+    /**
+     * Safety net only: a pull that dips at the sticking point can stall for several tenths of a
+     * second. What actually separates one pull from two is the bar drop across the gap, below.
+     */
+    private const val DEADLIFT_GAP_MERGE_SEC = 1.0
 
     /** ...but only when the bar dropped less than this fraction of minRomM across the gap. */
     private const val DEADLIFT_GAP_MERGE_ROM_FRACTION = 0.25

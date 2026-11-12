@@ -413,10 +413,12 @@ class PhaseSegmenterTest {
 
     @Test
     fun `six positive velocity runs plus a quarter pull infer six deadlift reps`() {
+        // A standalone quarter pull: the long pause keeps it out of the merge window, so it must
+        // be dropped on its own merits rather than absorbed into the next rep.
         val smallPull = arrayOf(
             Move(0.0, 4),
             Move(0.5, 6, 0.02),
-            Move(0.0, 6),
+            Move(0.0, 30),
         )
         val samples = sequence(
             *smallPull,

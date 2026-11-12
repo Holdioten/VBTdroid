@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "VBTdroid"
-include(":app", ":core")
+include(":app", ":core", ":tools:pcreplay")
