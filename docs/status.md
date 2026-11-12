@@ -70,6 +70,8 @@
 - **45°/卧推**：样例只有侧拍深蹲/硬拉；45° 与卧推真机验证不足。
 - **模型资产**：`plate.tflite`/pose 不进 git；新环境需先下载。
 - **licence**：检测器发布路径仍待 Apache-2.0 模型；当前为个人 MVP。
+- **持久化 URI 权限只 take 不 release**：`ImportScreen.kt:211` 每次选视频都申请持久授权，全项目无 release。Android 每应用上限 128 个，长期使用后会抛 `SecurityException` 导致再也无法选视频。
+- **Auto Backup 与"仅本机"承诺冲突**：`AndroidManifest.xml` 为 `allowBackup="true"` 且无 backup rules，Room 数据库（训练记录、1RM、视频 URI）会被系统自动备份到用户云端。对外文档写的是"分析结果只留在本机"。
 
 ## 5. 近期提交（关键）
 
@@ -86,7 +88,24 @@
 - `cdeeb27` overlay 数据卡片 + 分析合并生成
 - `2ba79f2` Hough 主跟踪、懒生成
 
-## 6. 下一步建议
+## 6. 待办：工程 / 分发 / 产品（未开始）
+
+按"会直接出事 → 迟早要还 → 影响口碑 → 支撑精度"排序，与算法精度无关，可独立推进。
+
+| # | 事项 | 位置 / 触发点 | 不做的后果 | 做法 | 成本 |
+|---|---|---|---|---|---|
+| 1 | 回收持久化 URI 权限 | `ImportScreen.kt:211` | 长期用户选视频时崩在 `SecurityException`，卸载前无法恢复 | 分析完成且记录已落库后 `releasePersistableUriPermission`；启动时清理已删记录的授权 | 0.5 h |
+| 2 | 关闭 Auto Backup | `app/src/main/AndroidManifest.xml` | 训练记录被上传到用户云盘，与"仅本机"承诺矛盾 | `allowBackup="false"`，或用 `dataExtractionRules` 只备份偏好、排除 `vbtdroid.db` | 10 min |
+| 3 | 换正式签名密钥 | `app/build.gradle.kts` release 签名 | debug key 公开可伪造；换 key 时所有用户必须卸载、历史全丢 | 生成 keystore 放仓库外，签 release；密码单独保存 | 0.5 h |
+| 4 | 诊断包导出 | 设置页 | 用户报"分析失败/跟踪中断"时拿不到现场，离线无法定位 | 打包最近一次分析的参数、跟踪统计、断裂点、设备/版本信息为 zip，存到下载目录 | 2–3 h |
+| 5 | 数据导出 / 迁移 | 历史页 / 设置页 | 换手机历史全丢（若做了第 2 项连系统备份都没有） | 导出全部记录为 JSON/CSV + 导入；`core/JsonExport` 已有编码能力，缺入口与解析 | 1 天 |
+| 6 | 首次引导 + 失败可执行建议 | 首启 / 分析失败态 | 拍摄要求只写在 README；失败只报"X 秒后跟踪中断"，用户不知道怎么办 | 首启 3 张图（架机位、框片子、合格样例）；失败按原因给下一步（遮挡/ROI 过小/多人） | 3–4 h |
+| 7 | 缓存占用可见 | 设置页「清理缓存」旁 | 10 个叠加视频可达数百 MB，用户无感知 | 显示 `cacheDir` 中 overlay 文件总大小 | 1 h |
+| 8 | golden 回归 + CI | `prototype/` + `.github/workflows` | 改算法后无法判断是变好还是变坏，精度工作没有护栏 | 固定 10–20 条样本记录每 rep MCV/ROM 期望值与容差；CI 跑 core 测试 + golden + assembleDebug | 1 天 |
+
+建议执行顺序：1 → 2 → 3 先做（半天内，不碰算法，风险最低），再 4 → 6 → 8，最后 5 → 7。
+
+## 7. 下一步建议
 
 1. 手机恢复后安装干净 APK，先确认不闪退。
 2. 跑硬拉样例：看次数、warnings、报告卡片。
