@@ -62,11 +62,19 @@ class MainActivity : ComponentActivity() {
         val session = ViewModelProvider(this)[AnalysisSession::class.java]
         setContent {
             var themeId by rememberSaveable { mutableStateOf(ThemePreference.load(this).name) }
+            var keepLatestOnly by rememberSaveable {
+                mutableStateOf(com.vbtdroid.app.data.AnalysisRetentionPreference.load(this))
+            }
             val currentTheme = VbtThemeId.valueOf(themeId)
             VbtTheme(currentTheme) {
                 AnalysisApp(
                     session = session,
                     themeId = currentTheme,
+                    keepLatestOnly = keepLatestOnly,
+                    onKeepLatestOnlyChange = { value ->
+                        keepLatestOnly = value
+                        com.vbtdroid.app.data.AnalysisRetentionPreference.save(this, value)
+                    },
                     onThemeChange = { id ->
                         themeId = id.name
                         ThemePreference.save(this, id)
@@ -84,6 +92,8 @@ private fun AnalysisApp(
     session: AnalysisSession,
     themeId: VbtThemeId,
     onThemeChange: (VbtThemeId) -> Unit,
+    keepLatestOnly: Boolean,
+    onKeepLatestOnlyChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -326,6 +336,8 @@ private fun AnalysisApp(
             suggestRois = { bitmap -> serviceBinder?.suggestRois(bitmap).orEmpty() },
             themeId = themeId,
             onThemeChange = onThemeChange,
+            keepLatestOnly = keepLatestOnly,
+            onKeepLatestOnlyChange = onKeepLatestOnlyChange,
             )
         }
     }

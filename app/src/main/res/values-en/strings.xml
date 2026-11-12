@@ -237,4 +237,6 @@
     <string name="import_reanalyze">Analyse again</string>
     <string name="history_video_cleared">The overlay video cache was cleared; re-analyse to regenerate it</string>
     <string name="lvp_based_on_old_data">Based on older data</string>
+    <string name="settings_keep_latest_only">Keep only the latest analysis of a video</string>
+    <string name="settings_keep_latest_only_hint">Re-analysing the same video replaces the previous result with the same load and angle; other loads, variants and angles are kept</string>
 </resources>

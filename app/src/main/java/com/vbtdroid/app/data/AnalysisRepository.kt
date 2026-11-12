@@ -169,6 +169,25 @@ class AnalysisRepository(private val database: AppDatabase) {
         }
     }
 
+    /**
+     * Drops earlier analyses of the same video with the same inputs, keeping only [keepSetId].
+     * Different loads / variants / angles are separate results and stay.
+     */
+    suspend fun pruneOlderRuns(request: AnalysisRequest, keepSetId: String) {
+        val uri = request.uri.toString()
+        if (uri.isBlank()) return
+        val expectedPlateMm = request.plateDiameterM * 1000.0
+        val stale = database.sessionDao().setsByVideoUri(uri).filter { set ->
+            set.setId != keepSetId &&
+                set.lift == request.lift.name &&
+                set.variant == request.variant.name &&
+                sameLoad(set.loadKg, request.loadKg) &&
+                kotlin.math.abs(set.plateDiameterMm - expectedPlateMm) < 1.0 &&
+                kotlin.math.abs(set.cameraAngleDeg - request.cameraAngleDeg) < 0.51
+        }
+        if (stale.isNotEmpty()) database.sessionDao().deleteSets(stale)
+    }
+
     private fun sameLoad(a: Double?, b: Double?): Boolean = when {
         a == null && b == null -> true
         a == null || b == null -> false

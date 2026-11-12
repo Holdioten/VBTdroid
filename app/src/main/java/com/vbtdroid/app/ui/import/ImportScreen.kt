@@ -152,6 +152,8 @@ fun ImportScreen(
     onLookupReuse: (suspend (AnalysisRequest) -> Boolean)? = null,
     themeId: VbtThemeId = VbtThemeId.LIGHT_RED,
     onThemeChange: (VbtThemeId) -> Unit = {},
+    keepLatestOnly: Boolean = false,
+    onKeepLatestOnlyChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val decoder = remember(context) { VideoDecoder(context) }
@@ -348,6 +350,8 @@ fun ImportScreen(
         SettingsDialog(
             themeId = themeId,
             onThemeChange = onThemeChange,
+            keepLatestOnly = keepLatestOnly,
+            onKeepLatestOnlyChange = onKeepLatestOnlyChange,
             onDismiss = { showSettings = false },
         )
     }
@@ -1090,6 +1094,8 @@ private fun BrandLockup() {
 private fun SettingsDialog(
     themeId: VbtThemeId,
     onThemeChange: (VbtThemeId) -> Unit,
+    keepLatestOnly: Boolean,
+    onKeepLatestOnlyChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1164,6 +1170,13 @@ private fun SettingsDialog(
                         )
                         Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
+                    SwitchRow(
+                        title = stringResource(R.string.settings_keep_latest_only),
+                        checked = keepLatestOnly,
+                        onCheckedChange = onKeepLatestOnlyChange,
+                        description = stringResource(R.string.settings_keep_latest_only_hint),
+                    )
                     HorizontalDivider(color = VbtTheme.colors.outline.copy(alpha = 0.6f))
                     Row(
                         modifier = Modifier

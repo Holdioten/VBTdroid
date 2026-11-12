@@ -1,6 +1,7 @@
 package com.vbtdroid.app.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -42,6 +43,9 @@ interface SessionDao {
 
     @Query("SELECT * FROM sets WHERE analysisKey = :key ORDER BY createdAtEpochMs DESC LIMIT 1")
     suspend fun setByAnalysisKey(key: String): SetEntity?
+
+    @Delete
+    suspend fun deleteSets(sets: List<SetEntity>)
 
     @Query("SELECT * FROM sets WHERE videoUri = :uri ORDER BY createdAtEpochMs DESC LIMIT 50")
     suspend fun setsByVideoUri(uri: String): List<SetEntity>

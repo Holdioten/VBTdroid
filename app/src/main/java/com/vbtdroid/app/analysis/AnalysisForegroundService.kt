@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import com.vbtdroid.app.MainActivity
 import com.vbtdroid.app.R
 import com.vbtdroid.app.data.AnalysisRepository
+import com.vbtdroid.app.data.AnalysisRetentionPreference
 import com.vbtdroid.app.data.AppDatabase
 import com.vbtdroid.app.overlay.OverlayStyle
 import com.vbtdroid.app.overlay.VideoOverlayExporter
@@ -134,6 +135,9 @@ class AnalysisForegroundService : Service() {
                     deliverProgress(AnalysisOverlayJob.ANALYSIS_SHARE)
                     val withOverlay = attachOverlay(request, analyzed)
                     val saved = repository.saveAnalysis(withOverlay, request)
+                    if (AnalysisRetentionPreference.load(applicationContext)) {
+                        repository.pruneOlderRuns(request, saved.savedSetId ?: "")
+                    }
                     deliverProgress(1f)
                     withContext(Dispatchers.Main.immediate) {
                         stateHolder.succeed(saved)

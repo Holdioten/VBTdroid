@@ -240,4 +240,6 @@
     <string name="import_reanalyze">重新分析</string>
     <string name="history_video_cleared">叠加视频缓存已清理，重新分析可重新生成</string>
     <string name="lvp_based_on_old_data">基于旧数据</string>
+    <string name="settings_keep_latest_only">同一视频只保留最新一次分析</string>
+    <string name="settings_keep_latest_only_hint">重新分析同一视频时替换旧的同重量/角度结果；不同重量、变式、角度各自保留</string>
 </resources>
