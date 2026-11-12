@@ -742,10 +742,12 @@ object PhaseSegmenter {
             index--
         }
         val startSec = samples[bottomIndex].tSec
-        // Top of the pull: the highest sample before the next pull starts, never behind the run.
-        var repEndIndex = (run.endIndex + 1).coerceAtMost(samples.lastIndex)
-        val topCap = topLimitIndex.coerceIn(repEndIndex, samples.lastIndex)
-        for (index in repEndIndex..topCap) {
+        // Top of the pull: the highest sample between the bottom and the next pull. Searching from
+        // the run exit would miss it - the smoothed velocity lags the physical top by a good part
+        // of the filter window, so the run keeps "running" while the bar is already coming down.
+        var repEndIndex = bottomIndex
+        val topCap = topLimitIndex.coerceIn(bottomIndex, samples.lastIndex)
+        for (index in bottomIndex..topCap) {
             if (samples[index].yM > samples[repEndIndex].yM) repEndIndex = index
         }
         val endSec = samples[repEndIndex].tSec
