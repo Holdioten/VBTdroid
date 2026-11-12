@@ -62,6 +62,9 @@ import com.vbtdroid.core.io.SetExport
 import com.vbtdroid.core.model.Lift
 import com.vbtdroid.core.model.LiftVariant
 import com.vbtdroid.core.phases.PhaseType
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.vbtdroid.app.ui.report.phaseLabelRes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -158,28 +161,47 @@ private fun HistoryList(
             item(key = "one_rm_estimates") {
                 SectionCard(padding = VbtSpacing.m) {
                     SectionLabel(stringResource(R.string.lvp_recent_title))
+                    val datePattern = stringResource(R.string.history_date_format)
                     latestEstimates.forEach { estimate ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "${liftLabel(estimate.lift)} / ${variantLabel(estimate.variant)}",
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                String.format("%.1f", estimate.estimateKg),
-                                style = VbtTheme.numbers.displayMetricSm,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.unit_kg),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = VbtTheme.colors.onSurfaceVariant,
-                            )
+                        val date = remember(estimate.createdAtEpochMs, datePattern) {
+                            SimpleDateFormat(datePattern, Locale.getDefault())
+                                .format(Date(estimate.createdAtEpochMs))
+                        }
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "${liftLabel(estimate.lift)} / ${variantLabel(estimate.variant)}",
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    String.format("%.1f", estimate.estimateKg),
+                                    style = VbtTheme.numbers.displayMetricSm,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.unit_kg),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = VbtTheme.colors.onSurfaceVariant,
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    date,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = VbtTheme.colors.onSurfaceVariant,
+                                )
+                                if (estimateIsStale(estimate, history)) {
+                                    Spacer(Modifier.width(VbtSpacing.s))
+                                    Text(
+                                        stringResource(R.string.lvp_based_on_old_data),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -187,6 +209,28 @@ private fun HistoryList(
         }
         items(history, key = { it.setId }) { set ->
             SetCard(set = set, onClick = { onSelect(set.setId) })
+        }
+    }
+}
+
+/**
+ * True when a set this estimate was fitted on has since been re-analysed from the same video
+ * with the same inputs, i.e. the numbers behind the estimate are no longer what the app would
+ * produce today.
+ */
+private fun estimateIsStale(
+    estimate: com.vbtdroid.app.data.OneRmEstimateEntity,
+    history: List<SetEntity>,
+): Boolean {
+    val used = estimate.setIds.split(',').filter { it.isNotBlank() }.toSet()
+    if (used.isEmpty()) return false
+    return history.filter { it.setId in used }.any { set ->
+        set.videoUri.isNotBlank() && history.any { other ->
+            other.videoUri == set.videoUri &&
+                other.lift == set.lift &&
+                other.variant == set.variant &&
+                other.loadKg == set.loadKg &&
+                other.createdAtEpochMs > set.createdAtEpochMs
         }
     }
 }

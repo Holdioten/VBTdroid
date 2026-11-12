@@ -84,10 +84,7 @@ fun LvpEstimatorScreen(
             it.variant == variant.name &&
             it.loadKg != null &&
             it.mcvAvgMps != null
-    }.sortedWith(
-        compareByDescending<SetEntity> { it.loadKg ?: 0.0 }
-            .thenByDescending { it.createdAtEpochMs },
-    )
+    }.sortedByDescending { it.createdAtEpochMs }
     val selectedSets = eligible.filter { it.setId in selected }
     val distinctLoads = selectedSets.mapNotNull { it.loadKg }.distinct().size
     val canEstimate = distinctLoads >= 3
