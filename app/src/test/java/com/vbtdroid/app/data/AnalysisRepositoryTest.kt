@@ -54,16 +54,12 @@ class AnalysisRepositoryTest {
     fun `save persists complete graph and aggregates only same lift variant`() = runBlocking {
         repository.saveAnalysis(result(100.0, 0.8, 1L), request(100.0))
         repository.saveAnalysis(result(120.0, 0.65, 2L), request(120.0))
-        val underThree = repository.saveAnalysis(result(100.0, 0.75, 3L), request(100.0, LiftVariant.LOW_BAR))
-        assertEquals(1, underThree.lvp?.pointCount)
-        assertEquals(Lvp.INSUFFICIENT_LOAD_POINTS, underThree.lvp?.unavailableReason)
+        repository.saveAnalysis(result(100.0, 0.75, 3L), request(100.0, LiftVariant.LOW_BAR))
 
         val saved = repository.saveAnalysis(result(140.0, 0.5, 4L), request(140.0))
 
-        assertEquals(3, saved.lvp?.pointCount)
-        assertEquals(166.666666, saved.lvp?.model?.estimated1RmKg!!, 1e-4)
-        assertEquals(1.0, saved.lvp?.model?.r2!!, 1e-9)
-        assertEquals("literature", saved.lvp?.v1rmSource)
+        // Automatic LVP was removed: saving a set must not derive an estimate on its own.
+        assertNull(saved.lvp)
         assertEquals(4, repository.history().size)
         assertEquals(3, repository.sameLiftVariant(Lift.SQUAT, LiftVariant.HIGH_BAR).size)
         assertEquals(1, repository.sameLoad(Lift.SQUAT, LiftVariant.HIGH_BAR, 100.0).size)
@@ -105,12 +101,12 @@ class AnalysisRepositoryTest {
     }
 
     @Test
-    fun `fewer than three distinct loads exports null estimate with reason`() = runBlocking {
+    fun `saving a set exports no lvp estimate`() = runBlocking {
         val saved = repository.saveAnalysis(result(100.0, 0.8, 1L), request(100.0))
         val export = ExportMapper.toSetExport(saved)
 
-        assertNull(export.lvp?.estimated1RmKg)
-        assertEquals(Lvp.INSUFFICIENT_LOAD_POINTS, export.lvp?.unavailableReason)
+        // 1RM is produced by the manual estimator, never inferred while saving.
+        assertNull(export.lvp)
     }
 
     private fun request(load: Double, variant: LiftVariant = LiftVariant.HIGH_BAR) = AnalysisRequest(
