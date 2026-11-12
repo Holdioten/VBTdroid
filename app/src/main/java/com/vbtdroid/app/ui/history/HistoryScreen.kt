@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -76,6 +78,10 @@ fun HistoryScreen(
     // Back inside a history detail returns to the list, not out of history.
     BackHandler(enabled = detail != null, onBack = onCloseDetail)
 
+    // Hoisted above the detail/list switch: a state created inside the list would be discarded
+    // when the detail opens, and the list would jump back to the top on return.
+    val listState = rememberLazyListState()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -114,6 +120,7 @@ fun HistoryScreen(
                 estimates = estimates,
                 onSelect = onSelect,
                 onBack = onBack,
+                listState = listState,
                 modifier = Modifier.padding(inner),
             )
         } else {
@@ -128,6 +135,7 @@ private fun HistoryList(
     estimates: List<com.vbtdroid.app.data.OneRmEstimateEntity>,
     onSelect: (String) -> Unit,
     onBack: () -> Unit,
+    listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
     if (history.isEmpty()) {
@@ -140,6 +148,7 @@ private fun HistoryList(
         return
     }
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = VbtSpacing.l, vertical = VbtSpacing.m),
         verticalArrangement = Arrangement.spacedBy(VbtSpacing.m),
