@@ -18,13 +18,16 @@ Android 端离线 VBT（Velocity Based Training）分析工具。
 - 侧拍 / 前 45° / 后 45°
 - 导入视频，离线分析
 - 指标：速度、ROM、轨迹、阶段、速度损失、粘滞点、力/功率、LVP/1RM、姿态角、质量
-- 历史、叠加视频保存
+- 历史、叠加视频保存、同视频复用分析
+- 1RM 估算（每组独立拟合，标注仅供参考）
+- 品牌资产与生成脚本：[`design/brand/`](design/brand/)
 - JSON/CSV 仅内部验证，不在手机 UI
 
 不做：实时采集、云端、教练平台、奥举/跳跃、单机位左右对称、下背腰椎轮廓。
 
 ## 文档
 
+- 使用说明（面向使用者）：[`docs/user-guide.md`](docs/user-guide.md)
 - 开发入口 / agent 规则：[`AGENTS.md`](AGENTS.md)
 - 技术规格：[`docs/spec.md`](docs/spec.md)
 - 术语与指标：[`docs/glossary.md`](docs/glossary.md)
